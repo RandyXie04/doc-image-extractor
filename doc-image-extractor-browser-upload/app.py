@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import hmac
 import io
 import os
@@ -22,6 +21,14 @@ SUPPORTED_TYPES = ["pdf", "docx"]
 MAX_PREVIEW_IMAGES = 12
 MAX_FILES_PER_BATCH = 10
 MAX_TOTAL_UPLOAD_MB = 500
+MAX_PDF_PAGES = 250
+MAX_PDF_IMAGES = 1000
+MAX_IMAGE_WIDTH = 12_000
+MAX_IMAGE_HEIGHT = 12_000
+MAX_DOCX_MEDIA_FILES = 1_000
+MAX_DOCX_MEMBER_BYTES = 50 * 1024 * 1024
+MAX_DOCX_TOTAL_MEDIA_BYTES = 300 * 1024 * 1024
+MAX_OUTPUT_BYTES = 500 * 1024 * 1024
 AUTH_SESSION_SECONDS = 4 * 60 * 60
 AUTH_LOCKOUT_SECONDS = 5 * 60
 MAX_LOGIN_ATTEMPTS = 5
@@ -56,11 +63,6 @@ def get_secret(name: str) -> str | None:
     return str(secret_value).strip() if secret_value else None
 
 
-def password_digest(password: str) -> str:
-    """以 SHA-256 產生密碼摘要；實際密碼不會寫入程式或 GitHub。"""
-    return hashlib.sha256(password.encode("utf-8")).hexdigest()
-
-
 def auth_is_valid() -> bool:
     """檢查目前瀏覽器工作階段是否仍在登入有效期內。"""
     authenticated_at = st.session_state.get("authenticated_at")
@@ -76,11 +78,10 @@ def auth_is_valid() -> bool:
 def render_auth_gate() -> bool:
     """顯示公開服務的密碼門檻；密碼只從 Streamlit Secrets 或環境變數讀取。"""
     expected_password = get_secret("APP_PASSWORD")
-    expected_digest = get_secret("APP_PASSWORD_HASH")
-    if not expected_password and not expected_digest:
+    if not expected_password:
         st.error("服務尚未完成安全設定。請在 Streamlit Cloud 的 App settings → Secrets 設定 APP_PASSWORD。")
         st.code('APP_PASSWORD = "請在 Streamlit Cloud Secrets 貼上你的共用密碼"', language="toml")
-        st.caption("密碼只放在 Cloud Secrets，不要寫入 app.py、README 或 GitHub。若同時設定 APP_PASSWORD_HASH，程式會優先使用雜湊值。")
+        st.caption("密碼只放在 Cloud Secrets，不要寫入 app.py、README 或 GitHub。")
         return False
 
     lockout_until = float(st.session_state.get("lockout_until", 0))
@@ -102,11 +103,7 @@ def render_auth_gate() -> bool:
         submitted = st.form_submit_button("登入", type="primary", use_container_width=True)
 
     if submitted:
-        is_match = (
-            hmac.compare_digest(password, expected_password)
-            if expected_password and not expected_digest
-            else hmac.compare_digest(password_digest(password), expected_digest or "")
-        )
+        is_match = hmac.compare_digest(password, expected_password)
         if is_match:
             st.session_state["authenticated"] = True
             st.session_state["authenticated_at"] = time.time()
@@ -165,12 +162,19 @@ def extract_images_from_pdf(
         return [], [f"無法開啟 PDF：{exc}"]
 
     total_pages = len(doc)
+    pages_to_process = min(total_pages, MAX_PDF_PAGES)
+    if total_pages > MAX_PDF_PAGES:
+        warnings.append(f"PDF 共 {total_pages} 頁，為保護公開服務只處理前 {MAX_PDF_PAGES} 頁。")
+    output_bytes = 0
     try:
-        for page_index in range(total_pages):
+        for page_index in range(pages_to_process):
             page = doc[page_index]
             image_list = page.get_images(full=True)
 
             for img_index, img_info in enumerate(image_list):
+                if len(images) >= MAX_PDF_IMAGES:
+                    warnings.append(f"已達 PDF 圖片上限 {MAX_PDF_IMAGES} 張，後續圖片已略過。")
+                    break
                 xref = img_info[0]
                 cs_name = img_info[5] if len(img_info) > 5 else ""
                 alt_cs = img_info[6] if len(img_info) > 6 else ""
@@ -184,13 +188,25 @@ def extract_images_from_pdf(
                     height = base_image.get("height", 0)
                     if width < 10 or height < 10:
                         continue
+                    if width > MAX_IMAGE_WIDTH or height > MAX_IMAGE_HEIGHT:
+                        warnings.append(
+                            f"第 {page_index + 1} 頁圖片 {img_index + 1} 尺寸 {width}×{height} 超過上限，已略過。"
+                        )
+                        continue
 
                     img = Image.open(io.BytesIO(raw_bytes))
                     color_space = "DeviceN" if cs_name == "DeviceN" else alt_cs
                     img = normalize_image(img, color_space)
                     filename = f"page{page_index + 1:04d}_img{img_index + 1:03d}.png"
+                    png_buffer = io.BytesIO()
+                    img.save(png_buffer, format="PNG")
+                    png_bytes = png_buffer.getvalue()
+                    if output_bytes + len(png_bytes) > MAX_OUTPUT_BYTES:
+                        warnings.append(f"PDF 輸出容量已達 {MAX_OUTPUT_BYTES // (1024 * 1024)} MB 上限，後續圖片已略過。")
+                        break
+                    output_bytes += len(png_bytes)
                     save_path = output_dir / filename
-                    img.save(save_path, format="PNG")
+                    save_path.write_bytes(png_bytes)
                     images.append(
                         ExtractedImage(
                             path=save_path,
@@ -206,7 +222,9 @@ def extract_images_from_pdf(
                     )
 
             if progress:
-                progress(page_index + 1, max(total_pages, 1))
+                progress(page_index + 1, max(pages_to_process, 1))
+            if len(images) >= MAX_PDF_IMAGES or output_bytes >= MAX_OUTPUT_BYTES:
+                break
     finally:
         doc.close()
 
@@ -238,6 +256,9 @@ def extract_images_from_docx(
                 name for name in archive.namelist()
                 if name.lower().startswith("word/media/") and not name.endswith("/")
             )
+            if len(media_entries) > MAX_DOCX_MEDIA_FILES:
+                warnings.append(f"DOCX 媒體檔案數超過 {MAX_DOCX_MEDIA_FILES} 個，只處理前 {MAX_DOCX_MEDIA_FILES} 個。")
+                media_entries = media_entries[:MAX_DOCX_MEDIA_FILES]
             if not media_entries:
                 return [], ["Word 文件的 word/media/ 目錄中沒有找到圖片。"]
 
@@ -248,12 +269,25 @@ def extract_images_from_docx(
             if skipped:
                 warnings.append(f"已略過 {skipped} 個非圖片媒體檔案。")
 
+            output_bytes = 0
             for index, entry in enumerate(candidates, start=1):
+                info = archive.getinfo(entry)
+                if info.file_size > MAX_DOCX_MEMBER_BYTES:
+                    warnings.append(f"DOCX 媒體檔案 {Path(entry).name} 超過單檔大小上限，已略過。")
+                    continue
+                if output_bytes + info.file_size > MAX_DOCX_TOTAL_MEDIA_BYTES:
+                    warnings.append(f"DOCX 媒體總解壓容量超過 {MAX_DOCX_TOTAL_MEDIA_BYTES // (1024 * 1024)} MB，後續檔案已略過。")
+                    break
+                data = archive.read(entry)
+                if output_bytes + len(data) > MAX_OUTPUT_BYTES:
+                    warnings.append(f"DOCX 輸出容量已達 {MAX_OUTPUT_BYTES // (1024 * 1024)} MB 上限，後續檔案已略過。")
+                    break
+                output_bytes += len(data)
                 original_name = Path(entry).name
                 destination = output_dir / original_name
                 if destination.exists():
                     destination = output_dir / f"{destination.stem}_{index}{destination.suffix}"
-                destination.write_bytes(archive.read(entry))
+                destination.write_bytes(data)
                 images.append(
                     ExtractedImage(
                         path=destination,
@@ -268,6 +302,16 @@ def extract_images_from_docx(
         return images, warnings + [f"讀取 DOCX 時發生錯誤：{exc}"]
 
     return images, warnings
+
+
+def cleanup_session_storage(force: bool = False) -> None:
+    """清理目前工作階段的原始上傳檔與提取結果。"""
+    session_dir = st.session_state.get("extraction_dir")
+    keep_temp = bool(st.session_state.get("keep_temp", False))
+    if session_dir and (force or not keep_temp):
+        shutil.rmtree(session_dir, ignore_errors=True)
+    st.session_state.pop("extraction_results", None)
+    st.session_state.pop("extraction_dir", None)
 
 
 def make_zip(results: list[ExtractionResult]) -> bytes:
@@ -319,10 +363,9 @@ def main() -> None:
 
     with st.sidebar:
         if st.button("登出", use_container_width=True):
+            cleanup_session_storage(force=True)
             st.session_state.pop("authenticated", None)
             st.session_state.pop("authenticated_at", None)
-            st.session_state.pop("extraction_results", None)
-            st.session_state.pop("extraction_dir", None)
             st.rerun()
         st.subheader("處理設定")
         keep_temp = st.checkbox("保留本次處理的暫存檔", value=False, help="關閉時，工作階段結束或重新處理後會清除暫存內容。")
@@ -367,11 +410,7 @@ def main() -> None:
         return
 
     if st.button("開始提取圖片", type="primary", use_container_width=True):
-        previous_dir = st.session_state.get("extraction_dir")
-        previous_keep = st.session_state.get("keep_temp", False)
-        if previous_dir and not previous_keep:
-            shutil.rmtree(previous_dir, ignore_errors=True)
-
+        cleanup_session_storage(force=False)
         session_dir = Path(tempfile.mkdtemp(prefix="doc_image_extractor_"))
         results: list[ExtractionResult] = []
         overall_progress = st.progress(0, text="準備處理…")
@@ -390,13 +429,16 @@ def main() -> None:
                     fraction = (index + current / max(total, 1)) / len(uploaded_files)
                     overall_progress.progress(min(fraction, 1.0), text=f"處理中：{source_name}")
 
-                if suffix == ".pdf":
-                    images, warnings = extract_images_from_pdf(input_path, output_dir, update_progress)
-                    source_type = "PDF"
-                else:
-                    images, warnings = extract_images_from_docx(input_path, output_dir, update_progress)
-                    source_type = "DOCX"
-                results.append(ExtractionResult(source_name, source_type, images, warnings))
+                try:
+                    if suffix == ".pdf":
+                        images, warnings = extract_images_from_pdf(input_path, output_dir, update_progress)
+                        source_type = "PDF"
+                    else:
+                        images, warnings = extract_images_from_docx(input_path, output_dir, update_progress)
+                        source_type = "DOCX"
+                    results.append(ExtractionResult(source_name, source_type, images, warnings))
+                finally:
+                    input_path.unlink(missing_ok=True)
 
             overall_progress.progress(1.0, text="處理完成")
             status.success("所有檔案處理完成。")
@@ -405,8 +447,9 @@ def main() -> None:
             st.session_state["keep_temp"] = keep_temp
         except Exception as exc:
             status.error(f"處理失敗：{exc}")
-            if not keep_temp:
-                shutil.rmtree(session_dir, ignore_errors=True)
+            shutil.rmtree(session_dir, ignore_errors=True)
+            st.session_state.pop("extraction_results", None)
+            st.session_state.pop("extraction_dir", None)
 
     results = st.session_state.get("extraction_results", [])
     if not results:
@@ -455,9 +498,10 @@ def main() -> None:
         help="ZIP 內會依來源文件建立子資料夾，避免同名圖片互相覆蓋。",
     )
     st.caption(f"ZIP 大小：{len(archive_bytes) / 1024:.1f} KB。檔案只會在你點擊下載時傳回目前瀏覽器。")
-
-    if not st.session_state.get("keep_temp", False):
-        st.caption("重新整理頁面或重新執行處理後，暫存檔會被清理。")
+    if st.button("清除本次結果與暫存檔", use_container_width=True):
+        cleanup_session_storage(force=True)
+        st.rerun()
+    st.caption("原始上傳檔會在提取完成後立即移除；提取結果會在重新處理、登出或按下清除按鈕時移除。")
 
 
 if __name__ == "__main__":

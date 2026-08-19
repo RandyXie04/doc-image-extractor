@@ -12,8 +12,9 @@
 | ZIP 下載 | 所有結果打包為一個 ZIP，並依來源文件建立子資料夾，避免同名檔案覆蓋 |
 | 瀏覽器預覽 | 顯示前 12 張圖片；完整圖片仍會放入 ZIP。SVG、EMF、WMF 會打包但略過瀏覽器預覽 |
 | 本機優先 | 程式不呼叫外部 API，也不會主動將文件上傳至第三方服務 |
-| 公開服務驗證 | 以 `APP_PASSWORD_HASH` 進行共用密碼驗證；登入狀態 4 小時有效，單一工作階段連續失敗 5 次後暫停 5 分鐘 |
-| 公開服務限制 | 單次最多 10 個檔案、總容量 500 MB；Community Cloud 另以 `maxUploadSize` 限制單檔容量 |
+| 公開服務驗證 | 以 Cloud Secrets 的 `APP_PASSWORD` 進行共用密碼驗證；登入狀態 4 小時有效，單一工作階段連續失敗 5 次後暫停 5 分鐘 |
+| 公開服務限制 | 單次最多 10 個檔案、總容量 500 MB；PDF 最多 250 頁／1,000 張圖片，DOCX 最多 1,000 個媒體檔與 300 MB 解壓媒體 |
+| 暫存清理 | 原始上傳檔在每個文件完成提取後立即移除；結果會在重新處理、登出或手動清除時移除 |
 
 ## 安裝
 
@@ -49,7 +50,7 @@ python -m pip install -r requirements.txt
 APP_PASSWORD = "請改成至少 16 字元的長密碼"
 ```
 
-按下儲存並重新啟動 App。程式會從 Cloud Secrets 讀取密碼，實際密碼不會出現在 `app.py`、README 或 GitHub 儲存庫中。這個專案也已將 `.streamlit/secrets.toml` 列入 `.gitignore`。若日後想使用雜湊值，仍可使用 `generate_password_hash.py` 產生 `APP_PASSWORD_HASH`，但不是必要步驟。
+按下儲存並重新啟動 App。程式會從 Cloud Secrets 讀取密碼，實際密碼不會出現在 `app.py`、README 或 GitHub 儲存庫中。這個專案也已將 `.streamlit/secrets.toml` 列入 `.gitignore`。
 
 共用密碼適合小規模分享，但它不是個人帳號系統；任何取得密碼的人都能使用服務。若需要逐一限制使用者，應改用 Google／Microsoft OIDC 或 Cloudflare Access。
 
@@ -57,11 +58,11 @@ APP_PASSWORD = "請改成至少 16 字元的長密碼"
 
 1. 將本專案推送到 GitHub **私有儲存庫**，入口檔案選擇 `app.py`。
 2. 在 Streamlit Community Cloud 以 GitHub 登入，建立新 App，選擇該儲存庫、分支與 `app.py`。
-3. 開啟 App settings → Secrets，貼入 `APP_PASSWORD_HASH = "..."`。
+3. 開啟 App settings → Secrets，貼入 `APP_PASSWORD = "你的長密碼"`。
 4. 在 App settings → Sharing 設定可見性。若要讓任何持有網址及密碼的人使用，選擇公開分享；若只允許指定 Streamlit viewer，保留私有並加入指定 viewer。
 5. Community Cloud 會提供 HTTPS 應用程式網址；不要額外把本機服務用 `0.0.0.0` 暴露出去，也不要把家用電腦當成公開伺服器。
 
-公開分享並不等於不需要保護。請只把應用程式網址提供給需要的人，定期更換共用密碼，並在疑似外洩時立刻重新產生雜湊值與更新 Secrets。應用程式層的失敗鎖定是單一瀏覽器工作階段的基本防護，不能取代雲端 WAF、反向代理或完整的帳號系統。
+公開分享並不等於不需要保護。請只把應用程式網址提供給需要的人，定期更換共用密碼並更新 Secrets。應用程式層的失敗鎖定是單一瀏覽器工作階段的基本防護，不能取代雲端 WAF、反向代理或完整的帳號系統。
 
 ## 啟動
 
@@ -107,7 +108,7 @@ py -m streamlit run app.py --server.address 127.0.0.1
 | 使用反向代理、雲端部署、公開隧道或分享服務 | 服務可能被公開；服務提供者可看到連線資訊 | 部署前先確認供應商的隱私與存取控制設定 |
 | 在公司、學校或 VPN 網路中使用 | 網路管理者仍可能看到連線紀錄 | 這是網路環境層面的可見性，不是程式主動洩漏 |
 
-本專案沒有加入文件外傳用的遙測、外部 API、遠端儲存或自動上傳功能。Streamlit Community Cloud 本身仍是第三方託管環境；文件會在該執行環境中處理，因此不要上傳不適合交給託管平台處理的高度機密文件。公開部署時已加入共用密碼、檔案大小限制與工作階段逾時，但若需要企業級存取控制，應使用 OIDC、Cloudflare Access 或其他具備個別身份管理的方案。
+本專案沒有加入文件外傳用的遙測、外部 API、遠端儲存或自動上傳功能。Streamlit Community Cloud 本身仍是第三方託管環境；文件會在該執行環境中處理，因此不要上傳不適合交給託管平台處理的高度機密文件。公開部署時已加入共用密碼、檔案大小限制、PDF／DOCX 資源上限、原始上傳檔即時清理與工作階段逾時，但若需要企業級存取控制，應使用 OIDC、Cloudflare Access 或其他具備個別身份管理的方案。
 
 ## 注意事項
 
