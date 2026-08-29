@@ -500,8 +500,10 @@ class PDFConversionAgent:
                 
             if has_moved:
                 log_fn(f"[SUCCESS] 📦 任務輸出已打包至資料夾：\n    {delivery_folder}")
+                return str(delivery_folder)
         except Exception as e:
             log_fn(f"[WARNING] 打包輸出檔案時發生錯誤：{e}")
+        return None
 # =========================================================================
 # Tkinter 全功能視覺化工作站 (GUI 介面)
 # =========================================================================

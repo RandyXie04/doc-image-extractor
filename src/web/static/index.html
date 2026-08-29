@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDF AI 公式萃取站</title>
+    <style>
+        :root {
+            --primary-color: #4f46e5;
+            --primary-hover: #4338ca;
+            --bg-color: #f3f4f6;
+            --card-bg: #ffffff;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+            --border-color: #e5e7eb;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 2rem;
+        }
+
+        .container {
+            background: var(--card-bg);
+            padding: 2.5rem;
+            border-radius: 16px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.05);
+            width: 100%;
+            max-width: 600px;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 0.5rem;
+            color: var(--text-main);
+        }
+
+        p.subtitle {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 2rem;
+        }
+
+        .upload-area {
+            border: 2px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 3rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 1.5rem;
+            background-color: #f9fafb;
+        }
+
+        .upload-area:hover, .upload-area.dragover {
+            border-color: var(--primary-color);
+            background-color: #eff6ff;
+        }
+
+        .upload-area input[type="file"] {
+            display: none;
+        }
+
+        .upload-area svg {
+            width: 48px;
+            height: 48px;
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+        }
+
+        .options-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .option-card {
+            border: 1px solid var(--border-color);
+            padding: 1rem;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .input-group {
+            margin-bottom: 1.5rem;
+            display: flex;
+            gap: 1rem;
+        }
+
+        .input-group div {
+            flex: 1;
+        }
+        
+        .input-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+
+        .input-group input[type="number"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            outline: none;
+        }
+
+        .input-group input[type="number"]:focus {
+            border-color: var(--primary-color);
+        }
+
+        button.submit-btn {
+            width: 100%;
+            padding: 1rem;
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        button.submit-btn:hover {
+            background-color: var(--primary-hover);
+        }
+
+        button.submit-btn:disabled {
+            background-color: #9ca3af;
+            cursor: not-allowed;
+        }
+
+        .progress-container {
+            display: none;
+            margin-top: 2rem;
+        }
+
+        .progress-bar-bg {
+            background-color: var(--border-color);
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-bar-fill {
+            background-color: var(--primary-color);
+            height: 100%;
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+
+        .status-text {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.875rem;
+            color: var(--text-muted);
+        }
+        
+        .log-container {
+            margin-top: 1rem;
+            background: #1f2937;
+            color: #10b981;
+            padding: 1rem;
+            border-radius: 8px;
+            height: 150px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.8rem;
+            display: none;
+        }
+
+        #downloadBtn {
+            display: none;
+            margin-top: 1rem;
+            background-color: #10b981;
+        }
+        #downloadBtn:hover {
+            background-color: #059669;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>PDF AI 公式萃取站</h1>
+        <p class="subtitle">將學術論文自動排版轉 Word 並提取高畫質公式圖</p>
+
+        <form id="uploadForm">
+            <div class="upload-area" id="dropZone">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <h3 id="fileNameDisplay">點擊或拖曳 PDF 檔案至此</h3>
+                <input type="file" id="fileInput" name="file" accept=".pdf" required>
+            </div>
+
+            <div class="options-group">
+                <label class="option-card">
+                    <input type="checkbox" name="convert_word" checked> 
+                    <span>轉換為 Word (動態裁邊)</span>
+                </label>
+                <label class="option-card">
+                    <input type="checkbox" name="extract_formulas" checked> 
+                    <span>萃取獨立數學公式 (AI)</span>
+                </label>
+            </div>
+
+            <div class="input-group">
+                <div>
+                    <label>起始頁碼 (預設第 1 頁)</label>
+                    <input type="number" name="start_page" placeholder="1" min="1">
+                </div>
+                <div>
+                    <label>結束頁碼 (留空代表全本)</label>
+                    <input type="number" name="end_page" placeholder="留空" min="1">
+                </div>
+            </div>
+
+            <button type="submit" id="submitBtn" class="submit-btn">開始處理</button>
+        </form>
+
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-bar-bg">
+                <div class="progress-bar-fill" id="progressBar"></div>
+            </div>
+            <div class="status-text">
+                <span id="statusMessage">上傳中...</span>
+                <span id="percentageText">0%</span>
+            </div>
+            <div class="log-container" id="logContainer"></div>
+            
+            <button id="downloadBtn" class="submit-btn">下載成果壓縮包</button>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const uploadForm = document.getElementById('uploadForm');
+        const submitBtn = document.getElementById('submitBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressBar = document.getElementById('progressBar');
+        const statusMessage = document.getElementById('statusMessage');
+        const percentageText = document.getElementById('percentageText');
+        const logContainer = document.getElementById('logContainer');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        let pollingInterval = null;
+
+        // Drag and Drop Logic
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('dragover');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('dragover');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                fileNameDisplay.textContent = fileInput.files[0].name;
+            }
+        });
+
+        fileInput.addEventListener('change', () => {
+            if (fileInput.files.length) {
+                fileNameDisplay.textContent = fileInput.files[0].name;
+            }
+        });
+
+        // Form Submit
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (!fileInput.files.length) {
+                alert('請先選擇一個 PDF 檔案！');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = "處理中...";
+            progressContainer.style.display = 'block';
+            logContainer.style.display = 'block';
+            downloadBtn.style.display = 'none';
+            progressBar.style.width = '0%';
+            percentageText.textContent = '0%';
+            logContainer.innerHTML = '';
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('convert_word', document.querySelector('[name="convert_word"]').checked);
+            formData.append('extract_formulas', document.querySelector('[name="extract_formulas"]').checked);
+            
+            let start = document.querySelector('[name="start_page"]').value;
+            let end = document.querySelector('[name="end_page"]').value;
+            // Convert to 0-based index for backend if provided, else 0
+            formData.append('start_page', start ? parseInt(start) - 1 : 0);
+            formData.append('end_page', end ? parseInt(end) - 1 : 0);
+
+            try {
+                const response = await fetch('/api/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+                
+                if (data.task_id) {
+                    statusMessage.textContent = "檔案上傳成功，開始處理...";
+                    startPolling(data.task_id);
+                }
+            } catch (err) {
+                alert('上傳失敗：' + err);
+                resetUI();
+            }
+        });
+
+        function startPolling(taskId) {
+            pollingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch(`/api/status/${taskId}`);
+                    const data = await response.json();
+
+                    if (data.status === 'processing') {
+                        progressBar.style.width = `${data.progress}%`;
+                        percentageText.textContent = `${Math.round(data.progress)}%`;
+                        statusMessage.textContent = data.message || "處理中...";
+                        
+                        if (data.log) {
+                            logContainer.innerHTML = data.log.replace(/\n/g, '<br>');
+                            logContainer.scrollTop = logContainer.scrollHeight;
+                        }
+                    } 
+                    else if (data.status === 'completed') {
+                        clearInterval(pollingInterval);
+                        progressBar.style.width = '100%';
+                        percentageText.textContent = '100%';
+                        statusMessage.textContent = "處理完成！";
+                        submitBtn.textContent = "完成";
+                        downloadBtn.style.display = 'block';
+                        downloadBtn.onclick = () => {
+                            window.location.href = `/api/download/${taskId}`;
+                        };
+                        resetUI(false);
+                    }
+                    else if (data.status === 'failed') {
+                        clearInterval(pollingInterval);
+                        statusMessage.textContent = "處理失敗，請查看日誌。";
+                        statusMessage.style.color = "red";
+                        if (data.log) {
+                            logContainer.innerHTML = data.log.replace(/\n/g, '<br>');
+                        }
+                        resetUI();
+                    }
+                } catch (err) {
+                    console.error("Polling error:", err);
+                }
+            }, 2000);
+        }
+
+        function resetUI(enableBtn = true) {
+            if (enableBtn) {
+                submitBtn.disabled = false;
+                submitBtn.textContent = "開始處理";
+            }
+        }
+    </script>
+</body>
+</html>
