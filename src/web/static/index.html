@@ -195,11 +195,40 @@
         #downloadBtn:hover {
             background-color: #059669;
         }
+
+        #reportIssueBtn {
+            display: none;
+            margin-top: 0.75rem;
+            background-color: #dc2626;
+        }
+        #reportIssueBtn:hover {
+            background-color: #b91c1c;
+        }
+
+        .header-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .header-bar a {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-size: 0.875rem;
+            font-weight: 500;
+        }
+        .header-bar a:hover {
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
 
     <div class="container">
+        <div class="header-bar">
+            <span style="font-size: 0.875rem; color: var(--text-muted);">⚡ v2.1 Web Edition</span>
+            <a href="https://github.com/RandyXie04/doc-image-extractor/issues" target="_blank">🐞 回報問題 / 建議</a>
+        </div>
         <h1>PDF AI 公式萃取站</h1>
         <p class="subtitle">將學術論文自動排版轉 Word 並提取高畫質公式圖</p>
 
@@ -263,7 +292,12 @@
             <div class="log-container" id="logContainer"></div>
             
             <button id="downloadBtn" class="submit-btn">下載成果壓縮包</button>
+            <button id="reportIssueBtn" class="submit-btn">🐞 一鍵至 GitHub 回報此問題</button>
         </div>
+        
+        <footer style="margin-top: 2.5rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
+            遇到問題？前往 <a href="https://github.com/RandyXie04/doc-image-extractor/issues" target="_blank" style="color: var(--primary-color);">GitHub Issues</a> 反饋
+        </footer>
     </div>
 
     <script>
@@ -278,6 +312,7 @@
         const percentageText = document.getElementById('percentageText');
         const logContainer = document.getElementById('logContainer');
         const downloadBtn = document.getElementById('downloadBtn');
+        const reportIssueBtn = document.getElementById('reportIssueBtn');
         
         const previewContainer = document.getElementById('previewContainer');
         const previewImage = document.getElementById('previewImage');
@@ -288,7 +323,9 @@
 
         let pollingInterval = null;
         let currentFileId = null;
+        let currentFileName = "";
         let debounceTimer = null;
+        let lastErrorLog = "";
 
         // Drag and Drop Logic
         dropZone.addEventListener('click', () => fileInput.click());
@@ -308,6 +345,7 @@
         async function handleFileSelect() {
             if (!fileInput.files.length) return;
             const file = fileInput.files[0];
+            currentFileName = file.name;
             fileNameDisplay.textContent = "上傳中: " + file.name;
             submitBtn.disabled = true;
             
@@ -361,9 +399,11 @@
             progressContainer.style.display = 'block';
             logContainer.style.display = 'block';
             downloadBtn.style.display = 'none';
+            reportIssueBtn.style.display = 'none';
             progressBar.style.width = '0%';
             percentageText.textContent = '0%';
             logContainer.innerHTML = '';
+            lastErrorLog = '';
 
             const formData = new FormData();
             formData.append('file_id', currentFileId);
@@ -402,6 +442,7 @@
                         statusMessage.textContent = data.message || "處理中...";
                         
                         if (data.log) {
+                            lastErrorLog = data.log;
                             logContainer.innerHTML = data.log.replace(/\n/g, '<br>');
                             logContainer.scrollTop = logContainer.scrollHeight;
                         }
@@ -413,6 +454,7 @@
                         statusMessage.textContent = "處理完成！";
                         submitBtn.textContent = "完成";
                         downloadBtn.style.display = 'block';
+                        reportIssueBtn.style.display = 'none';
                         downloadBtn.onclick = () => {
                             window.location.href = `/api/download/${taskId}`;
                         };
@@ -421,16 +463,49 @@
                     else if (data.status === 'failed') {
                         clearInterval(pollingInterval);
                         statusMessage.textContent = "處理失敗，請查看日誌。";
-                        statusMessage.style.color = "red";
+                        statusMessage.style.color = "#dc2626";
                         if (data.log) {
+                            lastErrorLog = data.log;
                             logContainer.innerHTML = data.log.replace(/\n/g, '<br>');
                         }
+                        reportIssueBtn.style.display = 'block';
+                        reportIssueBtn.onclick = () => reportToGitHub(taskId);
                         resetUI();
                     }
                 } catch (err) {
                     console.error("Polling error:", err);
                 }
             }, 2000);
+        }
+
+        function reportToGitHub(taskId) {
+            const title = `[轉檔異常回報] ${currentFileName || 'PDF 處理失敗'}`;
+            const headerR = headerSlider.value;
+            const footerR = footerSlider.value;
+            const startP = document.querySelector('[name="start_page"]').value || '預設 (1)';
+            const endP = document.querySelector('[name="end_page"]').value || '全本';
+            
+            const body = `### 📌 問題描述
+在轉檔 PDF 時發生異常中斷。
+
+### ⚙️ 執行環境與設定
+- **檔案名稱**: \`${currentFileName}\`
+- **任務 ID**: \`${taskId}\`
+- **頁碼範圍**: 第 ${startP} 頁 至 第 ${endP} 頁
+- **裁切比例**: 頂部 ${headerR}, 底部 ${footerR}
+- **瀏覽器**: \`${navigator.userAgent}\`
+- **時間戳記**: ${new Date().toISOString()}
+
+### 📋 系統日誌 (Logs / Traceback)
+\`\`\`text
+${lastErrorLog || '未取得詳細錯誤日誌'}
+\`\`\`
+
+---
+*此 Issue 由 Web 端一鍵回報功能自動產生*`;
+
+            const issueUrl = `https://github.com/RandyXie04/doc-image-extractor/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+            window.open(issueUrl, '_blank');
         }
 
         function resetUI(enableBtn = true) {
