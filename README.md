@@ -18,7 +18,7 @@
 ├── config/                 # ⚙️ 全域設定、環境變數與規範管理庫
 │   ├── settings.py         # 程式設定 dataclass
 │   ├── RULE.md             # 🛡️ 系統安全防護與版本控制規範
-│   ├── SKILLS.md           # 🧠 專案核心技術技能庫
+│   ├── skills/             # 🧠 自定義 Skill / Agent 模組存放目錄
 │   └── TODOTASK.md         # 📋 待辦任務與靈感筆記清單
 ├── src/                    # 🧠 核心業務邏輯
 │   ├── core_agent.py       # 主程式 Pipeline (包含 Tkinter 介面與批次邏輯)
