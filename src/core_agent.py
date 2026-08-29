@@ -48,6 +48,18 @@ from pix2text import MathFormulaDetector
 # pdf2docx 延遲/防呆載入
 try:
     from pdf2docx import Converter
+    from pdf2docx.image.ImagesExtractor import ImagesExtractor
+    
+    # 猴子修補 (Monkey Patch) 解決 PyMuPDF 遇到 CMYK 圖片崩潰的 Bug (code=4)
+    _original_pixmap_to_cv_image = ImagesExtractor._pixmap_to_cv_image
+    
+    def _patched_pixmap_to_cv_image(pixmap):
+        if pixmap.n - pixmap.alpha >= 4:
+            # 發現 CMYK 等超過 RGB 3 通道的色彩模式，強制轉為 RGB
+            pixmap = fitz.Pixmap(fitz.csRGB, pixmap)
+        return _original_pixmap_to_cv_image(pixmap)
+        
+    ImagesExtractor._pixmap_to_cv_image = _patched_pixmap_to_cv_image
     HAS_PDF2DOCX = True
 except ImportError:
     HAS_PDF2DOCX = False

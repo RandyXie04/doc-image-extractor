@@ -211,6 +211,21 @@
                 <h3 id="fileNameDisplay">點擊或拖曳 PDF 檔案至此</h3>
                 <input type="file" id="fileInput" name="file" accept=".pdf" required>
             </div>
+            
+            <div id="previewContainer" style="display: none; margin-bottom: 1.5rem; text-align: center;">
+                <h4>裁切邊界預覽 (紅色=頂部, 藍色=底部)</h4>
+                <div style="display: flex; gap: 1rem; margin-top: 1rem; align-items: center;">
+                    <label style="flex: 1;">頂部裁切 (0~0.5): <span id="headerVal">0.10</span>
+                        <input type="range" id="headerSlider" min="0" max="0.5" step="0.01" value="0.10" style="width: 100%;">
+                    </label>
+                    <label style="flex: 1;">底部裁切 (0~0.5): <span id="footerVal">0.10</span>
+                        <input type="range" id="footerSlider" min="0" max="0.5" step="0.01" value="0.10" style="width: 100%;">
+                    </label>
+                </div>
+                <div style="margin-top: 1rem; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: #fff;">
+                    <img id="previewImage" src="" alt="預覽載入中..." style="max-width: 100%; height: auto; max-height: 400px; display: block; margin: 0 auto;">
+                </div>
+            </div>
 
             <div class="options-group">
                 <label class="option-card">
@@ -234,7 +249,7 @@
                 </div>
             </div>
 
-            <button type="submit" id="submitBtn" class="submit-btn">開始處理</button>
+            <button type="submit" id="submitBtn" class="submit-btn" disabled>請先上傳 PDF 檔案</button>
         </form>
 
         <div class="progress-container" id="progressContainer">
@@ -263,41 +278,81 @@
         const percentageText = document.getElementById('percentageText');
         const logContainer = document.getElementById('logContainer');
         const downloadBtn = document.getElementById('downloadBtn');
+        
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const headerSlider = document.getElementById('headerSlider');
+        const footerSlider = document.getElementById('footerSlider');
+        const headerVal = document.getElementById('headerVal');
+        const footerVal = document.getElementById('footerVal');
 
         let pollingInterval = null;
+        let currentFileId = null;
+        let debounceTimer = null;
 
         // Drag and Drop Logic
         dropZone.addEventListener('click', () => fileInput.click());
-        
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('dragover');
-        });
-
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('dragover');
-        });
-
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
         dropZone.addEventListener('drop', (e) => {
             e.preventDefault();
             dropZone.classList.remove('dragover');
             if (e.dataTransfer.files.length) {
                 fileInput.files = e.dataTransfer.files;
-                fileNameDisplay.textContent = fileInput.files[0].name;
+                handleFileSelect();
             }
         });
 
-        fileInput.addEventListener('change', () => {
-            if (fileInput.files.length) {
-                fileNameDisplay.textContent = fileInput.files[0].name;
-            }
-        });
+        fileInput.addEventListener('change', handleFileSelect);
 
-        // Form Submit
+        async function handleFileSelect() {
+            if (!fileInput.files.length) return;
+            const file = fileInput.files[0];
+            fileNameDisplay.textContent = "上傳中: " + file.name;
+            submitBtn.disabled = true;
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            try {
+                const res = await fetch('/api/upload_file', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (data.file_id) {
+                    currentFileId = data.file_id;
+                    fileNameDisplay.textContent = file.name;
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = "開始處理";
+                    previewContainer.style.display = 'block';
+                    updatePreview();
+                }
+            } catch (e) {
+                alert('檔案上傳失敗: ' + e);
+                fileNameDisplay.textContent = "點擊或拖曳 PDF 檔案至此";
+            }
+        }
+        
+        function updatePreview() {
+            if (!currentFileId) return;
+            const h = headerSlider.value;
+            const f = footerSlider.value;
+            headerVal.textContent = h;
+            footerVal.textContent = f;
+            
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                let startPage = document.querySelector('[name="start_page"]').value || 1;
+                previewImage.src = `/api/render_preview/${currentFileId}?page=${startPage}&header=${h}&footer=${f}&_t=${Date.now()}`;
+            }, 500);
+        }
+        
+        headerSlider.addEventListener('input', updatePreview);
+        footerSlider.addEventListener('input', updatePreview);
+        document.querySelector('[name="start_page"]').addEventListener('change', updatePreview);
+
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
-            if (!fileInput.files.length) {
-                alert('請先選擇一個 PDF 檔案！');
+            if (!currentFileId) {
+                alert('請先上傳檔案！');
                 return;
             }
 
@@ -311,29 +366,26 @@
             logContainer.innerHTML = '';
 
             const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
+            formData.append('file_id', currentFileId);
             formData.append('convert_word', document.querySelector('[name="convert_word"]').checked);
             formData.append('extract_formulas', document.querySelector('[name="extract_formulas"]').checked);
+            formData.append('header_ratio', headerSlider.value);
+            formData.append('footer_ratio', footerSlider.value);
             
             let start = document.querySelector('[name="start_page"]').value;
             let end = document.querySelector('[name="end_page"]').value;
-            // Convert to 0-based index for backend if provided, else 0
             formData.append('start_page', start ? parseInt(start) - 1 : 0);
             formData.append('end_page', end ? parseInt(end) - 1 : 0);
 
             try {
-                const response = await fetch('/api/upload', {
-                    method: 'POST',
-                    body: formData
-                });
+                const response = await fetch('/api/process', { method: 'POST', body: formData });
                 const data = await response.json();
-                
                 if (data.task_id) {
-                    statusMessage.textContent = "檔案上傳成功，開始處理...";
+                    statusMessage.textContent = "任務已建立，開始處理...";
                     startPolling(data.task_id);
                 }
             } catch (err) {
-                alert('上傳失敗：' + err);
+                alert('啟動處理失敗：' + err);
                 resetUI();
             }
         });
