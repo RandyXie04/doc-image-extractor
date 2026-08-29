@@ -253,7 +253,7 @@ class PDFConversionAgent:
                 except OSError:
                     pass
 
-    def extract_formulas(self, dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print) -> list:
+    def extract_formulas(self, dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None) -> list:
         """
         [任務二核心] 使用 Pix2Text MFD 模型從未裁切原始 PDF 中偵測並擷取獨立公式截圖。
         """
