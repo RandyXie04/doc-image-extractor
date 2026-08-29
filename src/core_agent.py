@@ -82,7 +82,7 @@ class PDFConversionAgent:
             self.output_docx = output_docx
         else:
             base_name = os.path.splitext(os.path.basename(input_pdf))[0]
-            self.output_docx = f"{base_name}_已轉檔.docx"
+            self.output_docx = str(PATHS.data_dir / "02_intermediate" / f"{base_name}_已轉檔.docx")
 
         # ✅ 所有目錄預設由 PATHS 提供，不再使用裸字串相對路徑
         self.preview_dir = preview_dir if preview_dir else str(PATHS.preview_dir)
@@ -204,7 +204,7 @@ class PDFConversionAgent:
         finally:
             doc.close()
 
-    def convert_to_word(self, log_fn=print, progress_callback=None) -> bool:
+    def convert_to_word(self, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None) -> bool:
         """
         [任務一核心] 執行 PDF 動態邊界裁切並轉換為 Word (.docx)
         """
@@ -227,11 +227,25 @@ class PDFConversionAgent:
 
         log_fn(">>> 正在批次動態計算每頁裁切邊界...")
         with fitz.open(self.input_pdf) as doc:
-            for page in doc:
+            total_pages = len(doc)
+            end_page_idx = min(end_page_idx, total_pages - 1) if end_page_idx is not None else total_pages - 1
+            
+            # Guardrail 1: Limit max pages
+            total_to_process = end_page_idx - start_page_idx + 1
+            if total_to_process > CFG.max_safe_pages:
+                log_fn(f"[WARNING] Word 轉檔請求頁數 ({total_to_process}) 超過上限 ({CFG.max_safe_pages})，已截斷！")
+                end_page_idx = start_page_idx + CFG.max_safe_pages - 1
+                
+            for page_idx in range(start_page_idx, end_page_idx + 1):
+                page = doc[page_idx]
                 rect = page.rect
                 apply_top, apply_bottom, _, _ = self._detect_page_boundaries(page, plan)
                 page.set_cropbox(fitz.Rect(rect.x0, apply_top, rect.x1, apply_bottom))
 
+            # Only save the specific pages if we're not doing the whole book
+            if start_page_idx > 0 or end_page_idx < total_pages - 1:
+                doc.select(list(range(start_page_idx, end_page_idx + 1)))
+                
             doc.save(self.temp_cropped_pdf, deflate=True)
 
         log_fn(f">>> 邊界裁切完成！開始轉檔至 Word: '{self.output_docx}' (轉檔較耗時，請稍候)...")
@@ -464,7 +478,12 @@ class PDFConversionAgent:
 
     def execute_pipeline(self, convert_word: bool = True, extract_formulas: bool = True, formula_dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None):
         if convert_word:
-            self.convert_to_word(log_fn=log_fn, progress_callback=progress_callback)
+            self.convert_to_word(
+                start_page_idx=start_page_idx,
+                end_page_idx=end_page_idx,
+                log_fn=log_fn, 
+                progress_callback=progress_callback
+            )
             
         if extract_formulas:
             self.extract_formulas(
