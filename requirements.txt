@@ -1,0 +1,7 @@
+PyMuPDF==1.26.4
+opencv-python==5.0.0.93
+numpy==2.3.2
+pix2text==1.1.6
+pdf2docx
+tqdm==4.68.3
+python-dotenv==1.2.3
