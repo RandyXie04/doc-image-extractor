@@ -16,8 +16,17 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).parent.parent.parent))
 from src.core_agent import PDFConversionAgent
 from config import PATHS
+from scripts.cleanup_scratch import cleanup_scratch
 
 app = FastAPI(title="PDF AI 公式萃取站")
+
+@app.on_event("startup")
+async def on_startup():
+    # 每月 1 號自動清空 scratch 暫存
+    try:
+        cleanup_scratch(force=False, log_fn=print)
+    except Exception as e:
+        print(f"[Startup Warning] Scratch cleanup failed: {e}")
 
 app.add_middleware(
     CORSMiddleware,
