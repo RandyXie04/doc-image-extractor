@@ -27,9 +27,11 @@
 │   └── web/                # 🌐 FastAPI Web 伺服器與靜態前端
 │       ├── app.py          # FastAPI 應用伺服器
 │       └── static/         # HTML / CSS / JS 前端介面
-├── scripts/                # 🚀 啟動入口
+├── scripts/                # 🚀 啟動入口與維護工具
 │   ├── run.py              # Tkinter GUI 與 CLI 啟動點
-│   └── run_web.py          # Web 伺服器啟動腳本
+│   ├── run_web.py          # Web 伺服器啟動腳本
+│   └── cleanup_scratch.py  # 🧹 Scratch 暫存區定期清理腳本 (每月 1 號自動清空)
+├── scratch/                # 🧪 測試暫存與快照暫存區 (每月 1 號完全清空)
 ├── data/                   # 📦 資料與產出 (未受版本控制)
 │   ├── 01_input/           # 預設的 PDF 來源資料夾
 │   ├── 02_intermediate/    # 暫存檔與預覽圖
