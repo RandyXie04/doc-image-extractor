@@ -17,6 +17,9 @@
    * 遵循 Conventional Commits 格式（例如 `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`）。
    * 嚴禁將超過 GitHub 上限（100MB）的大型二進位檔案（如整本測試 PDF、生成大型 docx）提交至 Git 歷史紀錄中。
 
+4. **Skills 模組存放規範**：
+   * 未來新增之任何 Skill、領域能力或 Agent 提示詞/指令模組，一律統一存放於專案目錄下的 `config/skills/` 資料夾中進行集中管理。
+
 ---
 
 ## 🛡️ 系統脆弱性與極端防護標準 (Security & Stability Guardrails)
