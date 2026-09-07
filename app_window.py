@@ -6,7 +6,7 @@ import time
 import sys
 from pathlib import Path
 
-# 將專案根目錄加入 sys.path
+# // Append project root directory to sys.path
 root_dir = Path(__file__).parent.absolute()
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
@@ -14,7 +14,7 @@ if str(root_dir) not in sys.path:
 from src.web.app import app
 
 def find_available_port(start_port=8000, max_attempts=20):
-    """尋找本機可用的通訊埠"""
+    # // Find available local port
     for port in range(start_port, start_port + max_attempts):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
@@ -25,7 +25,7 @@ def find_available_port(start_port=8000, max_attempts=20):
     return start_port
 
 def wait_for_server(port, timeout=5.0):
-    """等待 FastAPI 伺服器在背景就緒，避免視窗載入過早顯示空白"""
+    # // Wait for FastAPI server to be ready
     start_time = time.time()
     while time.time() - start_time < timeout:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -44,21 +44,21 @@ if __name__ == '__main__':
     def start_server():
         uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning")
 
-    # 背景非同步啟動 FastAPI
+    # // Start FastAPI in background daemon thread
     t = threading.Thread(target=start_server, daemon=True)
     t.start()
     
-    # 確保伺服器已成功聆聽通訊埠
+    # // Ensure server is listening
     wait_for_server(port, timeout=3.0)
 
-    # 彈出原生桌面視窗 (WebView2)
+    # // Create native WebView2 window (Unicode escaped title for ASCII compliance)
     window = webview.create_window(
-        title="書籍轉檔與 AI 公式萃取數位化工具箱",
+        title="\u66f8\u7c4d\u8f49\u6a94\u8207 AI \u516c\u5f0f\u8403\u53d6\u6578\u4f4d\u5316\u5de5\u5177\u7bb1",
         url=f"http://127.0.0.1:{port}",
         width=1180,
         height=820,
         resizable=True
     )
     
-    # 啟動桌面視窗主迴圈
+    # // Start desktop UI loop
     webview.start()
