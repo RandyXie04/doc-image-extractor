@@ -103,6 +103,8 @@ def main() -> None:
 
     # 側邊欄：修復規則參考與狀態
     with st.sidebar:
+        st.page_link("app.py", label="返回工具箱首頁", icon="🏠")
+        st.divider()
         st.subheader("📌 支援修復規則對照")
         st.markdown(
             """
