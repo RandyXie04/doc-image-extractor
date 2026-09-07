@@ -1,34 +1,56 @@
-# .gitignore ── 版本控制排除清單
+﻿# .gitignore ?? ??批?皜
 
-# ── API 金鑰 ──
+# ?? API ? ??
 .env
 
-# ── Python 快取 ──
+# ?? Python 敹怠? ??
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 
-# ── 暫存與 Scratch 快取 ──
+# ?? ?怠???Scratch 敹怠? ??
 scratch/*
 !scratch/.gitkeep
 !scratch/README.md
 temp_cropped_optimized.pdf
 test_output.docx
-測試_已轉檔.docx
+皜祈岫_撌脰?瑼?docx
 
-# ── 測試資料庫與 PDF 資料 ──
+# ?? 皜祈岫鞈?摨怨? PDF 鞈? ??
 data/
 database_text/
-待提取公式檔案/
+敺??撘?獢?
 _archive/
 _originals/
 backup_originals/
 
-# ── 大型產出 ──
+# ?? 憭批??Ｗ ??
 extracted_formulas_mfd/
 extracted_formulas_mfd-2/
-AI_圖片處理_正式版/
+AI_????_甇????
 previews/
 *.zip
-*_已轉檔.docx
+*_撌脰?瑼?docx
+# ── 模型權重檔案（禁止提交至 Git，需獨立放置） ──
+*.pt
+*.pth
+*.onnx
+config/*.pt
+models/
+
+# ── 本地除錯與未追蹤圖檔 ──
+debug_*.jpg
+成果text/
+
+
+# ── 模型權重檔案（禁止提交至 Git，需獨立放置） ──
+*.pt
+*.pth
+*.onnx
+config/*.pt
+models/
+
+# ── 本地除錯與未追蹤圖檔 ──
+debug_*.jpg
+成果text/

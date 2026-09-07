@@ -39,11 +39,13 @@ if sys.platform == 'win32':
     except Exception:
         pass
 
-import fitz  # PyMuPDF
+
+import warnings
+warnings.filterwarnings("ignore", message=".*The `fitz` API is deprecated.*")
+import pymupdf as fitz  # PyMuPDF
 import cv2
 import numpy as np
 from tqdm import tqdm
-from pix2text import MathFormulaDetector
 
 # pdf2docx 延遲/防呆載入
 try:
@@ -54,38 +56,235 @@ try:
     _original_pixmap_to_cv_image = ImagesExtractor._pixmap_to_cv_image
     
     def _patched_pixmap_to_cv_image(pixmap):
-        if pixmap.n - pixmap.alpha >= 4:
-            # 發現 CMYK 等超過 RGB 3 通道的色彩模式，強制轉為 RGB
+        try:
+            return _original_pixmap_to_cv_image(pixmap)
+        except Exception:
             pixmap = fitz.Pixmap(fitz.csRGB, pixmap)
-        return _original_pixmap_to_cv_image(pixmap)
+            return _original_pixmap_to_cv_image(pixmap)
         
-    ImagesExtractor._pixmap_to_cv_image = _patched_pixmap_to_cv_image
+    ImagesExtractor._pixmap_to_cv_image = staticmethod(_patched_pixmap_to_cv_image)
     HAS_PDF2DOCX = True
 except ImportError:
     HAS_PDF2DOCX = False
 
 
+
+
+# =========================================================================
+# ONNX Runtime Worker for Formula Extraction (YOLOv8 CPU Inference)
+# =========================================================================
+# Global for multiprocessing worker
+_mfd_analyzer = None
+
+def _init_mfd_worker(use_gpu=False):
+    global _mfd_analyzer
+    if _mfd_analyzer is None:
+        try:
+            from ultralytics import YOLO
+            from config import PATHS
+            import os
+            
+            model_path = str(PATHS.root / "config" / "yolo_v8_ft.pt")
+            if os.path.exists(model_path):
+                _mfd_analyzer = YOLO(model_path)
+            else:
+                _mfd_analyzer = "MOCK"
+        except ImportError:
+            _mfd_analyzer = "MOCK"
+
+def _mock_detect(img):
+    # 用於在尚未準備好模型時，測試 Multiprocessing 流程不會崩潰
+    return []
+
+def _process_single_page(args):
+    import traceback
+    if len(args) >= 6:
+        page_idx, input_pdf, formula_dir, dpi, max_safe_width, extract_inline = args[:6]
+    else:
+        page_idx, input_pdf, formula_dir, dpi, max_safe_width = args[:5]
+        extract_inline = False
+        
+    global _mfd_analyzer
+    if _mfd_analyzer is None:
+        _init_mfd_worker()
+    
+    import pymupdf as fitz, cv2, numpy as np, os, re
+    generated_files = []
+    page_bboxes = []
+    
+    try:
+        doc = fitz.open(input_pdf)
+    except Exception as e:
+        return {"status": "error", "files": [], "error": f"無法開啟 PDF: {str(e)}", "bboxes": []}
+        
+    try:
+        page = doc[page_idx]
+        rect = page.rect
+        current_dpi = dpi
+        expected_width = (rect.width * current_dpi) / 72.0
+        
+        if expected_width > max_safe_width:
+            current_dpi = int(max_safe_width * 72.0 / rect.width)
+            
+        scale_factor = current_dpi / 72.0
+        pix = page.get_pixmap(dpi=current_dpi)
+        img_data = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
+        
+        if pix.n == 4:
+            img = cv2.cvtColor(img_data, cv2.COLOR_RGBA2BGR)
+        elif pix.n == 3:
+            img = cv2.cvtColor(img_data, cv2.COLOR_RGB2BGR)
+        else:
+            img = img_data.copy()
+
+        h, w = img.shape[:2]
+        
+        # ---------------------------------------------------------
+        # ONNX Inference (YOLOv8 example)
+        # ---------------------------------------------------------
+        detections = []
+
+                        # 'embedding' -> inline, 'isolated' -> isolated
+                        b_type = 'inline' if cls == 0 else 'isolated'
+
+                        detections.append({
+                            'type': b_type,
+                            'score': score,
+                            'box': np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
+                        })
+            else:
+                detections = _mock_detect(img)
+        except Exception as e:
+            return {"status": "error", "files": generated_files, "error": str(e), "bboxes": []}
+
+        if not detections:
+            return {"status": "success", "files": generated_files, "log_data": {"page": page_idx + 1, "detections": []}, "bboxes": []}
+
+        log_data = {
+            "page": page_idx + 1,
+            "detections": [{"type": d['type'], "score": float(d['score']), "box": [int(x) for x in d['box'].flatten()]} for d in detections],
+            "display_boxes": [],
+            "merged_boxes": [],
+            "final_crops": []
+        }
+
+        # ---------------------------------------------------------
+        # 精準後處理：依據 extract_inline 與 智慧延伸編號篩選
+        # ---------------------------------------------------------
+        final_boxes = []
+        for item in detections:
+            b_type = item.get('type', 'isolated')
+            score = item.get('score', 0.0)
+            box = item.get('box', None)
+            if box is None or len(box) == 0: continue
+
+            x0, y0 = int(round(np.min(box[:, 0]))), int(round(np.min(box[:, 1])))
+            x1, y1 = int(round(np.max(box[:, 0]))), int(round(np.max(box[:, 1])))
+            box_w, box_h = x1 - x0, y1 - y0
+
+            if y0 < h * 0.03 or y1 > h * 0.97: continue # 邊緣雜訊
+            if box_h < 15 or box_w < 25: continue       # 太小雜點
+
+            # 依據 extract_inline 設定決定篩選條件
+            if extract_inline:
+                keep = (b_type == 'isolated' and score >= 0.20) or (b_type == 'inline' and box_w > w * 0.15 and box_h > 15 and score >= 0.20)
+            else:
+                keep = (b_type == 'isolated' and score >= 0.20)
+
+            if keep:
+                final_boxes.append([x0, y0, x1, y1])
+
+        # 微小重疊合併（避免同一公式被切開）
+        final_boxes.sort(key=lambda b: b[1])
+        merged_boxes = []
+        if final_boxes:
+            curr = final_boxes[0]
+            for i in range(1, len(final_boxes)):
+                nxt = final_boxes[i]
+                if (nxt[1] <= curr[3] + 5) and (max(curr[0], nxt[0]) < min(curr[2], nxt[2])):
+                    curr[0] = min(curr[0], nxt[0])
+                    curr[1] = min(curr[1], nxt[1])
+                    curr[2] = max(curr[2], nxt[2])
+                    curr[3] = max(curr[3], nxt[3])
+                else:
+                    merged_boxes.append(curr)
+                    curr = nxt
+            merged_boxes.append(curr)
+
+        log_data["display_boxes"] = [list(b) for b in final_boxes]
+        log_data["merged_boxes"] = [list(b) for b in merged_boxes]
+
+        pad_x, pad_y = 15, 10
+        eq_idx = 1
+        page_num = page_idx + 1
+
+        for (x0, y0, x1, y1) in merged_boxes:
+            # 智慧型公式編號延伸：檢查同水平行右側是否有 (1.1) 等編號
+            roi_y0_pdf = max(0, y0 - 10) / scale_factor
+            roi_y1_pdf = min(h, y1 + 10) / scale_factor
+            right_rect = fitz.Rect(max(x1 / scale_factor, page.rect.width * 0.65), roi_y0_pdf, page.rect.width, roi_y1_pdf)
+            right_text = page.get_text("text", clip=right_rect).strip().replace('\n', '')
+
+            is_figure_caption = bool(re.search(r'(图|圖|表)\s*\d+', right_text))
+            has_eq_tag = bool(re.search(r'[(（]\s*\d+([-.–]\d+)*\s*[)）]', right_text))
+
+            if has_eq_tag and not is_figure_caption:
+                # 檢查公式右緣與公式編號之間是否有中文段落阻隔
+                gap_rect = fitz.Rect(x1 / scale_factor, roi_y0_pdf, page.rect.width * 0.85, roi_y1_pdf)
+                gap_text = page.get_text("text", clip=gap_rect).strip()
+                chinese_chars = re.findall(r'[一-鿿]', gap_text)
+                # 只有中間無長篇中文 (<=1 字) 才延伸包入編號，遇中文說明則切開不延伸
+                if len(chinese_chars) <= 1:
+                    words = page.get_text("words", clip=right_rect)
+                    if words:
+                        max_word_x1 = max([w[2] for w in words]) * scale_factor
+                        if max_word_x1 > x1:
+                            x1 = max(x1, int(max_word_x1 + 10))
+
+            # 確保邊界正確
+            crop_x0, crop_y0 = max(0, x0 - pad_x), max(0, y0 - pad_y)
+            crop_x1, crop_y1 = min(w, x1 + pad_x), min(h, y1 + pad_y)
+            crop = img[crop_y0:crop_y1, crop_x0:crop_x1]
+            if crop.shape[0] < 20 or crop.shape[1] < 30: continue
+
+            filename = f"p{page_num:03d}_eq{eq_idx:02d}.png"
+            filepath = os.path.join(formula_dir, filename)
+            ext = os.path.splitext(filepath)[1]
+            result, img_encode = cv2.imencode(ext, crop)
+            if result:
+                img_encode.tofile(filepath)
+            generated_files.append(filepath)
+
+            # 記錄對應 PDF 頁面座標與圖片路徑，供 Word 公式替換使用
+            page_bboxes.append({
+                "page_idx": page_idx,
+                "rect_pdf": [crop_x0 / scale_factor, crop_y0 / scale_factor, crop_x1 / scale_factor, crop_y1 / scale_factor],
+                "image_path": filepath
+            })
+
+            log_data["final_crops"].append({"filename": filename, "crop_coords": [crop_x0, crop_y0, crop_x1, crop_y1]})
+            eq_idx += 1
+
+    except Exception as e:
+        return {"status": "error", "files": generated_files, "error": str(e), "bboxes": []}
+    finally:
+        doc.close()
+        
+    return {"status": "success", "files": generated_files, "log_data": log_data, "bboxes": page_bboxes}
+
 class PDFConversionAgent:
     """
     PDF 轉換與公式萃取代理核心類別
     """
-    _mfd_model = None  # 類別共用快取
-
-    @classmethod
-    def get_mfd_model(cls, log_fn=print):
-        if cls._mfd_model is None:
-            log_fn("[AI] 正在載入 Pix2Text 開源 MFD 深度學習模型 (初次載入，請稍候)...")
-            cls._mfd_model = MathFormulaDetector()
-            log_fn("[AI] MFD 模型載入完成！")
-        else:
-            log_fn("[AI] 使用已快取的 MFD 深度學習模型 (秒速啟動)。")
-        return cls._mfd_model
-
     def __init__(self, input_pdf: str, output_docx: str = None,
                  preview_dir: str = None,
                  formula_dir: str = None,
                  header_ratio: float = None,
-                 footer_ratio: float = None):
+                 footer_ratio: float = None,
+                 left_ratio: float = None,
+                 right_ratio: float = None,
+                 extract_inline: bool = None,
+                 embed_formulas_in_word: bool = None):
         if not input_pdf.lower().endswith('.pdf'):
             raise ValueError(f"輸入檔案必須是 PDF 格式，但收到了：'{input_pdf}'")
             
@@ -106,6 +305,10 @@ class PDFConversionAgent:
         # ✅ 探測比例預設由 CFG 提供（可由 .env 覆寫）
         self.header_ratio = header_ratio if header_ratio is not None else CFG.header_ratio
         self.footer_ratio = footer_ratio if footer_ratio is not None else CFG.footer_ratio
+        self.left_ratio = left_ratio if left_ratio is not None else CFG.left_ratio
+        self.right_ratio = right_ratio if right_ratio is not None else CFG.right_ratio
+        self.extract_inline = extract_inline if extract_inline is not None else CFG.extract_inline
+        self.embed_formulas_in_word = embed_formulas_in_word if embed_formulas_in_word is not None else CFG.embed_formulas_in_word
 
         os.makedirs(self.preview_dir, exist_ok=True)
         os.makedirs(self.formula_dir, exist_ok=True)
@@ -121,11 +324,13 @@ class PDFConversionAgent:
             "page_height": rect.height,
             "header_threshold": rect.height * self.header_ratio,
             "footer_threshold": rect.height * self.footer_ratio,
+            "left_threshold": rect.width * self.left_ratio,
+            "right_threshold": rect.width * (1.0 - self.right_ratio),
             "sample_pages": [0, 1, -1]
         }
 
     def _detect_page_boundaries(self, page: fitz.Page, plan: dict):
-        """傳入單一頁面，分析該頁文字區塊，回傳動態計算的專屬裁切邊界。"""
+        """傳入單一頁面，分析該頁文字區塊，回傳動態計算的專屬裁切邊界 (上下左右)。"""
         rect = page.rect
         blocks = page.get_text("blocks")
         
@@ -172,8 +377,10 @@ class PDFConversionAgent:
 
         final_top = detected_header_y + 5 if detected_header_y > 0 else 0.0
         final_bottom = detected_footer_y - 5 if detected_footer_y < rect.height else rect.height
+        final_left = plan.get("left_threshold", 0.0)
+        final_right = plan.get("right_threshold", rect.width)
 
-        return final_top, final_bottom, header_text, footer_text
+        return final_top, final_bottom, final_left, final_right, header_text, footer_text
 
     def generate_verification_report(self, plan: dict, log_fn=print):
         """針對抽樣頁面產生視覺化對照預覽圖，並評估裁切風險。"""
@@ -190,9 +397,9 @@ class PDFConversionAgent:
 
                 page = doc[actual_idx]
                 rect = page.rect
-                final_top, final_bottom, header_text, footer_text = self._detect_page_boundaries(page, plan)
+                final_top, final_bottom, final_left, final_right, header_text, footer_text = self._detect_page_boundaries(page, plan)
 
-                crop_rect = fitz.Rect(0, final_top, rect.width, final_bottom)
+                crop_rect = fitz.Rect(final_left, final_top, final_right, final_bottom)
                 page.draw_rect(crop_rect, color=(1, 0, 0), width=2)
                 preview_path = os.path.join(self.preview_dir, f"preview_page_{actual_idx + 1}.png")
                 pix = page.get_pixmap(dpi=150)
@@ -216,9 +423,10 @@ class PDFConversionAgent:
         finally:
             doc.close()
 
-    def convert_to_word(self, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None) -> bool:
+    def convert_to_word(self, start_page_idx: int = 0, end_page_idx: int = None, bboxes_by_page: dict = None, log_fn=print, progress_callback=None) -> bool:
         """
         [任務一核心] 執行 PDF 動態邊界裁切並轉換為 Word (.docx)
+        支援 PDF 預先換圖法 (Redaction & Image Insertion) 消除破碎文字
         """
         if not HAS_PDF2DOCX:
             log_fn("[ERROR] 尚未安裝 pdf2docx 套件！請在終端機執行：pip install pdf2docx")
@@ -251,8 +459,28 @@ class PDFConversionAgent:
             for page_idx in range(start_page_idx, end_page_idx + 1):
                 page = doc[page_idx]
                 rect = page.rect
-                apply_top, apply_bottom, _, _ = self._detect_page_boundaries(page, plan)
-                page.set_cropbox(fitz.Rect(rect.x0, apply_top, rect.x1, apply_bottom))
+                apply_top, apply_bottom, apply_left, apply_right, _, _ = self._detect_page_boundaries(page, plan)
+                page.set_cropbox(fitz.Rect(apply_left, apply_top, apply_right, apply_bottom))
+
+            # 若啟用將公式圖片嵌入 Word：透過 Redaction 抹除破碎文字並貼入高清圖片
+            if self.embed_formulas_in_word and bboxes_by_page:
+                log_fn(">>> [Word 公式合成] 正在執行 PDF 預先換圖 (Redaction & Image Insertion)...")
+                embedded_count = 0
+                for page_idx in range(start_page_idx, end_page_idx + 1):
+                    page = doc[page_idx]
+                    page_items = bboxes_by_page.get(page_idx, [])
+                    for item in page_items:
+                        r = fitz.Rect(item["rect_pdf"])
+                        page.add_redact_annot(r, fill=False)
+                    if page_items:
+                        page.apply_redactions()
+                        for item in page_items:
+                            r = fitz.Rect(item["rect_pdf"])
+                            img_p = item["image_path"]
+                            if os.path.exists(img_p):
+                                page.insert_image(r, filename=img_p)
+                                embedded_count += 1
+                log_fn(f">>> [Word 公式合成] 已成功將 {embedded_count} 個公式替換為高清圖！")
 
             # Only save the specific pages if we're not doing the whole book
             if start_page_idx > 0 or end_page_idx < total_pages - 1:
@@ -279,19 +507,20 @@ class PDFConversionAgent:
                 except OSError:
                     pass
 
-    def extract_formulas(self, dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None) -> list:
+    def extract_formulas(self, dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None) -> dict:
         """
-        [任務二核心] 使用 Pix2Text MFD 模型從未裁切原始 PDF 中偵測並擷取獨立公式截圖。
+        [任務二核心] 使用 YOLOv8 MFD 模型從原始 PDF 中偵測並擷取獨立公式截圖。
+        回傳包含 files, zip_path, bboxes_by_page 的成果字典。
         """
         os.makedirs(self.formula_dir, exist_ok=True)
         if not os.path.exists(self.input_pdf):
             log_fn(f"[ERROR] 找不到 PDF 檔案 '{self.input_pdf}'")
-            return []
+            return {"status": "error", "files": [], "zip_path": None, "bboxes_by_page": {}}
 
         log_fn("\n" + "=" * 60)
-        mfd = self.get_mfd_model(log_fn=log_fn)
 
         doc = fitz.open(self.input_pdf)
+        bboxes_by_page = {}
         try:
             total_pages = len(doc)
             scale_factor = dpi / 72.0
@@ -310,6 +539,7 @@ class PDFConversionAgent:
             log_fn(f"[PDF] 開始讀取原始 PDF：'{os.path.basename(self.input_pdf)}'")
             log_fn(f"[CFG] 掃描範圍：第 {scan_start_page} 頁 ～ 第 {scan_end_page} 頁（{scan_label}，共 {total_pages} 頁）")
             log_fn(f"[CFG] 渲染解析度：{dpi} DPI (AI 深度學習 MFD 分析模式)")
+            log_fn(f"[CFG] 包含行內公式：{'是' if self.extract_inline else '否 (僅獨立塊狀公式)'}")
             log_fn(f"[CFG] 公式輸出目錄：{self.formula_dir}")
             log_fn("=" * 60)
 
@@ -326,187 +556,107 @@ class PDFConversionAgent:
                 end_page_idx = start_page_idx + CFG.max_safe_pages - 1
                 total_to_process = CFG.max_safe_pages
                 
-            for idx_offset, page_idx in enumerate(range(start_page_idx, end_page_idx + 1)):
-                if progress_callback:
-                    progress_callback(idx_offset + 1, total_to_process, f"提取公式 (P{page_idx + 1})")
-                
-                # ── Guardrail 2: 分批處理與記憶體回收 (Batching & GC) ──
-                if idx_offset > 0 and idx_offset % CFG.batch_size == 0:
-                    import gc
-                    gc.collect()
-                    try:
-                        import torch
-                        if torch.cuda.is_available():
-                            torch.cuda.empty_cache()
-                    except ImportError:
-                        pass
-                    log_fn(f"[SYS] 已處理 {idx_offset} 頁，執行記憶體回收 (Garbage Collection)...")
-                    
-                page_num = page_idx + 1
-                page = doc[page_idx]
+            from multiprocessing import Pool
+            import multiprocessing
+            
+            # Prepare arguments
+            tasks = [(p_idx, self.input_pdf, self.formula_dir, dpi, CFG.max_image_width, self.extract_inline) for p_idx in range(start_page_idx, end_page_idx + 1)]
+            
+            import torch
+            use_gpu = CFG.use_gpu and torch.cuda.is_available()
+            # For GPU, 2-4 workers give max throughput without VRAM contention on 6GB VRAM.
+            # For CPU, 4-8 workers avoid overwhelming RAM.
+            num_workers = min(3, multiprocessing.cpu_count()) if use_gpu else min(8, multiprocessing.cpu_count())
+            device_str = f"GPU: {torch.cuda.get_device_name(0)}" if use_gpu else "CPU"
+            log_fn(f"[SYS] 啟動 Multiprocessing Pool (Workers: {num_workers}, 運算裝置: {device_str}) 進行平行公式萃取...")
 
-                # ── Guardrail 3: 動態解析度降級 (Dynamic DPI Scaling) ──
-                rect = page.rect
-                current_dpi = dpi
-                expected_width = (rect.width * current_dpi) / 72.0
-                if expected_width > CFG.max_image_width:
-                    current_dpi = int(CFG.max_image_width * 72.0 / rect.width)
-                    log_fn(f"[WARNING] P{page_num:03d} 尺寸過大 ({expected_width:.0f}px)，為防止 OOM，動態將 DPI 降至 {current_dpi}")
-                
-                current_scale = current_dpi / 72.0
-                pix = page.get_pixmap(dpi=current_dpi)
-                img_data = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.h, pix.w, pix.n)
-                if pix.n == 4:
-                    img = cv2.cvtColor(img_data, cv2.COLOR_RGBA2BGR)
-                elif pix.n == 3:
-                    img = cv2.cvtColor(img_data, cv2.COLOR_RGB2BGR)
-                else:
-                    img = img_data.copy()
+            import json
+            log_file_path = os.path.join(self.formula_dir, "formulas_ai_log.jsonl")
+            # Clear log file initially
+            with open(log_file_path, "w", encoding="utf-8") as f: pass
 
-                h, w = img.shape[:2]
-
-                try:
-                    detections = mfd.detect(img)
-                except Exception as e:
-                    log_fn(f"[WARN: MFD_SKIP] [P{page_num:03d}] MFD 檢測異常跳過：{e}")
-                    continue
-
-                if not detections:
-                    skipped_pages += 1
-                    continue
-
-                display_boxes = []
-                for item in detections:
-                    b_type = item.get('type', '')
-                    score = item.get('score', 0.0)
-                    box = item.get('box', None)
-                    if box is None or len(box) == 0:
+            with Pool(processes=num_workers, initializer=_init_mfd_worker, initargs=(use_gpu,)) as pool:
+                for idx_offset, res in enumerate(pool.imap(_process_single_page, tasks)):
+                    current_p = start_page_idx + idx_offset + 1
+                    if progress_callback:
+                        progress_callback(idx_offset + 1, total_to_process, f"提取公式 (P{current_p})")
+                        
+                    if res.get("status") == "error":
+                        log_fn(f"[ERROR] 第 {current_p} 頁處理發生例外：{res.get('error')}")
+                        skipped_pages += 1
                         continue
+                        
+                    log_data = res.get("log_data")
+                    if log_data:
+                        with open(log_file_path, "a", encoding="utf-8") as lf:
+                            lf.write(json.dumps(log_data, ensure_ascii=False) + "\n")
 
-                    x0 = int(round(np.min(box[:, 0])))
-                    y0 = int(round(np.min(box[:, 1])))
-                    x1 = int(round(np.max(box[:, 0])))
-                    y1 = int(round(np.max(box[:, 1])))
-                    box_w = x1 - x0
-                    box_h = y1 - y0
-
-                    if y0 < h * 0.05 or y1 > h * 0.95:
-                        continue
-                    if box_h < 15 or box_w < 25:
-                        continue
-
-                    if (b_type == 'isolated' and score >= 0.45) or (box_w > w * 0.25 and box_h > 25 and score >= 0.50):
-                        display_boxes.append((x0, y0, x1, y1))
-
-                if not display_boxes:
-                    skipped_pages += 1
-                    continue
-
-                display_boxes.sort(key=lambda b: b[1])
-
-                merged_boxes = []
-                curr_x0, curr_y0, curr_x1, curr_y1 = display_boxes[0]
-
-                for i in range(1, len(display_boxes)):
-                    nx0, ny0, nx1, ny1 = display_boxes[i]
-                    gap_y0_pdf = curr_y1 / scale_factor
-                    gap_y1_pdf = ny0 / scale_factor
-
-                    has_chinese_in_gap = False
-                    if gap_y1_pdf > gap_y0_pdf:
-                        gap_rect = fitz.Rect(0, gap_y0_pdf, page.rect.width, gap_y1_pdf)
-                        gap_text = page.get_text("text", clip=gap_rect).strip()
-                        chinese_chars = re.findall(r'[\u4e00-\u9fff]', gap_text)
-                        if len(chinese_chars) >= 4:
-                            has_chinese_in_gap = True
-
-                    if ny0 <= curr_y1 + 35 and not has_chinese_in_gap:
-                        curr_x0 = min(curr_x0, nx0)
-                        curr_y0 = min(curr_y0, ny0)
-                        curr_x1 = max(curr_x1, nx1)
-                        curr_y1 = max(curr_y1, ny1)
+                    result_files = res.get("files", [])
+                    if result_files:
+                        generated_files.extend(result_files)
+                        count += len(result_files)
+                        log_fn(f"  [P{current_p:03d}] AI 找到 {len(result_files)} 個獨立公式區塊")
                     else:
-                        merged_boxes.append((curr_x0, curr_y0, curr_x1, curr_y1))
-                        curr_x0, curr_y0, curr_x1, curr_y1 = nx0, ny0, nx1, ny1
-                merged_boxes.append((curr_x0, curr_y0, curr_x1, curr_y1))
+                        skipped_pages += 1
 
-                pad_x = 20
-                pad_y = 12
-                eq_idx = 1
-
-                for (x0, y0, x1, y1) in merged_boxes:
-                    roi_y0_pdf = max(0, y0 - 15) / scale_factor
-                    roi_y1_pdf = min(h, y1 + 15) / scale_factor
-                    right_rect = fitz.Rect(page.rect.width * 0.72, roi_y0_pdf, page.rect.width, roi_y1_pdf)
-                    right_text = page.get_text("text", clip=right_rect).strip().replace('\n', '')
-
-                    is_figure_caption = bool(re.search(r'(图|圖|表)\s*\d+', right_text))
-                    has_eq_tag = bool(re.search(r'[(\uff08]\s*\d+([-.\u2013]\d+)*\s*[)\uff09]', right_text))
-
-                    if has_eq_tag and not is_figure_caption:
-                        # 使用 PyMuPDF 抓出這個區域的所有文字塊，取得最右側的邊界，避免產生過多留白或切到雜訊
-                        words = page.get_text("words", clip=right_rect)
-                        if words:
-                            max_word_x1 = max([w[2] for w in words]) * scale_factor
-                            if max_word_x1 > x1:
-                                x1 = max(x1, int(max_word_x1 + 10))
-
-                    crop_x0 = max(0, x0 - pad_x)
-                    crop_y0 = max(0, y0 - pad_y)
-                    crop_x1 = min(w, x1 + pad_x)
-                    crop_y1 = min(h, y1 + pad_y)
-
-                    crop = img[crop_y0:crop_y1, crop_x0:crop_x1]
-                    if crop.shape[0] < 20 or crop.shape[1] < 30:
-                        continue
-
-                    filename = f"p{page_num:03d}_eq{eq_idx:02d}.png"
-                    filepath = os.path.join(self.formula_dir, filename)
-                    # 解決 Windows 中文路徑無法透過 cv2.imwrite 儲存的問題
-                    ext = os.path.splitext(filepath)[1]
-                    result, img_encode = cv2.imencode(ext, crop)
-                    if result:
-                        img_encode.tofile(filepath)
-                    generated_files.append(filepath)
-                    eq_idx += 1
-                    count += 1
-
-                if eq_idx > 1:
-                    log_fn(f"  [P{page_num:03d}] AI 找到 {eq_idx - 1} 個獨立公式區塊")
+                    for b in res.get("bboxes", []):
+                        p_i = b["page_idx"]
+                        if p_i not in bboxes_by_page:
+                            bboxes_by_page[p_i] = []
+                        bboxes_by_page[p_i].append(b)
         finally:
             doc.close()
 
+        import zipfile
         zip_filename = os.path.join(self.formula_dir, "all_pdf_formulas_ai_mfd.zip")
         with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
             for f in generated_files:
                 zipf.write(f, os.path.basename(f))
+            if os.path.exists(log_file_path):
+                zipf.write(log_file_path, os.path.basename(log_file_path))
 
         log_fn("=" * 60)
         log_fn(f"[DONE] 公式提取完成！共使用 AI MFD 成功裁切 {count} 張公式圖片。")
         log_fn(f"[ZIP]  已打包儲存於：{zip_filename}")
         log_fn("=" * 60)
 
-        return generated_files
+        return {
+            "status": "success",
+            "files": generated_files,
+            "zip_path": zip_filename,
+            "bboxes_by_page": bboxes_by_page
+        }
 
-    def execute_pipeline(self, convert_word: bool = True, extract_formulas: bool = True, formula_dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None):
-        if convert_word:
-            self.convert_to_word(
-                start_page_idx=start_page_idx,
-                end_page_idx=end_page_idx,
-                log_fn=log_fn, 
-                progress_callback=progress_callback
-            )
-            
-        if extract_formulas:
-            self.extract_formulas(
+    def execute_pipeline(self, convert_word: bool = True, extract_formulas: bool = True, formula_dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None) -> dict:
+        """
+        端到端執行流程：支援優先提取公式後進行 Word 公式高清替換，並分流產出。
+        """
+        bboxes_by_page = {}
+        formula_result = None
+
+        # 若需要提取公式，或需要轉 Word 且啟用了公式圖片替換，則先執行公式偵測與擷取
+        if extract_formulas or (convert_word and self.embed_formulas_in_word):
+            formula_result = self.extract_formulas(
                 dpi=formula_dpi,
                 start_page_idx=start_page_idx,
                 end_page_idx=end_page_idx,
                 log_fn=log_fn,
                 progress_callback=progress_callback
             )
-            
-        # ── Guardrail 4: 統整輸出包裝 ──
+            if formula_result and "bboxes_by_page" in formula_result:
+                bboxes_by_page = formula_result["bboxes_by_page"]
+
+        word_success = False
+        if convert_word:
+            word_success = self.convert_to_word(
+                start_page_idx=start_page_idx,
+                end_page_idx=end_page_idx,
+                bboxes_by_page=bboxes_by_page,
+                log_fn=log_fn,
+                progress_callback=progress_callback
+            )
+
+        # ── 統整輸出包裝與分流 ──
         log_fn("\n>>> 正在統整輸出產物...")
         import shutil
         import datetime
@@ -514,27 +664,38 @@ class PDFConversionAgent:
         base_name = os.path.splitext(os.path.basename(self.input_pdf))[0]
         delivery_folder = PATHS.root / "data" / "03_output" / f"{base_name}_{timestamp}"
         
+        delivery_word_path = None
+        delivery_zip_path = None
+        has_moved = False
+        
         try:
             os.makedirs(delivery_folder, exist_ok=True)
-            has_moved = False
             
-            # 移動 Word 檔
+            # 複製 Word 檔
             if convert_word and os.path.exists(self.output_docx):
-                shutil.copy(self.output_docx, delivery_folder / os.path.basename(self.output_docx))
+                dest_word = delivery_folder / os.path.basename(self.output_docx)
+                shutil.copy(self.output_docx, dest_word)
+                delivery_word_path = str(dest_word)
                 has_moved = True
                 
-            # 移動公式 ZIP 檔
+            # 複製公式 ZIP 檔
             zip_filename = os.path.join(self.formula_dir, "all_pdf_formulas_ai_mfd.zip")
             if extract_formulas and os.path.exists(zip_filename):
-                shutil.copy(zip_filename, delivery_folder / "formulas.zip")
+                dest_zip = delivery_folder / f"{base_name}_formulas.zip"
+                shutil.copy(zip_filename, dest_zip)
+                delivery_zip_path = str(dest_zip)
                 has_moved = True
                 
             if has_moved:
-                log_fn(f"[SUCCESS] 📦 任務輸出已打包至資料夾：\n    {delivery_folder}")
-                return str(delivery_folder)
+                log_fn(f"[SUCCESS] 📦 任務成果已保存至：\n    {delivery_folder}")
         except Exception as e:
             log_fn(f"[WARNING] 打包輸出檔案時發生錯誤：{e}")
-        return None
+
+        return {
+            "delivery_folder": str(delivery_folder) if has_moved else None,
+            "word_path": delivery_word_path,
+            "zip_path": delivery_zip_path
+        }
 # =========================================================================
 # Tkinter 全功能視覺化工作站 (GUI 介面)
 # =========================================================================

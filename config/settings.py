@@ -118,6 +118,10 @@ class _Config:
     formula_dpi:    int   = field(default_factory=lambda: int(os.getenv("FORMULA_DPI", "300")))
     header_ratio:   float = field(default_factory=lambda: float(os.getenv("HEADER_RATIO", "0.15")))
     footer_ratio:   float = field(default_factory=lambda: float(os.getenv("FOOTER_RATIO", "0.92")))
+    left_ratio:     float = field(default_factory=lambda: float(os.getenv("LEFT_RATIO", "0.0")))
+    right_ratio:    float = field(default_factory=lambda: float(os.getenv("RIGHT_RATIO", "0.0")))
+    extract_inline: bool  = field(default_factory=lambda: os.getenv("EXTRACT_INLINE", "false").lower() == "true")
+    embed_formulas_in_word: bool = field(default_factory=lambda: os.getenv("EMBED_FORMULAS_IN_WORD", "true").lower() == "true")
     easyocr_langs:  list  = field(default_factory=lambda: os.getenv("EASYOCR_LANGS", "ch_sim,en").split(","))
     
     # ── 資源限制防護 (Guardrails) ──
