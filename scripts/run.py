@@ -43,7 +43,6 @@ import fitz  # PyMuPDF
 import cv2
 import numpy as np
 from tqdm import tqdm
-from pix2text import MathFormulaDetector
 
 # pdf2docx 延遲/防呆載入
 try:

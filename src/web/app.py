@@ -7,13 +7,16 @@ import uuid
 import os
 import io
 import sys
-import fitz
+
+import warnings
+warnings.filterwarnings("ignore", message=".*The `fitz` API is deprecated.*")
+import pymupdf as fitz
 import numpy as np
 from PIL import Image, ImageDraw
 from pathlib import Path
 
 # Add project root to path
-sys.path.append(str(Path(__file__).parent.parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.core_agent import PDFConversionAgent
 from config import PATHS
 from scripts.cleanup_scratch import cleanup_scratch
@@ -41,23 +44,24 @@ tasks = {}
 
 @app.post("/api/upload_file")
 async def upload_file(file: UploadFile = File(...)):
-    """接收上傳的 PDF 檔案並回傳 file_id"""
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="只支援 PDF 檔案")
-        
-    file_id = f"{uuid.uuid4().hex[:8]}_{file.filename}"
-    input_dir = PATHS.input_dir
-    input_dir.mkdir(parents=True, exist_ok=True)
-    
-    file_path = input_dir / file_id
+    file_id = str(uuid.uuid4()) + ".pdf"
+    file_path = PATHS.input_dir / file_id
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    return {"file_id": file_id}
+    total_pages = 1
+    try:
+        import pymupdf as fitz
+        with fitz.open(file_path) as doc:
+            total_pages = len(doc)
+    except Exception:
+        pass
+
+    return {"file_id": file_id, "total_pages": total_pages}
 
 @app.get("/api/render_preview/{file_id}")
-async def render_preview(file_id: str, page: int = 1, header: float = 0.1, footer: float = 0.1):
-    """回傳帶有裁切輔助線的單頁 PDF 預覽圖"""
+async def render_preview(file_id: str, page: int = 1, header: float = 0.1, footer: float = 0.1, left: float = 0.0, right: float = 0.0):
+    """回傳帶有裁切輔助線（上下紅藍、左右綠）的單頁 PDF 預覽圖"""
     file_path = PATHS.input_dir / file_id
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
@@ -71,14 +75,23 @@ async def render_preview(file_id: str, page: int = 1, header: float = 0.1, foote
             pix = page_obj.get_pixmap(dpi=72)
             img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
             
-            # 畫紅線
+            # 繪製輔助線
             draw = ImageDraw.Draw(img)
             w, h = img.size
             y_header = int(h * header)
-            y_footer = int(h * (1 - footer))
+            y_footer = int(h * (1.0 - footer))
+            x_left = int(w * left)
+            x_right = int(w * (1.0 - right))
             
+            # 上下水平輔助線 (頂部紅、底部藍)
             draw.line([(0, y_header), (w, y_header)], fill="red", width=2)
             draw.line([(0, y_footer), (w, y_footer)], fill="blue", width=2)
+
+            # 左右垂直輔助線 (綠色)
+            if x_left > 0:
+                draw.line([(x_left, 0), (x_left, h)], fill="green", width=2)
+            if right > 0:
+                draw.line([(x_right, 0), (x_right, h)], fill="green", width=2)
             
             buf = io.BytesIO()
             img.save(buf, format="JPEG", quality=80)
@@ -88,7 +101,7 @@ async def render_preview(file_id: str, page: int = 1, header: float = 0.1, foote
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formulas: bool, start_page: int, end_page: int, header_ratio: float, footer_ratio: float):
+def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formulas: bool, start_page: int, end_page: int, header_ratio: float, footer_ratio: float, left_ratio: float = 0.0, right_ratio: float = 0.0, extract_inline: bool = False, embed_formulas_in_word: bool = True):
     try:
         tasks[task_id]["status"] = "processing"
         tasks[task_id]["progress"] = 5.0
@@ -101,14 +114,20 @@ def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formul
             
         def log_fn(msg):
             tasks[task_id]["log"] += f"{msg}\n"
+            
+        log_fn(f"[DEBUG] 轉檔配置: convert_word={convert_word}, extract_formulas={extract_formulas}, extract_inline={extract_inline}, embed_formulas_in_word={embed_formulas_in_word}")
 
         agent = PDFConversionAgent(
             input_pdf=file_path, 
             header_ratio=header_ratio, 
-            footer_ratio=footer_ratio
+            footer_ratio=footer_ratio,
+            left_ratio=left_ratio,
+            right_ratio=right_ratio,
+            extract_inline=extract_inline,
+            embed_formulas_in_word=embed_formulas_in_word
         )
         
-        delivery_folder = agent.execute_pipeline(
+        pipeline_res = agent.execute_pipeline(
             convert_word=convert_word,
             extract_formulas=extract_formulas,
             start_page_idx=start_page,
@@ -117,20 +136,20 @@ def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formul
             progress_callback=progress_cb
         )
         
-        if delivery_folder:
-            zip_out = str(PATHS.root / "data" / "03_output" / f"{task_id}.zip")
-            shutil.make_archive(zip_out.replace(".zip", ""), 'zip', delivery_folder)
-            tasks[task_id]["result_file"] = zip_out
+        if pipeline_res and pipeline_res.get("delivery_folder"):
+            tasks[task_id]["word_file"] = pipeline_res.get("word_path")
+            tasks[task_id]["zip_file"] = pipeline_res.get("zip_path")
+            tasks[task_id]["result_file"] = pipeline_res.get("zip_path") or pipeline_res.get("word_path")
             tasks[task_id]["progress"] = 100.0
             tasks[task_id]["status"] = "completed"
             tasks[task_id]["message"] = "處理完成"
         else:
-            raise Exception("未能產生輸出資料夾")
+            raise Exception("未能產生有效輸出成果")
             
     except Exception as e:
         tasks[task_id]["status"] = "failed"
         tasks[task_id]["message"] = f"錯誤: {str(e)}"
-        tasks[task_id]["log"] += f"\n發生崩潰：{str(e)}\n"
+        tasks[task_id]["log"] += f"\n發生異常：{str(e)}\n"
 
 @app.post("/api/process")
 async def start_process(
@@ -141,7 +160,11 @@ async def start_process(
     start_page: int = Form(0),
     end_page: int = Form(0),
     header_ratio: float = Form(0.1),
-    footer_ratio: float = Form(0.1)
+    footer_ratio: float = Form(0.1),
+    left_ratio: float = Form(0.0),
+    right_ratio: float = Form(0.0),
+    extract_inline: bool = Form(False),
+    embed_formulas_in_word: bool = Form(True)
 ):
     file_path = PATHS.input_dir / file_id
     if not file_path.exists():
@@ -153,10 +176,26 @@ async def start_process(
         "progress": 0.0,
         "message": "排隊中...",
         "log": "任務已加入佇列...\n",
-        "result_file": None
+        "result_file": None,
+        "word_file": None,
+        "zip_file": None
     }
     
-    background_tasks.add_task(process_pdf, task_id, str(file_path), convert_word, extract_formulas, start_page, end_page, header_ratio, footer_ratio)
+    background_tasks.add_task(
+        process_pdf, 
+        task_id, 
+        str(file_path), 
+        convert_word, 
+        extract_formulas, 
+        start_page, 
+        end_page, 
+        header_ratio, 
+        footer_ratio,
+        left_ratio,
+        right_ratio,
+        extract_inline,
+        embed_formulas_in_word
+    )
     return {"task_id": task_id}
 
 # Mount static files
@@ -177,10 +216,33 @@ async def get_status(task_id: str):
 
 @app.get("/api/download/{task_id}")
 async def download_result(task_id: str):
+    """向下相容通用下載端點"""
     if task_id in tasks and tasks[task_id].get("result_file"):
-        return FileResponse(
-            tasks[task_id]["result_file"], 
-            media_type="application/zip",
-            filename=f"extracted_result_{tasks[task_id]['filename']}.zip"
-        )
+        path = tasks[task_id]["result_file"]
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if path.endswith(".docx") else "application/zip"
+        return FileResponse(path, media_type=media_type, filename=os.path.basename(path))
     return {"error": "File not found or task not completed"}
+
+@app.get("/api/download/{task_id}/word")
+async def download_word(task_id: str):
+    """專用 Word 文件下載端點"""
+    if task_id in tasks and tasks[task_id].get("word_file"):
+        path = tasks[task_id]["word_file"]
+        return FileResponse(
+            path,
+            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            filename=os.path.basename(path)
+        )
+    return {"error": "Word file not available for this task"}
+
+@app.get("/api/download/{task_id}/formulas")
+async def download_formulas(task_id: str):
+    """專用公式圖檔包下載端點"""
+    if task_id in tasks and tasks[task_id].get("zip_file"):
+        path = tasks[task_id]["zip_file"]
+        return FileResponse(
+            path,
+            media_type="application/zip",
+            filename=os.path.basename(path)
+        )
+    return {"error": "Formula ZIP not available for this task"}

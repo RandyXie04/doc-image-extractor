@@ -242,13 +242,24 @@
             </div>
             
             <div id="previewContainer" style="display: none; margin-bottom: 1.5rem; text-align: center;">
-                <h4>裁切邊界預覽 (紅色=頂部, 藍色=底部)</h4>
-                <div style="display: flex; gap: 1rem; margin-top: 1rem; align-items: center;">
-                    <label style="flex: 1;">頂部裁切 (0~0.5): <span id="headerVal">0.10</span>
+                <h4>裁切邊界預覽 (紅色=頂部, 藍色=底部, 綠色=左右)</h4>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem;">
+                    <button type="button" id="prevPageBtn" class="btn" style="padding: 5px 15px; min-width: auto;">◀ 上一頁</button>
+                    <span>預覽頁碼: <span id="previewPageDisplay">1</span> / <span id="totalPagesDisplay">?</span></span>
+                    <button type="button" id="nextPageBtn" class="btn" style="padding: 5px 15px; min-width: auto;">下一頁 ▶</button>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; text-align: left;">
+                    <label>頂部裁切 (0~0.5): <span id="headerVal">0.10</span>
                         <input type="range" id="headerSlider" min="0" max="0.5" step="0.01" value="0.10" style="width: 100%;">
                     </label>
-                    <label style="flex: 1;">底部裁切 (0~0.5): <span id="footerVal">0.10</span>
+                    <label>底部裁切 (0~0.5): <span id="footerVal">0.10</span>
                         <input type="range" id="footerSlider" min="0" max="0.5" step="0.01" value="0.10" style="width: 100%;">
+                    </label>
+                    <label>左側邊距 (0~0.3): <span id="leftVal">0.00</span>
+                        <input type="range" id="leftSlider" min="0" max="0.3" step="0.01" value="0.00" style="width: 100%;">
+                    </label>
+                    <label>右側邊距 (0~0.3): <span id="rightVal">0.00</span>
+                        <input type="range" id="rightSlider" min="0" max="0.3" step="0.01" value="0.00" style="width: 100%;">
                     </label>
                 </div>
                 <div style="margin-top: 1rem; border: 1px solid var(--border-color); border-radius: 8px; overflow: hidden; background: #fff;">
@@ -267,7 +278,18 @@
                 </label>
             </div>
 
-            <div class="input-group">
+            <div class="options-group" style="margin-top: 0.8rem; background: #f8fafc; padding: 0.8rem; border-radius: 8px; border: 1px solid var(--border-color);">
+                <label class="option-card" style="margin: 0; background: transparent; border: none; padding: 0.3rem;">
+                    <input type="checkbox" name="extract_inline"> 
+                    <span style="font-size: 0.9rem;">包含顯著行內公式 (Inline Math)</span>
+                </label>
+                <label class="option-card" style="margin: 0; background: transparent; border: none; padding: 0.3rem;">
+                    <input type="checkbox" name="embed_formulas_in_word" checked> 
+                    <span style="font-size: 0.9rem;">將 Word 內破碎公式替換為高清圖片 (圖文合成)</span>
+                </label>
+            </div>
+
+            <div class="input-group" style="margin-top: 1rem;">
                 <div>
                     <label>起始頁碼 (預設第 1 頁)</label>
                     <input type="number" name="start_page" placeholder="1" min="1">
@@ -291,8 +313,11 @@
             </div>
             <div class="log-container" id="logContainer"></div>
             
-            <button id="downloadBtn" class="submit-btn">下載成果壓縮包</button>
-            <button id="reportIssueBtn" class="submit-btn">🐞 一鍵至 GitHub 回報此問題</button>
+            <div id="downloadActionGroup" style="display: none; gap: 1rem; margin-top: 1rem;">
+                <button id="downloadWordBtn" class="submit-btn" style="flex: 1; background: #2563eb; display: none;">📥 下載 Word 文件 (.docx)</button>
+                <button id="downloadZipBtn" class="submit-btn" style="flex: 1; background: #059669; display: none;">📥 下載公式圖片包 (.zip)</button>
+            </div>
+            <button id="reportIssueBtn" class="submit-btn" style="margin-top: 1rem;">🐞 一鍵至 GitHub 回報此問題</button>
         </div>
         
         <footer style="margin-top: 2.5rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
@@ -311,20 +336,28 @@
         const statusMessage = document.getElementById('statusMessage');
         const percentageText = document.getElementById('percentageText');
         const logContainer = document.getElementById('logContainer');
-        const downloadBtn = document.getElementById('downloadBtn');
+        const downloadActionGroup = document.getElementById('downloadActionGroup');
+        const downloadWordBtn = document.getElementById('downloadWordBtn');
+        const downloadZipBtn = document.getElementById('downloadZipBtn');
         const reportIssueBtn = document.getElementById('reportIssueBtn');
         
         const previewContainer = document.getElementById('previewContainer');
         const previewImage = document.getElementById('previewImage');
         const headerSlider = document.getElementById('headerSlider');
         const footerSlider = document.getElementById('footerSlider');
+        const leftSlider = document.getElementById('leftSlider');
+        const rightSlider = document.getElementById('rightSlider');
         const headerVal = document.getElementById('headerVal');
         const footerVal = document.getElementById('footerVal');
+        const leftVal = document.getElementById('leftVal');
+        const rightVal = document.getElementById('rightVal');
 
         let pollingInterval = null;
         let currentFileId = null;
         let currentFileName = "";
         let debounceTimer = null;
+        let currentPreviewPage = 1;
+        let totalPdfPages = 1;
         let lastErrorLog = "";
 
         // Drag and Drop Logic
@@ -360,6 +393,12 @@
                     fileNameDisplay.textContent = file.name;
                     submitBtn.disabled = false;
                     submitBtn.textContent = "開始處理";
+                    
+                    totalPdfPages = data.total_pages || 1;
+                    currentPreviewPage = 1;
+                    document.getElementById('totalPagesDisplay').textContent = totalPdfPages;
+                    document.getElementById('previewPageDisplay').textContent = currentPreviewPage;
+                    
                     previewContainer.style.display = 'block';
                     updatePreview();
                 }
@@ -373,19 +412,38 @@
             if (!currentFileId) return;
             const h = headerSlider.value;
             const f = footerSlider.value;
+            const l = leftSlider.value;
+            const r = rightSlider.value;
             headerVal.textContent = h;
             footerVal.textContent = f;
+            leftVal.textContent = l;
+            rightVal.textContent = r;
             
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
-                let startPage = document.querySelector('[name="start_page"]').value || 1;
-                previewImage.src = `/api/render_preview/${currentFileId}?page=${startPage}&header=${h}&footer=${f}&_t=${Date.now()}`;
+                previewImage.src = `/api/render_preview/${currentFileId}?page=${currentPreviewPage}&header=${h}&footer=${f}&left=${l}&right=${r}&_t=${Date.now()}`;
             }, 500);
         }
         
         headerSlider.addEventListener('input', updatePreview);
         footerSlider.addEventListener('input', updatePreview);
-        document.querySelector('[name="start_page"]').addEventListener('change', updatePreview);
+        leftSlider.addEventListener('input', updatePreview);
+        rightSlider.addEventListener('input', updatePreview);
+        
+        document.getElementById('prevPageBtn').addEventListener('click', () => {
+            if (currentPreviewPage > 1) {
+                currentPreviewPage--;
+                document.getElementById('previewPageDisplay').textContent = currentPreviewPage;
+                updatePreview();
+            }
+        });
+        document.getElementById('nextPageBtn').addEventListener('click', () => {
+            if (currentPreviewPage < totalPdfPages) {
+                currentPreviewPage++;
+                document.getElementById('previewPageDisplay').textContent = currentPreviewPage;
+                updatePreview();
+            }
+        });
 
         uploadForm.addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -398,7 +456,7 @@
             submitBtn.textContent = "處理中...";
             progressContainer.style.display = 'block';
             logContainer.style.display = 'block';
-            downloadBtn.style.display = 'none';
+            downloadActionGroup.style.display = 'none';
             reportIssueBtn.style.display = 'none';
             progressBar.style.width = '0%';
             percentageText.textContent = '0%';
@@ -411,6 +469,10 @@
             formData.append('extract_formulas', document.querySelector('[name="extract_formulas"]').checked);
             formData.append('header_ratio', headerSlider.value);
             formData.append('footer_ratio', footerSlider.value);
+            formData.append('left_ratio', leftSlider.value);
+            formData.append('right_ratio', rightSlider.value);
+            formData.append('extract_inline', document.querySelector('[name="extract_inline"]').checked);
+            formData.append('embed_formulas_in_word', document.querySelector('[name="embed_formulas_in_word"]').checked);
             
             let start = document.querySelector('[name="start_page"]').value;
             let end = document.querySelector('[name="end_page"]').value;
@@ -453,11 +515,28 @@
                         percentageText.textContent = '100%';
                         statusMessage.textContent = "處理完成！";
                         submitBtn.textContent = "完成";
-                        downloadBtn.style.display = 'block';
+                        
+                        // 呈現雙獨立下載按鈕
+                        downloadActionGroup.style.display = 'flex';
+                        if (data.word_file) {
+                            downloadWordBtn.style.display = 'block';
+                            downloadWordBtn.onclick = () => {
+                                window.location.href = `/api/download/${taskId}/word`;
+                            };
+                        } else {
+                            downloadWordBtn.style.display = 'none';
+                        }
+                        
+                        if (data.zip_file) {
+                            downloadZipBtn.style.display = 'block';
+                            downloadZipBtn.onclick = () => {
+                                window.location.href = `/api/download/${taskId}/formulas`;
+                            };
+                        } else {
+                            downloadZipBtn.style.display = 'none';
+                        }
+
                         reportIssueBtn.style.display = 'none';
-                        downloadBtn.onclick = () => {
-                            window.location.href = `/api/download/${taskId}`;
-                        };
                         resetUI(false);
                     }
                     else if (data.status === 'failed') {
