@@ -114,6 +114,8 @@ def main() -> None:
 
     # 側邊欄
     with st.sidebar:
+        st.page_link("app.py", label="返回工具箱首頁", icon="🏠")
+        st.divider()
         st.subheader("⚙️ 引擎設定與狀態")
         if default_template.exists():
             st.success("基礎範本：template.docx [已載入]")
