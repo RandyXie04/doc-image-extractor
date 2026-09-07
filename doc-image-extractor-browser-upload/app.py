@@ -51,75 +51,10 @@ class ExtractionResult:
     warnings: list[str]
 
 
-def get_secret(name: str) -> str | None:
-    """優先讀取環境變數，否則讀取 Streamlit Secrets；未設定時回傳 None。"""
-    environment_value = os.environ.get(name)
-    if environment_value:
-        return environment_value.strip()
-    try:
-        secret_value = st.secrets.get(name)
-    except (FileNotFoundError, KeyError, RuntimeError):
-        return None
-    return str(secret_value).strip() if secret_value else None
-
-
-def auth_is_valid() -> bool:
-    """檢查目前瀏覽器工作階段是否仍在登入有效期內。"""
-    authenticated_at = st.session_state.get("authenticated_at")
-    if not st.session_state.get("authenticated") or not authenticated_at:
-        return False
-    if time.time() - float(authenticated_at) > AUTH_SESSION_SECONDS:
-        st.session_state.pop("authenticated", None)
-        st.session_state.pop("authenticated_at", None)
-        return False
+def render_auth_gate() -> bool:
+    """本機免密碼模式：直接放行。"""
     return True
 
-
-def render_auth_gate() -> bool:
-    """顯示公開服務的密碼門檻；密碼只從 Streamlit Secrets 或環境變數讀取。"""
-    expected_password = get_secret("APP_PASSWORD")
-    if not expected_password:
-        st.error("服務尚未完成安全設定。請在 Streamlit Cloud 的 App settings → Secrets 設定 APP_PASSWORD。")
-        st.code('APP_PASSWORD = "請在 Streamlit Cloud Secrets 貼上你的共用密碼"', language="toml")
-        st.caption("密碼只放在 Cloud Secrets，不要寫入 app.py、README 或 GitHub。")
-        return False
-
-    lockout_until = float(st.session_state.get("lockout_until", 0))
-    if lockout_until > time.time():
-        remaining = int(lockout_until - time.time()) + 1
-        st.warning(f"登入失敗次數過多，請在約 {remaining} 秒後再試。")
-        return False
-
-    if auth_is_valid():
-        return True
-
-    st.markdown(
-        '<section class="hero"><h1>文件圖片提取器</h1>'
-        '<p>這是受保護的公開服務，請輸入存取密碼後使用。</p></section>',
-        unsafe_allow_html=True,
-    )
-    with st.form("login_form", clear_on_submit=True):
-        password = st.text_input("存取密碼", type="password", help="密碼由服務管理者另行提供。")
-        submitted = st.form_submit_button("登入", type="primary", use_container_width=True)
-
-    if submitted:
-        is_match = hmac.compare_digest(password, expected_password)
-        if is_match:
-            st.session_state["authenticated"] = True
-            st.session_state["authenticated_at"] = time.time()
-            st.session_state["login_attempts"] = 0
-            st.session_state.pop("lockout_until", None)
-            st.rerun()
-        else:
-            attempts = int(st.session_state.get("login_attempts", 0)) + 1
-            st.session_state["login_attempts"] = attempts
-            if attempts >= MAX_LOGIN_ATTEMPTS:
-                st.session_state["lockout_until"] = time.time() + AUTH_LOCKOUT_SECONDS
-                st.session_state["login_attempts"] = 0
-                st.error("登入失敗次數過多，已暫時鎖定登入。")
-            else:
-                st.error(f"密碼不正確，剩餘嘗試次數：{MAX_LOGIN_ATTEMPTS - attempts}。")
-    return False
 
 
 def safe_stem(filename: str) -> str:
@@ -371,8 +306,6 @@ def render_styles() -> None:
 def main() -> None:
     st.set_page_config(page_title=APP_TITLE, page_icon="▣", layout="wide", initial_sidebar_state="expanded")
     render_styles()
-    if not render_auth_gate():
-        st.stop()
 
     st.markdown(
         '<section class="hero"><h1>文件圖片提取器</h1>'
@@ -381,10 +314,8 @@ def main() -> None:
     )
 
     with st.sidebar:
-        if st.button("登出", use_container_width=True):
+        if st.button("🧹 清除暫存快取", use_container_width=True):
             cleanup_session_storage(force=True)
-            st.session_state.pop("authenticated", None)
-            st.session_state.pop("authenticated_at", None)
             st.rerun()
         st.subheader("處理設定")
         keep_temp = st.checkbox("保留本次處理的暫存檔", value=False, help="關閉時，工作階段結束或重新處理後會清除暫存內容。")
