@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.core_agent import PDFConversionAgent
 from config import PATHS
-from scripts.cleanup_scratch import cleanup_scratch
+from src.scripts.cleanup_scratch import cleanup_scratch
 
 app = FastAPI(title="PDF AI 公式萃取站")
 
@@ -354,4 +354,20 @@ async def api_founder_repair(
 
 
 
-@app.post(" /api/run_ocr_pipeline\)
+@app.post("/api/run_ocr_pipeline")
+async def run_ocr_pipeline(background_tasks: BackgroundTasks):
+    import subprocess
+    import sys
+    from config import PATHS
+
+    def run_scripts():
+        # Run OCR and MD generation
+        subprocess.run([sys.executable, str(PATHS.root / "src" / "scripts" / "process_ocr.py")], cwd=str(PATHS.root))
+        # Run MD to DOCX conversion
+        subprocess.run([sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py")], cwd=str(PATHS.root))
+
+    background_tasks.add_task(run_scripts)
+    return {
+        "status": "started",
+        "message": "OCR and layout pipeline started in background. Results will be saved to data/03_output/."
+    }
