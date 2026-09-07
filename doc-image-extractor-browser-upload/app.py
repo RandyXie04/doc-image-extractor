@@ -150,6 +150,7 @@ def extract_images_from_pdf(
     pdf_path: Path,
     output_dir: Path,
     progress: Callable[[int, int], None] | None = None,
+    to_grayscale: bool = False,
 ) -> tuple[list[ExtractedImage], list[str]]:
     """從 PDF 內嵌圖片提取 PNG，保留原程式的 DeviceN／CMYK 校正邏輯。"""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -197,6 +198,8 @@ def extract_images_from_pdf(
                     img = Image.open(io.BytesIO(raw_bytes))
                     color_space = "DeviceN" if cs_name == "DeviceN" else alt_cs
                     img = normalize_image(img, color_space)
+                    if to_grayscale:
+                        img = img.convert("L")
                     filename = f"page{page_index + 1:04d}_img{img_index + 1:03d}.png"
                     png_buffer = io.BytesIO()
                     img.save(png_buffer, format="PNG")
@@ -237,6 +240,7 @@ def extract_images_from_docx(
     docx_path: Path,
     output_dir: Path,
     progress: Callable[[int, int], None] | None = None,
+    to_grayscale: bool = False,
 ) -> tuple[list[ExtractedImage], list[str]]:
     """從 DOCX 的 word/media 目錄提取原始圖片，不重新壓縮。"""
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -287,7 +291,22 @@ def extract_images_from_docx(
                 destination = output_dir / original_name
                 if destination.exists():
                     destination = output_dir / f"{destination.stem}_{index}{destination.suffix}"
-                destination.write_bytes(data)
+
+                if to_grayscale and destination.suffix.lower() in {
+                    ".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"
+                }:
+                    try:
+                        with Image.open(io.BytesIO(data)) as img:
+                            gray_img = img.convert("L")
+                            if destination.suffix.lower() in {".jpg", ".jpeg"}:
+                                gray_img.save(destination, format="JPEG")
+                            else:
+                                gray_img.save(destination, format="PNG")
+                    except Exception:
+                        destination.write_bytes(data)
+                else:
+                    destination.write_bytes(data)
+
                 images.append(
                     ExtractedImage(
                         path=destination,
@@ -369,6 +388,7 @@ def main() -> None:
             st.rerun()
         st.subheader("處理設定")
         keep_temp = st.checkbox("保留本次處理的暫存檔", value=False, help="關閉時，工作階段結束或重新處理後會清除暫存內容。")
+        to_grayscale = st.checkbox("轉換為灰階 (Grayscale)", value=False, help="開啟時，提取的所有點陣圖片將自動轉換為灰階格式。")
         st.divider()
         st.markdown("**支援格式**")
         st.markdown('<span class="file-pill">PDF → PNG</span><span class="file-pill">DOCX → 原始格式</span>', unsafe_allow_html=True)
@@ -425,16 +445,20 @@ def main() -> None:
                 output_dir = session_dir / f"images_{file_index}_{safe_stem(source_name)}"
                 status.info(f"正在處理：{source_name}")
 
-                def update_progress(current: int, total: int, index: int = file_index) -> None:
+                def update_progress(current: int, total: int, index: int = file_index, name: str = source_name) -> None:
                     fraction = (index + current / max(total, 1)) / len(uploaded_files)
-                    overall_progress.progress(min(fraction, 1.0), text=f"處理中：{source_name}")
+                    overall_progress.progress(min(fraction, 1.0), text=f"處理中：{name}")
 
                 try:
                     if suffix == ".pdf":
-                        images, warnings = extract_images_from_pdf(input_path, output_dir, update_progress)
+                        images, warnings = extract_images_from_pdf(
+                            input_path, output_dir, update_progress, to_grayscale=to_grayscale
+                        )
                         source_type = "PDF"
                     else:
-                        images, warnings = extract_images_from_docx(input_path, output_dir, update_progress)
+                        images, warnings = extract_images_from_docx(
+                            input_path, output_dir, update_progress, to_grayscale=to_grayscale
+                        )
                         source_type = "DOCX"
                     results.append(ExtractionResult(source_name, source_type, images, warnings))
                 finally:

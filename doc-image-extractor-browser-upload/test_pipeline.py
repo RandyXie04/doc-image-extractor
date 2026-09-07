@@ -44,8 +44,20 @@ archive = make_zip([
 ])
 with zipfile.ZipFile(io.BytesIO(archive)) as zip_file:
     names = sorted(zip_file.namelist())
-    assert names == ["sample/ image1.png"] or names, names
     assert any(name.startswith("sample/") for name in names), names
 
+# 測試灰階轉換功能
+pdf_gray_output = TEST_DIR / "pdf_gray_output"
+docx_gray_output = TEST_DIR / "docx_gray_output"
+pdf_gray_images, _ = extract_images_from_pdf(pdf_path, pdf_gray_output, to_grayscale=True)
+docx_gray_images, _ = extract_images_from_docx(docx_path, docx_gray_output, to_grayscale=True)
+assert len(pdf_gray_images) == 1
+with Image.open(pdf_gray_images[0].path) as g_img:
+    assert g_img.mode == "L", f"Expected mode L, got {g_img.mode}"
+assert len(docx_gray_images) == 1
+with Image.open(docx_gray_images[0].path) as g_img:
+    assert g_img.mode == "L", f"Expected mode L, got {g_img.mode}"
+
 print(f"PDF images: {len(pdf_images)}; DOCX images: {len(docx_images)}; ZIP bytes: {len(archive)}")
+print("Grayscale extraction verified successfully")
 print("Pipeline test passed")
