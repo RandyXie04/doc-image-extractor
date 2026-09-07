@@ -1,0 +1,24 @@
+﻿# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Model weights (Large binaries)
+*.pt
+*.pth
+*.onnx
+*.bin
+models/
+weights/
+
+# Secrets and local config
+.streamlit/secrets.toml
+.env
+
+# Test and processing outputs
+test_assets/
+p0_test_assets/
+images_*/
+doc_image_extractor_*/
+*.zip
+*.log
