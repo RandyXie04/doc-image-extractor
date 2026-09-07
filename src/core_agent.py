@@ -149,12 +149,13 @@ def _process_single_page(args):
         detections = []
         try:
             if _onnx_session != "MOCK":
-                import sys
-                from pathlib import Path
-                utils_path = str(Path(__file__).parent.parent / "scripts")
-                if utils_path not in sys.path:
-                    sys.path.append(utils_path)
-                import yolo_onnx_utils
+                try:
+                    from src.scripts import yolo_onnx_utils
+                except ImportError:
+                    try:
+                        from scripts import yolo_onnx_utils
+                    except ImportError:
+                        import yolo_onnx_utils
                 
                 # Preprocess (Dynamic Input Resolution Support)
                 inp_shape = _onnx_session.get_inputs()[0].shape
@@ -248,40 +249,51 @@ def _process_single_page(args):
         log_data["display_boxes"] = [list(b) for b in final_boxes]
         log_data["merged_boxes"] = [list(b) for b in merged_boxes]
 
+        chinese_reviews = []
         pad_x, pad_y = 15, 10
         eq_idx = 1
         page_num = page_idx + 1
 
         for (x0, y0, x1, y1) in merged_boxes:
-            # 智慧型公式編號延伸：檢查同水平行右側是否有 (1.1) 等編號
+            orig_x1 = x1
             roi_y0_pdf = max(0, y0 - 10) / scale_factor
             roi_y1_pdf = min(h, y1 + 10) / scale_factor
-            right_rect = fitz.Rect(max(x1 / scale_factor, page.rect.width * 0.65), roi_y0_pdf, page.rect.width, roi_y1_pdf)
-            right_text = page.get_text("text", clip=right_rect).strip().replace('\n', '')
+            trailing_rect = fitz.Rect(x1 / scale_factor, roi_y0_pdf, page.rect.width, roi_y1_pdf)
+            trailing_text = page.get_text("text", clip=trailing_rect).strip().replace('\n', ' ')
 
-            is_figure_caption = bool(re.search(r'(图|圖|表)\s*\d+', right_text))
-            has_eq_tag = bool(re.search(r'[(（]\s*\d+([-.–]\d+)*\s*[)）]', right_text))
+            is_figure_caption = bool(re.search(r'[\u56fe\u5716\u8868]\s*\d+', trailing_text))
+            has_eq_tag = bool(re.search(r'[(（]\s*\d+([-.–]\d+)*\s*[)）]', trailing_text))
+            chinese_matches = re.findall(r'[\u4e00-\u9fff]', trailing_text)
 
-            if has_eq_tag and not is_figure_caption:
-                # 檢查公式右緣與公式編號之間是否有中文段落阻隔
-                gap_rect = fitz.Rect(x1 / scale_factor, roi_y0_pdf, page.rect.width * 0.85, roi_y1_pdf)
-                gap_text = page.get_text("text", clip=gap_rect).strip()
-                chinese_chars = re.findall(r'[一-鿿]', gap_text)
-                # 只有中間無長篇中文 (<=1 字) 才延伸包入編號，遇中文說明則切開不延伸
-                if len(chinese_chars) <= 1:
-                    words = page.get_text("words", clip=right_rect)
-                    if words:
+            filename = f"p{page_num:03d}_eq{eq_idx:02d}.png"
+
+            if not is_figure_caption and trailing_text:
+                words = page.get_text("words", clip=trailing_rect)
+                if words:
+                    # Check if Chinese explanation or equation tag exists on the right
+                    if len(chinese_matches) > 0:
+                        max_word_x1 = max([w[2] for w in words]) * scale_factor
+                        if max_word_x1 > x1:
+                            x1 = max(x1, int(max_word_x1 + 10))
+                        chinese_reviews.append({
+                            "page": page_num,
+                            "filename": filename,
+                            "trailing_text": trailing_text,
+                            "chinese_chars": "".join(chinese_matches),
+                            "orig_box": [x0, y0, orig_x1, y1],
+                            "extended_box": [x0, y0, x1, y1]
+                        })
+                    elif has_eq_tag:
                         max_word_x1 = max([w[2] for w in words]) * scale_factor
                         if max_word_x1 > x1:
                             x1 = max(x1, int(max_word_x1 + 10))
 
-            # 確保邊界正確
+            # Ensure valid bounds
             crop_x0, crop_y0 = max(0, x0 - pad_x), max(0, y0 - pad_y)
             crop_x1, crop_y1 = min(w, x1 + pad_x), min(h, y1 + pad_y)
             crop = img[crop_y0:crop_y1, crop_x0:crop_x1]
             if crop.shape[0] < 20 or crop.shape[1] < 30: continue
 
-            filename = f"p{page_num:03d}_eq{eq_idx:02d}.png"
             filepath = os.path.join(formula_dir, filename)
             ext = os.path.splitext(filepath)[1]
             result, img_encode = cv2.imencode(ext, crop)
@@ -289,7 +301,6 @@ def _process_single_page(args):
                 img_encode.tofile(filepath)
             generated_files.append(filepath)
 
-            # 記錄對應 PDF 頁面座標與圖片路徑，供 Word 公式替換使用
             page_bboxes.append({
                 "page_idx": page_idx,
                 "rect_pdf": [crop_x0 / scale_factor, crop_y0 / scale_factor, crop_x1 / scale_factor, crop_y1 / scale_factor],
@@ -300,11 +311,17 @@ def _process_single_page(args):
             eq_idx += 1
 
     except Exception as e:
-        return {"status": "error", "files": generated_files, "error": str(e), "bboxes": []}
+        return {"status": "error", "files": generated_files, "error": str(e), "bboxes": [], "chinese_reviews": []}
     finally:
         doc.close()
         
-    return {"status": "success", "files": generated_files, "log_data": log_data, "bboxes": page_bboxes}
+    return {
+        "status": "success",
+        "files": generated_files,
+        "log_data": log_data,
+        "bboxes": page_bboxes,
+        "chinese_reviews": chinese_reviews
+    }
 
 class PDFConversionAgent:
     """
@@ -609,6 +626,7 @@ class PDFConversionAgent:
             # Clear log file initially
             with open(log_file_path, "w", encoding="utf-8") as f: pass
 
+            all_chinese_reviews = []
             with Pool(processes=num_workers, initializer=_init_mfd_worker, initargs=(use_gpu,)) as pool:
                 for idx_offset, res in enumerate(pool.imap(_process_single_page, tasks)):
                     current_p = start_page_idx + idx_offset + 1
@@ -624,6 +642,9 @@ class PDFConversionAgent:
                     if log_data:
                         with open(log_file_path, "a", encoding="utf-8") as lf:
                             lf.write(json.dumps(log_data, ensure_ascii=False) + "\n")
+
+                    if res.get("chinese_reviews"):
+                        all_chinese_reviews.extend(res["chinese_reviews"])
 
                     result_files = res.get("files", [])
                     if result_files:
@@ -641,6 +662,38 @@ class PDFConversionAgent:
         finally:
             doc.close()
 
+        import datetime
+        review_txt_path = os.path.join(self.formula_dir, "formula_right_boundary_chinese_review.txt")
+        time_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(review_txt_path, "w", encoding="utf-8") as rf:
+            rf.write("=" * 80 + "\n")
+            rf.write("公式右界中文說明判定覆核清單 (Formula Right-Boundary Chinese Review)\n")
+            rf.write(f"生成時間: {time_str}\n")
+            rf.write(f"來源文件: {os.path.basename(self.input_pdf)}\n")
+            rf.write("說明:\n")
+            rf.write("  以下獨立公式在水平右側檢測到中文文字/條件註記（例如「(s_3 為正值時)」、「式中：」、「單位：米」等）。\n")
+            rf.write("  系統已【預設包入】截圖中以確保語意完整。請人工比對確認是否需要保留於截圖，或應作為獨立正文段落。\n")
+            rf.write("=" * 80 + "\n\n")
+
+            if all_chinese_reviews:
+                for idx_r, item in enumerate(all_chinese_reviews, 1):
+                    rf.write(f"[項目 {idx_r}]\n")
+                    rf.write(f"  - 頁碼: 第 {item['page']} 頁 (P{item['page']:03d})\n")
+                    rf.write(f"  - 檔案名稱: {item['filename']}\n")
+                    rf.write(f"  - 右側延伸文字: {item['trailing_text']}\n")
+                    rf.write(f"  - 包含中文字元: {item['chinese_chars']}\n")
+                    rf.write(f"  - 原始公式框 (X, Y): [{item['orig_box'][0]}, {item['orig_box'][1]} -> {item['orig_box'][2]}, {item['orig_box'][3]}]\n")
+                    rf.write(f"  - 延伸包含框 (X, Y): [{item['extended_box'][0]}, {item['extended_box'][1]} -> {item['extended_box'][2]}, {item['extended_box'][3]}]\n")
+                    rf.write("  - 狀態標註: [已預設包入截圖，待人工覆核]\n\n")
+                rf.write("-" * 80 + "\n")
+                rf.write(f"總計待覆核項目: {len(all_chinese_reviews)} 筆\n")
+            else:
+                rf.write("未檢測到公式右界包含中文說明之特殊案例，所有公式編號均為純數字符號標籤。\n")
+            rf.write("=" * 80 + "\n")
+
+        if all_chinese_reviews:
+            log_fn(f"[REVIEW] ⚠️ 檢測到 {len(all_chinese_reviews)} 處公式右界包含中文說明！已預設包入截圖，覆核清單儲存於：\n    {review_txt_path}")
+
         import zipfile
         zip_filename = os.path.join(self.formula_dir, "all_pdf_formulas_ai_mfd.zip")
         with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -648,6 +701,8 @@ class PDFConversionAgent:
                 zipf.write(f, os.path.basename(f))
             if os.path.exists(log_file_path):
                 zipf.write(log_file_path, os.path.basename(log_file_path))
+            if os.path.exists(review_txt_path):
+                zipf.write(review_txt_path, os.path.basename(review_txt_path))
 
         log_fn("=" * 60)
         log_fn(f"[DONE] 公式提取完成！共使用 AI MFD 成功裁切 {count} 張公式圖片。")
@@ -718,6 +773,12 @@ class PDFConversionAgent:
                 dest_zip = delivery_folder / f"{base_name}_formulas.zip"
                 shutil.copy(zip_filename, dest_zip)
                 delivery_zip_path = str(dest_zip)
+                has_moved = True
+
+            # 複製公式右界中文覆核清單
+            review_txt = os.path.join(self.formula_dir, "formula_right_boundary_chinese_review.txt")
+            if os.path.exists(review_txt):
+                shutil.copy(review_txt, delivery_folder / "formula_right_boundary_chinese_review.txt")
                 has_moved = True
                 
             if has_moved:
