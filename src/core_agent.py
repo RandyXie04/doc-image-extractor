@@ -74,23 +74,27 @@ except ImportError:
 # ONNX Runtime Worker for Formula Extraction (YOLOv8 CPU Inference)
 # =========================================================================
 # Global for multiprocessing worker
-_mfd_analyzer = None
+_onnx_session = None
+_onnx_input_name = None
 
 def _init_mfd_worker(use_gpu=False):
-    global _mfd_analyzer
-    if _mfd_analyzer is None:
+    global _onnx_session, _onnx_input_name
+    if _onnx_session is None:
         try:
-            from ultralytics import YOLO
+            import onnxruntime as ort
             from config import PATHS
             import os
             
-            model_path = str(PATHS.root / "config" / "yolo_v8_ft.pt")
+            model_path = str(PATHS.root / "config" / "yolo_v8_ft.onnx")
             if os.path.exists(model_path):
-                _mfd_analyzer = YOLO(model_path)
+                options = ort.SessionOptions()
+                options.intra_op_num_threads = 2
+                _onnx_session = ort.InferenceSession(model_path, sess_options=options, providers=['CPUExecutionProvider'])
+                _onnx_input_name = _onnx_session.get_inputs()[0].name
             else:
-                _mfd_analyzer = "MOCK"
-        except ImportError:
-            _mfd_analyzer = "MOCK"
+                _onnx_session = "MOCK"
+        except Exception:
+            _onnx_session = "MOCK"
 
 def _mock_detect(img):
     # 用於在尚未準備好模型時，測試 Multiprocessing 流程不會崩潰
@@ -104,8 +108,8 @@ def _process_single_page(args):
         page_idx, input_pdf, formula_dir, dpi, max_safe_width = args[:5]
         extract_inline = False
         
-    global _mfd_analyzer
-    if _mfd_analyzer is None:
+    global _onnx_session, _onnx_input_name
+    if _onnx_session is None:
         _init_mfd_worker()
     
     import pymupdf as fitz, cv2, numpy as np, os, re
@@ -143,15 +147,45 @@ def _process_single_page(args):
         # ONNX Inference (YOLOv8 example)
         # ---------------------------------------------------------
         detections = []
-
-                        # 'embedding' -> inline, 'isolated' -> isolated
-                        b_type = 'inline' if cls == 0 else 'isolated'
-
-                        detections.append({
-                            'type': b_type,
-                            'score': score,
-                            'box': np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
-                        })
+        try:
+            if _onnx_session != "MOCK":
+                import sys
+                from pathlib import Path
+                utils_path = str(Path(__file__).parent.parent / "scripts")
+                if utils_path not in sys.path:
+                    sys.path.append(utils_path)
+                import yolo_onnx_utils
+                
+                # Preprocess (Dynamic Input Resolution Support)
+                inp_shape = _onnx_session.get_inputs()[0].shape
+                model_h = inp_shape[2] if isinstance(inp_shape[2], int) else 1888
+                model_w = inp_shape[3] if isinstance(inp_shape[3], int) else 1888
+                img_padded, ratio, (dw, dh) = yolo_onnx_utils.letterbox(img, new_shape=(model_h, model_w))
+                input_tensor = cv2.cvtColor(img_padded, cv2.COLOR_BGR2RGB)
+                input_tensor = np.transpose(input_tensor, (2, 0, 1)).astype(np.float32)
+                input_tensor /= 255.0
+                input_tensor = np.expand_dims(input_tensor, axis=0)
+                
+                # Inference
+                outputs = _onnx_session.run(None, {_onnx_input_name: input_tensor})
+                
+                # Postprocess
+                results = yolo_onnx_utils.postprocess(outputs, conf_threshold=0.15, iou_threshold=0.45)
+                
+                for res in results:
+                    b_type = 'inline' if res["class_id"] == 0 else 'isolated'
+                    score = res["score"]
+                    x1, y1, x2, y2 = res["box"]
+                    x1 = np.clip((x1 - dw) / ratio, 0, w)
+                    x2 = np.clip((x2 - dw) / ratio, 0, w)
+                    y1 = np.clip((y1 - dh) / ratio, 0, h)
+                    y2 = np.clip((y2 - dh) / ratio, 0, h)
+                    
+                    detections.append({
+                        'type': b_type,
+                        'score': float(score),
+                        'box': np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
+                    })
             else:
                 detections = _mock_detect(img)
         except Exception as e:

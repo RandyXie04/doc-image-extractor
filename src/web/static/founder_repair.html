@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>方正排版標點修復</title>
+    <style>
+        :root { --primary: #16a34a; --primary-hover: #15803d; --bg: #f8fafc; --card: #ffffff; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 3rem; }
+        .container { background: var(--card); padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 600px; width: 100%; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+        .header a { text-decoration: none; color: var(--primary); font-weight: bold; }
+        .upload-area { border: 2px dashed #cbd5e1; padding: 3rem; text-align: center; border-radius: 12px; cursor: pointer; margin-bottom: 1.5rem; }
+        .upload-area.dragover { border-color: var(--primary); background: #f0fdf4; }
+        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1rem; }
+        .btn:disabled { background: #9ca3af; cursor: not-allowed; }
+        #status { margin-top: 1rem; text-align: center; font-weight: 500; color: #475569; }
+        #downloadBtn { display: none; background: #0284c7; margin-top: 1rem; text-align: center; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <a href="/">◀ 返回首頁</a>
+            <h2 style="margin: 0;">🛠️ 方正排版修復</h2>
+            <div style="width: 80px;"></div>
+        </div>
+        <p style="text-align: center; color: #64748b; margin-bottom: 2rem;">上傳 PDF 或 DOCX 檔案，自動還原 CMap 編碼缺陷與亂碼。</p>
+
+        <form id="uploadForm">
+            <div class="upload-area" id="dropZone">
+                <p>點擊選擇，或將 PDF / DOCX 拖曳至此</p>
+                <input type="file" id="fileInput" accept=".pdf,.docx">
+            </div>
+            <div id="fileInfo" style="text-align: center; margin-bottom: 1rem; font-weight: bold;"></div>
+            <button type="submit" class="btn" id="submitBtn" disabled>開始修復</button>
+        </form>
+        <div id="status"></div>
+        <a id="downloadBtn" class="btn" href="#">⬇️ 下載修復後的檔案</a>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const submitBtn = document.getElementById('submitBtn');
+        const statusDiv = document.getElementById('status');
+        const downloadBtn = document.getElementById('downloadBtn');
+        let currentFile = null;
+
+        dropZone.onclick = () => fileInput.click();
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+        dropZone.ondrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+        };
+        fileInput.onchange = (e) => {
+            if (e.target.files.length > 0) handleFile(e.target.files[0]);
+        };
+
+        function handleFile(file) {
+            currentFile = file;
+            fileInfo.textContent = `已選擇: ${file.name}`;
+            submitBtn.disabled = false;
+            downloadBtn.style.display = 'none';
+            statusDiv.textContent = '';
+        }
+
+        document.getElementById('uploadForm').onsubmit = async (e) => {
+            e.preventDefault();
+            if (!currentFile) return;
+
+            submitBtn.disabled = true;
+            statusDiv.textContent = '處理中，請稍候...';
+            downloadBtn.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('file', currentFile);
+
+            try {
+                const response = await fetch('/api/founder/repair', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    
+                    // 根據附檔名決定下載檔名
+                    const filename = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'repaired_file';
+                    
+                    downloadBtn.href = url;
+                    downloadBtn.download = filename;
+                    downloadBtn.style.display = 'block';
+                    statusDiv.textContent = '✅ 修復完成！請點擊下方按鈕下載。';
+                } else {
+                    const err = await response.json();
+                    statusDiv.textContent = `❌ 錯誤: ${err.detail || '未知錯誤'}`;
+                }
+            } catch (error) {
+                statusDiv.textContent = `❌ 網路錯誤: ${error.message}`;
+            } finally {
+                submitBtn.disabled = false;
+            }
+        };
+    </script>
+</body>
+</html>
