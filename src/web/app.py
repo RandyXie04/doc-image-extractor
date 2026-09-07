@@ -44,18 +44,23 @@ tasks = {}
 
 @app.post("/api/upload_file")
 async def upload_file(file: UploadFile = File(...)):
-    file_id = str(uuid.uuid4()) + ".pdf"
+    orig_ext = Path(file.filename).suffix.lower() if file.filename else ""
+    if orig_ext != ".pdf":
+        raise HTTPException(status_code=400, detail="公式萃取與預覽僅支援 .pdf 格式檔案")
+        
+    file_id = f"{uuid.uuid4()}.pdf"
     file_path = PATHS.input_dir / file_id
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
     total_pages = 1
     try:
-        import pymupdf as fitz
         with fitz.open(file_path) as doc:
             total_pages = len(doc)
-    except Exception:
-        pass
+    except Exception as e:
+        if file_path.exists():
+            file_path.unlink()
+        raise HTTPException(status_code=400, detail=f"無法解析此 PDF 檔案: {e}")
 
     return {"file_id": file_id, "total_pages": total_pages}
 
@@ -205,8 +210,19 @@ app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 @app.get("/", response_class=HTMLResponse)
 async def read_index():
-    with open(static_dir / "index.html", "r", encoding="utf-8") as f:
-        return f.read()
+    index_path = static_dir / "index.html"
+    if index_path.exists():
+        with open(index_path, "r", encoding="utf-8") as f:
+            return f.read()
+    raise HTTPException(status_code=404, detail="Index page not found")
+
+@app.get("/{page}.html", response_class=HTMLResponse)
+async def read_page(page: str):
+    file_path = static_dir / f"{page}.html"
+    if file_path.exists():
+        with open(file_path, "r", encoding="utf-8") as f:
+            return f.read()
+    raise HTTPException(status_code=404, detail="Page not found")
 
 @app.get("/api/status/{task_id}")
 async def get_status(task_id: str):
@@ -246,3 +262,87 @@ async def download_formulas(task_id: str):
             filename=os.path.basename(path)
         )
     return {"error": "Formula ZIP not available for this task"}
+
+@app.post("/api/open_folder/{task_id}")
+async def open_folder(task_id: str):
+    """在 Windows 檔案總管中開啟成果所在資料夾並選取檔案"""
+    if task_id in tasks:
+        target = tasks[task_id].get("word_file") or tasks[task_id].get("zip_file") or tasks[task_id].get("result_file")
+        if target and os.path.exists(target):
+            import subprocess
+            subprocess.Popen(f'explorer /select,"{os.path.abspath(target)}"')
+            return {"status": "success"}
+    raise HTTPException(status_code=404, detail="成果檔案不存在或尚未生成")
+
+# =========================================================================
+# Founder Tools API (方正排版修復)
+# =========================================================================
+def _cleanup_temp_files(*file_paths):
+    """背景清理暫存檔，防止磁碟洩漏"""
+    for p in file_paths:
+        if p and os.path.exists(p):
+            try:
+                os.unlink(p)
+            except Exception:
+                pass
+
+@app.post("/api/founder/repair")
+async def api_founder_repair(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...)
+):
+    import tempfile
+    import os
+    import shutil
+    from fastapi.responses import FileResponse
+    from src.founder_tools.fix_founder_fonts import repair_pdf_file, repair_docx_file
+    
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in [".pdf", ".docx"]:
+        raise HTTPException(status_code=400, detail="不支援的檔案格式，請上傳 PDF 或 DOCX")
+
+    fd, temp_input = tempfile.mkstemp(suffix=ext)
+    os.close(fd)
+    
+    with open(temp_input, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    created_temps = [temp_input]
+
+    try:
+        if ext == ".pdf":
+            fd_txt, temp_out_txt = tempfile.mkstemp(suffix=".txt")
+            os.close(fd_txt)
+            fd_docx, temp_out_docx = tempfile.mkstemp(suffix=".docx")
+            os.close(fd_docx)
+            created_temps.extend([temp_out_txt, temp_out_docx])
+            
+            repair_pdf_file(temp_input, temp_out_txt, temp_out_docx)
+            # 將中間 txt 與輸入 input 清理，輸出 docx 待傳輸完後清理
+            background_tasks.add_task(_cleanup_temp_files, temp_input, temp_out_txt, temp_out_docx)
+            return FileResponse(
+                temp_out_docx, 
+                filename=f"repaired_{file.filename}.docx", 
+                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+            
+        elif ext == ".docx":
+            fd_docx, temp_out_docx = tempfile.mkstemp(suffix=".docx")
+            os.close(fd_docx)
+            created_temps.append(temp_out_docx)
+            
+            repair_docx_file(temp_input, temp_out_docx)
+            background_tasks.add_task(_cleanup_temp_files, temp_input, temp_out_docx)
+            return FileResponse(
+                temp_out_docx, 
+                filename=f"repaired_{file.filename}", 
+                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            )
+            
+    except Exception as e:
+        _cleanup_temp_files(*created_temps)
+        raise HTTPException(status_code=500, detail=f"修復過程發生異常: {str(e)}")
+
+
+
+@app.post(" /api/run_ocr_pipeline\)

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>書籍 PDF 全自動 OCR 與排版</title>
+    <style>
+        :root { --primary: #ea580c; --bg: #f8fafc; --card: #ffffff; }
+        body { font-family: sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 3rem; }
+        .container { background: var(--card); padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 650px; width: 100%; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
+        .header a { text-decoration: none; color: var(--primary); font-weight: bold; }
+        .info-box { background: #fff7ed; border: 1px solid #fdba74; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; color: #9a3412; line-height: 1.6; }
+        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1rem; }
+        #status { margin-top: 1rem; text-align: center; font-weight: 500; color: #475569; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <a href="/">← 返回首頁</a>
+            <h2 style="margin: 0;">📄 全自動 OCR 與排版管線</h2>
+            <div style="width: 80px;"></div>
+        </div>
+        
+        <div class="info-box">
+            <strong>使用說明：</strong><br>
+            請先確保將需要處理的 PDF 放置於 data/database_text/ 目錄下，且檔名以 OCR 開頭。<br><br>
+            點擊下方按鈕後，系統將在背景執行：<br>
+            1. 呼叫 RapidDoc 進行光學辨識、表格解析與版面分析。<br>
+            2. 產生結構化的 Markdown 中繼檔案。<br>
+            3. 使用 pypandoc 與 template.docx 將 Markdown 轉換為包含原生複雜表格的 Word 文件。<br>
+            4. 最終檔案將保存於 data/03_output/ 資料夾中。
+        </div>
+
+        <button type="button" class="btn" id="startBtn">▶ 啟動自動化轉檔管線</button>
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const startBtn = document.getElementById('startBtn');
+        const statusDiv = document.getElementById('status');
+
+        startBtn.onclick = async () => {
+            startBtn.disabled = true;
+            statusDiv.textContent = '管線已啟動，這可能需要數分鐘至數小時，請至終端機查看進度...';
+            
+            try {
+                const response = await fetch('/api/run_ocr_pipeline', {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    statusDiv.textContent = '✅ ' + data.message;
+                } else {
+                    statusDiv.textContent = '❌ 啟動失敗，請檢查終端機日誌。';
+                }
+            } catch (error) {
+                statusDiv.textContent = '❌ 網路錯誤: ' + error.message;
+            } finally {
+                setTimeout(() => { startBtn.disabled = false; }, 5000);
+            }
+        };
+    </script>
+</body>
+</html>
