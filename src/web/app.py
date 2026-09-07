@@ -205,6 +205,15 @@ async def start_process(
 
 # Mount static files
 static_dir = Path(__file__).parent / "static"
+if not static_dir.exists() and getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    _candidate = Path(sys._MEIPASS) / "src" / "web" / "static"
+    if _candidate.exists():
+        static_dir = _candidate
+    else:
+        _candidate2 = Path(sys._MEIPASS) / "static"
+        if _candidate2.exists():
+            static_dir = _candidate2
+
 os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
 

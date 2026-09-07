@@ -29,10 +29,17 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from dotenv import load_dotenv
 
+import sys
+
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. 錨定基準：本檔案所在目錄的上一層 = 專案根目錄
+# 1. 錨定基準：本檔案所在目錄的上一層 = 專案根目錄 (支援 PyInstaller 打包)
 # ─────────────────────────────────────────────────────────────────────────────
-_PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+if getattr(sys, 'frozen', False):
+    _PROJECT_ROOT = Path(sys.executable).parent.resolve()
+    _BUNDLE_ROOT = Path(sys._MEIPASS).resolve() if hasattr(sys, '_MEIPASS') else _PROJECT_ROOT
+else:
+    _PROJECT_ROOT = Path(__file__).parent.parent.resolve()
+    _BUNDLE_ROOT = _PROJECT_ROOT
 
 # 載入同目錄下的 .env（若不存在則靜默略過，不報錯）
 load_dotenv(_PROJECT_ROOT / ".env", override=False)
@@ -48,6 +55,7 @@ class _Paths:
     frozen=True 確保路徑在執行期間不被意外修改。
     """
     root:           Path = _PROJECT_ROOT
+    bundle_root:    Path = _BUNDLE_ROOT
     data_dir:       Path = _PROJECT_ROOT / "data"
 
     # ── 輸入區 ──────────────────────────────────────────────────────────────

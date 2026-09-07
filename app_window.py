@@ -36,6 +36,9 @@ def wait_for_server(port, timeout=5.0):
     return False
 
 if __name__ == '__main__':
+    import multiprocessing
+    multiprocessing.freeze_support()
+    
     port = find_available_port(8000)
     
     def start_server():

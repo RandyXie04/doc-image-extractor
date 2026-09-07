@@ -1,4 +1,4 @@
-﻿# .gitignore ?? ??批?皜
+# .gitignore ?? ??批?皜
 
 # ?? API ? ??
 .env
@@ -54,3 +54,9 @@ models/
 # ── 本地除錯與未追蹤圖檔 ──
 debug_*.jpg
 成果text/
+
+# ── PyInstaller 打包產物與執行檔（嚴格禁止提交至 Git） ──
+build/
+dist/
+*.exe
+
