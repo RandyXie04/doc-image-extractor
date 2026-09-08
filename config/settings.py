@@ -95,6 +95,23 @@ class _Config:
     max_safe_pages: int   = field(default_factory=lambda: int(os.getenv("MAX_SAFE_PAGES", "300")))
     batch_size:     int   = field(default_factory=lambda: int(os.getenv("BATCH_SIZE", "50")))
     max_image_width:int   = field(default_factory=lambda: int(os.getenv("MAX_IMAGE_WIDTH", "4000")))
+    
+    def get_hardware_profile(self) -> dict:
+        import json
+        profile_path = _PROJECT_ROOT / "config" / ".hardware_profile.json"
+        if profile_path.exists():
+            try:
+                with open(profile_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return {
+            "gpu_name": "Unknown",
+            "target_accelerator": "CPU",
+            "active_provider": "CPUExecutionProvider",
+            "vram_gb": 0.0,
+            "is_accelerated": False
+        }
 
 
 PATHS = _Paths()

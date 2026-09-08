@@ -40,11 +40,16 @@
 ## 🛠️ 安裝與啟動說明
 
 ### 1. 安裝環境與 Python 套件
-請確保系統已安裝 Python 3.9+，執行以下指令安裝套件：
+請確保系統已安裝 Python 3.9+，執行以下指令安裝基本套件：
 ```bash
 python -m pip install -r requirements.txt
 ```
-*(若有 GPU，強烈建議安裝支援 CUDA 版本的 PyTorch 與 ONNXRuntime-GPU 以加速 AI 推論)*
+
+**💻 硬體自適應探測與 GPU 智慧加速佈署 (Adaptive Hardware Provisioning)**
+本工具內建智慧硬體探測模組（針對 RTX 30/40/50 系列獨立顯卡）。啟動時將自動在背景偵測硬體環境：
+- 若命中高效能 GPU 且具備網路連線，系統會**自動無痛安裝並切換至 `onnxruntime-directml` 加速引擎**。
+- 若為無顯卡或無網路環境，將優雅降級維持純 CPU 模式運作，確保各種環境皆能順暢不卡死。
+- 探測結果將快取於 `config/.hardware_profile.json`，後續啟動達到 **0 毫秒跳過探測** 的秒開體驗。
 
 ### 2. Pandoc 自動支援 (OCR 必備)
 本系統已內建自動配置機制。執行 OCR 管線時，`pypandoc` 會自動為您下載並配置 Pandoc 環境，無需手動額外安裝龐大的安裝包。

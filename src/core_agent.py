@@ -89,7 +89,8 @@ def _init_mfd_worker(use_gpu=False):
             if os.path.exists(model_path):
                 options = ort.SessionOptions()
                 options.intra_op_num_threads = 2
-                _onnx_session = ort.InferenceSession(model_path, sess_options=options, providers=['CPUExecutionProvider'])
+                from src.scripts.hardware_probe import get_best_providers
+                _onnx_session = ort.InferenceSession(model_path, sess_options=options, providers=get_best_providers())
                 _onnx_input_name = _onnx_session.get_inputs()[0].name
             else:
                 _onnx_session = "MOCK"
