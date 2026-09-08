@@ -11,6 +11,7 @@ __pycache__/
 TASK.md
 config/RULE.md
 config/TODOTASK.md
+config/.hardware_profile.json
 
 # Scratch
 scratch/*

@@ -278,6 +278,77 @@ async def download_formulas(task_id: str):
         )
     return {"error": "Formula ZIP not available for this task"}
 
+# =========================================================================
+# 文件圖片無損提取 API (DOCX / PDF)
+# =========================================================================
+extracted_image_tasks = {}
+
+@app.post("/api/extract_images")
+async def api_extract_images(
+    file: UploadFile = File(...),
+    to_grayscale: bool = Form(False)
+):
+    from src.scripts.extract_images import process_document_images
+
+    orig_filename = file.filename or "document"
+    orig_ext = Path(orig_filename).suffix.lower()
+    if orig_ext not in [".docx", ".pdf"]:
+        raise HTTPException(status_code=400, detail="僅支援 .docx 與 .pdf 檔案格式")
+
+    task_id = str(uuid.uuid4())
+    temp_dir = PATHS.root / "scratch" / f"extract_{task_id}"
+    input_file_path = temp_dir / orig_filename
+    extracted_folder = temp_dir / "images"
+    output_zip_name = f"{Path(orig_filename).stem}_extracted_images.zip"
+    output_zip_path = PATHS.root / "data" / "03_output" / output_zip_name
+
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    with open(input_file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    try:
+        count, zip_path = process_document_images(
+            file_path=str(input_file_path),
+            output_zip_path=str(output_zip_path),
+            temp_dir=str(extracted_folder),
+            to_grayscale=to_grayscale
+        )
+
+        extracted_image_tasks[task_id] = {
+            "zip_path": str(zip_path),
+            "filename": output_zip_name,
+            "count": count
+        }
+
+        return {
+            "success": True,
+            "count": count,
+            "download_url": f"/api/download_extracted_images/{task_id}",
+            "filename": output_zip_name,
+            "message": f"成功提取 {count} 張圖片！" if count > 0 else "未在此文件中偵測到任何內嵌圖片。"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"圖片提取失敗: {str(e)}")
+    finally:
+        try:
+            shutil.rmtree(temp_dir, ignore_errors=True)
+        except Exception:
+            pass
+
+@app.get("/api/download_extracted_images/{task_id}")
+async def download_extracted_images(task_id: str):
+    if task_id in extracted_image_tasks:
+        info = extracted_image_tasks[task_id]
+        zip_path = info["zip_path"]
+        if os.path.exists(zip_path):
+            return FileResponse(
+                zip_path,
+                media_type="application/zip",
+                filename=info["filename"]
+            )
+    raise HTTPException(status_code=404, detail="找不到提取的壓縮檔案或任務不存在")
+
+
 @app.post("/api/open_folder/{task_id}")
 async def open_folder(task_id: str):
     """在 Windows 檔案總管中開啟成果所在資料夾並選取檔案"""

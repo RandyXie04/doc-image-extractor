@@ -81,12 +81,43 @@
             if (!currentFile) return;
 
             submitBtn.disabled = true;
-            statusDiv.textContent = '處理中，請稍候...';
+            statusDiv.style.color = '#0284c7';
+            statusDiv.textContent = '🚀 正在上傳並提取檔案中的高畫質圖片，請稍候...';
             downloadBtn.style.display = 'none';
 
-            // TODO: 接上後端 extract images API
-            statusDiv.textContent = '圖片提取 API 尚在建置中，敬請期待！';
-            setTimeout(() => { submitBtn.disabled = false; }, 2000);
+            const toGrayscale = document.getElementById('toGrayscale').checked;
+            const formData = new FormData();
+            formData.append('file', currentFile);
+            formData.append('to_grayscale', toGrayscale);
+
+            try {
+                const response = await fetch('/api/extract_images', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || '圖片提取伺服器處理失敗');
+                }
+
+                const result = await response.json();
+                if (result.success && result.count > 0) {
+                    statusDiv.style.color = '#16a34a';
+                    statusDiv.innerHTML = `🎉 <b>處理完成！</b> 共成功提取 <b>${result.count}</b> 張高品質圖片。`;
+                    downloadBtn.href = result.download_url;
+                    downloadBtn.textContent = `⬇️ 下載圖片 ZIP 壓縮包 (${result.filename})`;
+                    downloadBtn.style.display = 'block';
+                } else {
+                    statusDiv.style.color = '#eab308';
+                    statusDiv.textContent = '⚠️ 此文件中未偵測到任何內嵌圖片。';
+                }
+            } catch (err) {
+                statusDiv.style.color = '#dc2626';
+                statusDiv.textContent = `❌ 錯誤: ${err.message}`;
+            } finally {
+                submitBtn.disabled = false;
+            }
         };
     </script>
 </body>
