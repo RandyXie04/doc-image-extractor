@@ -248,6 +248,12 @@ async def download_result(task_id: str):
         return FileResponse(path, media_type=media_type, filename=os.path.basename(path))
     return {"error": "File not found or task not completed"}
 
+@app.get("/api/hardware_status")
+async def get_hardware_status():
+    from config import CFG
+    profile = CFG.get_hardware_profile()
+    return profile
+
 @app.get("/api/download/{task_id}/word")
 async def download_word(task_id: str):
     """專用 Word 文件下載端點"""
@@ -358,13 +364,49 @@ async def api_founder_repair(
 async def run_ocr_pipeline(background_tasks: BackgroundTasks):
     import subprocess
     import sys
+    import shutil
+    import os
     from config import PATHS
 
     def run_scripts():
-        # Run OCR and MD generation
+        pdf_dir = PATHS.root / 'data' / 'database_text'
+        output_dir = PATHS.root / 'data' / '03_output'
+        backup_dir = output_dir / 'backup_originals'
+        
+        # 1. 執行前狀態檢查／清理選項：若 03_output 已存在同名輸出，自動封存
+        pdf_files = list(pdf_dir.glob('*.pdf'))
+        for pdf_path in pdf_files:
+            stem = pdf_path.stem
+            md_file = output_dir / f"{stem}.md"
+            docx_file = output_dir / f"{stem}.docx"
+            
+            for f in [md_file, docx_file]:
+                if f.exists():
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                    backup_path = backup_dir / f.name
+                    print(f"[Cleanup] Backing up existing output {f.name} to {backup_dir}")
+                    try:
+                        shutil.move(str(f), str(backup_path))
+                    except Exception as e:
+                        print(f"Error moving {f.name}: {e}")
+
+        # 2. Run OCR and MD generation
         subprocess.run([sys.executable, str(PATHS.root / "src" / "scripts" / "process_ocr.py")], cwd=str(PATHS.root))
-        # Run MD to DOCX conversion
-        subprocess.run([sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py")], cwd=str(PATHS.root))
+        
+        # 3. 收集本次成功生成的 .md 清單傳遞給 md_to_docx.py
+        new_md_files = []
+        for pdf_path in pdf_files:
+            stem = pdf_path.stem
+            md_file = output_dir / f"{stem}.md"
+            if md_file.exists():
+                new_md_files.append(str(md_file))
+                
+        # Run MD to DOCX conversion passing specific files
+        if new_md_files:
+            print(f"Passing {len(new_md_files)} files to md_to_docx.py: {new_md_files}")
+            subprocess.run([sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py"), "--files"] + new_md_files, cwd=str(PATHS.root))
+        else:
+            print("No new markdown files were generated.")
 
     background_tasks.add_task(run_scripts)
     return {
