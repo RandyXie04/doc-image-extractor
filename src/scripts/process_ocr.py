@@ -4,6 +4,11 @@ import sys
 sys.stdout.reconfigure(encoding='utf-8')
 from pathlib import Path
 
+# Add project root to sys.path
+_root_dir = Path(__file__).parent.parent.parent
+if str(_root_dir) not in sys.path:
+    sys.path.insert(0, str(_root_dir))
+
 try:
     from rapid_doc import RapidDoc
 except ImportError:
@@ -14,6 +19,16 @@ def main():
     if not RapidDoc:
         print("RapidDoc is not available.")
         return
+        
+    try:
+        import onnxruntime as ort
+        from src.scripts.hardware_probe import get_best_providers
+        original_session = ort.InferenceSession
+        def patched_session(path_or_bytes, sess_options=None, providers=None, provider_options=None, **kwargs):
+            return original_session(path_or_bytes, sess_options=sess_options, providers=get_best_providers(), provider_options=provider_options, **kwargs)
+        ort.InferenceSession = patched_session
+    except Exception:
+        pass
         
     engine = RapidDoc()
     

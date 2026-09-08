@@ -39,6 +39,10 @@ if __name__ == '__main__':
     import multiprocessing
     multiprocessing.freeze_support()
     
+    # // Run hardware probe & setup
+    from src.scripts.hardware_probe import ensure_optimal_accelerator
+    ensure_optimal_accelerator()
+    
     port = find_available_port(8000)
     
     def start_server():
