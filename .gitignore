@@ -1,62 +1,46 @@
-# .gitignore ?? ??批?皜
-
-# ?? API ? ??
+# API env
 .env
 
-# ?? Python 敹怠? ??
+# Python cache
 __pycache__/
 *.py[cod]
 *.pyo
 *.pyd
 
-# ?? ?怠???Scratch 敹怠? ??
+# Agent and Prompt docs
+TASK.md
+config/RULE.md
+config/TODOTASK.md
+
+# Scratch
 scratch/*
 !scratch/.gitkeep
 !scratch/README.md
 temp_cropped_optimized.pdf
 test_output.docx
-皜祈岫_撌脰?瑼?docx
 
-# ?? 皜祈岫鞈?摨怨? PDF 鞈? ??
+# Data & PDF
 data/
 database_text/
-敺??撘?獢?
 _archive/
 _originals/
 backup_originals/
 
-# ?? 憭批??Ｗ ??
+# Output
 extracted_formulas_mfd/
 extracted_formulas_mfd-2/
-AI_????_甇????
 previews/
 *.zip
-*_撌脰?瑼?docx
-# ── 模型權重檔案（禁止提交至 Git，需獨立放置） ──
+debug_*.jpg
+
+# Model weights
 *.pt
 *.pth
 *.onnx
 config/*.pt
 models/
 
-# ── 本地除錯與未追蹤圖檔 ──
-debug_*.jpg
-成果text/
-
-
-# ── 模型權重檔案（禁止提交至 Git，需獨立放置） ──
-*.pt
-*.pth
-*.onnx
-config/*.pt
-models/
-
-# ── 本地除錯與未追蹤圖檔 ──
-debug_*.jpg
-成果text/
-
-# ── PyInstaller 打包產物與執行檔（嚴格禁止提交至 Git） ──
+# PyInstaller builds
 build/
 dist/
 *.exe
-
