@@ -47,22 +47,45 @@ import cv2
 import numpy as np
 from tqdm import tqdm
 
+# 全域修補 (Monkey Patch) 解決 PyMuPDF 遇到 CMYK/非RGB 圖片時寫入 PNG 崩潰的重大瑕疵 (code=4: pixmap must be grayscale or rgb to write as png)
+_orig_pixmap_tobytes = fitz.Pixmap.tobytes
+_orig_pixmap_save = fitz.Pixmap.save
+
+def _safe_pixmap_tobytes(self, output="png", *args, **kwargs):
+    if str(output).lower() == "png":
+        if self.colorspace and self.colorspace.name not in (fitz.csGRAY.name, fitz.csRGB.name):
+            try:
+                return fitz.Pixmap(fitz.csRGB, self).tobytes(output, *args, **kwargs)
+            except Exception:
+                pass
+        elif self.n >= 5 or (self.alpha and self.n not in (2, 4)):
+            try:
+                return fitz.Pixmap(fitz.csRGB, self).tobytes(output, *args, **kwargs)
+            except Exception:
+                pass
+    return _orig_pixmap_tobytes(self, output, *args, **kwargs)
+
+def _safe_pixmap_save(self, filename, output=None, *args, **kwargs):
+    fmt = output or os.path.splitext(filename)[1].lstrip('.').lower() or "png"
+    if fmt == "png":
+        if self.colorspace and self.colorspace.name not in (fitz.csGRAY.name, fitz.csRGB.name):
+            try:
+                return fitz.Pixmap(fitz.csRGB, self).save(filename, output=output, *args, **kwargs)
+            except Exception:
+                pass
+        elif self.n >= 5 or (self.alpha and self.n not in (2, 4)):
+            try:
+                return fitz.Pixmap(fitz.csRGB, self).save(filename, output=output, *args, **kwargs)
+            except Exception:
+                pass
+    return _orig_pixmap_save(self, filename, output=output, *args, **kwargs)
+
+fitz.Pixmap.tobytes = _safe_pixmap_tobytes
+fitz.Pixmap.save = _safe_pixmap_save
+
 # pdf2docx 延遲/防呆載入
 try:
     from pdf2docx import Converter
-    from pdf2docx.image.ImagesExtractor import ImagesExtractor
-    
-    # 猴子修補 (Monkey Patch) 解決 PyMuPDF 遇到 CMYK 圖片崩潰的 Bug (code=4)
-    _original_pixmap_to_cv_image = ImagesExtractor._pixmap_to_cv_image
-    
-    def _patched_pixmap_to_cv_image(pixmap):
-        try:
-            return _original_pixmap_to_cv_image(pixmap)
-        except Exception:
-            pixmap = fitz.Pixmap(fitz.csRGB, pixmap)
-            return _original_pixmap_to_cv_image(pixmap)
-        
-    ImagesExtractor._pixmap_to_cv_image = staticmethod(_patched_pixmap_to_cv_image)
     HAS_PDF2DOCX = True
 except ImportError:
     HAS_PDF2DOCX = False
