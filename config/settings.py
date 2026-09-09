@@ -48,14 +48,71 @@ class _Paths:
     zip_mfd:        Path = _PROJECT_ROOT / "data" / "03_output" / "all_pdf_formulas_ai_mfd.zip"
     zip_hybrid:     Path = _PROJECT_ROOT / "data" / "03_output" / "all_pdf_formulas_hybrid.zip"
 
+    # // Models
+    models_dir:     Path = _PROJECT_ROOT / "models"
+
+    def get_model_path(self, model_name: str = "yolo_v8_ft.pt") -> Path | None:
+        """
+        Priority:
+        1. sys._MEIPASS / models / model_name
+        2. current execution dir / models / model_name
+        3. config / model_name
+        """
+        search_paths = [
+            self.bundle_root / "models" / model_name,
+            Path.cwd() / "models" / model_name,
+            self.root / "config" / model_name
+        ]
+        
+        # Also check alternative extension (.onnx <-> .pt)
+        alt_name = model_name.replace(".pt", ".onnx") if ".pt" in model_name else model_name.replace(".onnx", ".pt")
+        search_paths.extend([
+            self.bundle_root / "models" / alt_name,
+            Path.cwd() / "models" / alt_name,
+            self.root / "config" / alt_name
+        ])
+        
+        for p in search_paths:
+            if p.exists():
+                return p
+        return None
+
     def ensure_all(self) -> None:
         # // Create all output directories
         dirs = [
             self.input_dir, self.formula_dir, self.formula_dir_v2,
             self.cleaned_dir, self.preview_dir, self.backup_dir,
+            self.models_dir
         ]
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
+
+@dataclass(frozen=True)
+class _AppVersion:
+    app_version: str = "1.0.0"
+    model_version: str = "1.0.0"
+    model_hash: str = ""
+    min_compatible_model: str = "1.0.0"
+
+def _load_version() -> _AppVersion:
+    import json
+    # // Try CWD first, then Project Root
+    v_paths = [Path.cwd() / "version.json", _PROJECT_ROOT / "version.json", _BUNDLE_ROOT / "version.json"]
+    for v_path in v_paths:
+        if v_path.exists():
+            try:
+                with open(v_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return _AppVersion(
+                        app_version=data.get("app_version", "1.0.0"),
+                        model_version=data.get("model_version", "1.0.0"),
+                        model_hash=data.get("model_hash", ""),
+                        min_compatible_model=data.get("min_compatible_model", "1.0.0")
+                    )
+            except Exception:
+                pass
+    return _AppVersion()
+
 
 
 # // AI Model API Keys (Loaded from .env)
@@ -114,9 +171,10 @@ class _Config:
         }
 
 
-PATHS = _Paths()
-AI    = _AIKeys()
-CFG   = _Config()
+PATHS   = _Paths()
+AI      = _AIKeys()
+CFG     = _Config()
+VERSION = _load_version()
 
 
 if __name__ == "__main__":
