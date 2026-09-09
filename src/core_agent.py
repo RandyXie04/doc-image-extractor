@@ -108,14 +108,19 @@ def _init_mfd_worker(use_gpu=False):
             from config import PATHS
             import os
             
-            model_path = str(PATHS.root / "config" / "yolo_v8_ft.onnx")
-            if os.path.exists(model_path):
+            model_path_obj = PATHS.get_model_path("yolo_v8_ft.onnx")
+            if model_path_obj and model_path_obj.exists():
+                model_path = str(model_path_obj)
                 options = ort.SessionOptions()
                 options.intra_op_num_threads = 2
                 from src.scripts.hardware_probe import get_best_providers
                 _onnx_session = ort.InferenceSession(model_path, sess_options=options, providers=get_best_providers())
                 _onnx_input_name = _onnx_session.get_inputs()[0].name
             else:
+                print("=========================================")
+                print("[WARN] 請先下載模型權重檔 yolo_v8_ft.onnx")
+                print("請將檔案放置於 'models/' 或 'config/' 目錄下")
+                print("=========================================")
                 _onnx_session = "MOCK"
         except Exception:
             _onnx_session = "MOCK"
