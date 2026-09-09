@@ -70,7 +70,13 @@
 
         function handleFile(file) {
             currentFile = file;
-            fileInfo.textContent = `已選擇: ${file.name}`;
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            fileInfo.innerHTML = `
+                <div style="display:flex; flex-direction:column; align-items:center; gap:5px; padding: 10px; background: #f1f5f9; border-radius: 8px;">
+                    <span style="font-size:2rem;">📄</span>
+                    <span style="color: #334155;">已選擇: <b>${file.name}</b></span>
+                    <span style="color:#64748b; font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
+                </div>`;
             submitBtn.disabled = false;
             downloadBtn.style.display = 'none';
             statusDiv.textContent = '';
@@ -113,12 +119,15 @@
                     statusDiv.textContent = '⚠️ 此文件中未偵測到任何內嵌圖片。';
                 }
             } catch (err) {
-                statusDiv.style.color = '#dc2626';
-                statusDiv.textContent = `❌ 錯誤: ${err.message}`;
+                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background:#fef2f2; border:1px solid #f87171; border-radius:8px; color:#dc2626;">
+                    ❌ <b>發生錯誤：</b>${err.message} <br>
+                    <button onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: white; border: 1px solid #f87171; border-radius: 6px;">🔄 重新嘗試</button>
+                </div>`;
             } finally {
                 submitBtn.disabled = false;
             }
         };
     </script>
+<script src="/static/sidebar.js"></script>
 </body>
 </html>
