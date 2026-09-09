@@ -64,6 +64,51 @@ async def upload_file(file: UploadFile = File(...)):
 
     return {"file_id": file_id, "total_pages": total_pages}
 
+@app.get("/api/version")
+async def get_version():
+    from config import VERSION
+    return {
+        "app_version": VERSION.app_version,
+        "model_version": VERSION.model_version
+    }
+
+@app.post("/api/check_update")
+async def check_update():
+    from config import VERSION
+    from src.scripts.updater_service import check_latest_release
+    info = check_latest_release()
+    if not info:
+        return {"has_update": False, "msg": "無法連線至 GitHub 檢查更新。"}
+    
+    try:
+        remote_ver = [int(x) for x in info['latest_version'].split('.')]
+        local_ver = [int(x) for x in VERSION.app_version.split('.')]
+        has_update = remote_ver > local_ver
+    except:
+        has_update = False
+            
+    info['has_update'] = has_update
+    return info
+
+@app.post("/api/apply_update")
+async def apply_update(request: Request):
+    data = await request.json()
+    download_url = data.get('download_url')
+    if not download_url:
+        return {"status": "error", "msg": "No download URL provided."}
+        
+    from src.scripts.updater_service import perform_update
+    import threading
+    import time
+    
+    result = perform_update(download_url)
+    if result.get('status') == 'success':
+        def delayed_exit():
+            time.sleep(1)
+            os._exit(0)
+        threading.Thread(target=delayed_exit, daemon=True).start()
+    return result
+
 @app.get("/api/render_preview/{file_id}")
 async def render_preview(file_id: str, page: int = 1, header: float = 0.1, footer: float = 0.1, left: float = 0.0, right: float = 0.0):
     """回傳帶有裁切輔助線（上下紅藍、左右綠）的單頁 PDF 預覽圖"""
