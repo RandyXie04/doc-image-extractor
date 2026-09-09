@@ -1,22 +1,31 @@
 /* shared layout styles */
 body {
-    margin: 0;
-    display: flex;
-    min-height: 100vh;
-    background-color: #f8fafc;
-    font-family: 'Segoe UI', system-ui, sans-serif;
+    margin: 0 !important;
+    padding: 0 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: stretch !important;
+    justify-content: flex-start !important;
+    min-height: 100vh !important;
+    height: 100vh !important;
+    overflow: hidden !important;
+    background-color: #f8fafc !important;
+    font-family: 'Segoe UI', system-ui, sans-serif !important;
 }
 
 #sidebar {
-    width: 260px;
+    width: 250px !important;
+    min-width: 250px !important;
+    max-width: 250px !important;
+    flex-shrink: 0 !important;
     background: #0f172a;
     color: white;
     display: flex;
     flex-direction: column;
     box-shadow: 2px 0 10px rgba(0,0,0,0.1);
-    position: sticky;
-    top: 0;
-    height: 100vh;
+    height: 100vh !important;
+    position: relative;
+    z-index: 100;
 }
 
 #sidebar .brand {
@@ -34,6 +43,7 @@ body {
 #sidebar nav {
     flex: 1;
     padding: 1rem 0;
+    overflow-y: auto;
 }
 
 #sidebar a.nav-link {
@@ -63,15 +73,19 @@ body {
 }
 
 #main-content {
-    flex: 1;
-    padding: 2rem;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    overflow-y: auto;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    height: 100vh !important;
+    overflow-y: auto !important;
+    padding: 2.5rem 3rem !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: flex-start !important;
 }
 
-/* Hide old back-to-home links */
-.header > a[href="/"] {
-    display: none !important;
+.container {
+    margin: 0 auto !important;
+    width: 100% !important;
 }

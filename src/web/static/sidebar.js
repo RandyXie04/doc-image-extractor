@@ -34,19 +34,6 @@ document.addEventListener("DOMContentLoaded", () => {
     const mainContent = document.createElement('div');
     mainContent.id = 'main-content';
     bodyContents.forEach(node => mainContent.appendChild(node));
-    
-    // Add Back Button for tool pages
-    if (currentPath !== '/' && !currentPath.includes('index.html')) {
-        const backBtn = document.createElement('a');
-        backBtn.href = '/';
-        backBtn.innerHTML = '← 返回首頁';
-        backBtn.style.cssText = 'display:inline-block; margin-bottom:1.5rem; text-decoration:none; color:#64748b; font-weight:bold; font-size:0.95rem;';
-        // Add hover effect
-        backBtn.onmouseover = () => backBtn.style.color = '#0f172a';
-        backBtn.onmouseout = () => backBtn.style.color = '#64748b';
-        
-        mainContent.insertBefore(backBtn, mainContent.firstChild);
-    }
 
     document.body.appendChild(mainContent);
     document.body.insertAdjacentHTML('afterbegin', sidebarHtml);
@@ -86,6 +73,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
     openBtn.onclick = () => { modal.style.display = 'flex'; issueMsg.textContent = ''; issueDesc.value = ''; };
     closeBtn.onclick = () => { modal.style.display = 'none'; };
+    
+    // Wire any in-page report links to also open this modal
+    document.querySelectorAll('a[href*="issues"]').forEach(link => {
+        link.onclick = (e) => {
+            e.preventDefault();
+            modal.style.display = 'flex';
+            issueMsg.textContent = '';
+            issueDesc.value = '';
+        };
+    });
     
     submitBtn.onclick = async () => {
         if (!issueDesc.value.trim()) {
