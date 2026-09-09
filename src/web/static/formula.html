@@ -387,7 +387,11 @@
             if (!fileInput.files.length) return;
             const file = fileInput.files[0];
             currentFileName = file.name;
-            fileNameDisplay.textContent = "上傳中: " + file.name;
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            fileNameDisplay.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                <span style="color: #334155;">上傳中: <b>${file.name}</b></span>
+                <span style="color:#64748b; font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
+            </div>`;
             submitBtn.disabled = true;
             
             const formData = new FormData();
@@ -398,7 +402,12 @@
                 const data = await res.json();
                 if (data.file_id) {
                     currentFileId = data.file_id;
-                    fileNameDisplay.textContent = file.name;
+                    const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+                    fileNameDisplay.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
+                        <span style="font-size:2rem;">📄</span>
+                        <span style="color: #334155;">已選擇: <b>${file.name}</b></span>
+                        <span style="color:#64748b; font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
+                    </div>`;
                     submitBtn.disabled = false;
                     submitBtn.textContent = "開始處理";
                     
@@ -411,8 +420,10 @@
                     updatePreview();
                 }
             } catch (e) {
-                alert('檔案上傳失敗: ' + e);
-                fileNameDisplay.textContent = "點擊或拖曳 PDF 檔案至此";
+                fileNameDisplay.innerHTML = `<div style="padding:1rem; background:#fef2f2; border:1px solid #f87171; border-radius:8px; color:#dc2626;">
+                    ❌ <b>上傳失敗：</b>${e.message || e} <br>
+                    <button onclick="fileInput.click()" style="margin-top:10px; padding: 5px 10px; cursor:pointer; background: white; border: 1px solid #f87171; border-radius: 6px;">🔄 重新選擇檔案</button>
+                </div>`;
             }
         }
         
@@ -648,5 +659,6 @@ ${lastErrorLog || '未取得詳細錯誤日誌'}
             }
         }
     </script>
+<script src="/static/sidebar.js"></script>
 </body>
 </html>

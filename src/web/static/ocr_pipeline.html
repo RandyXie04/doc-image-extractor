@@ -4,63 +4,150 @@
     <meta charset="UTF-8">
     <title>書籍 PDF 全自動 OCR 與排版</title>
     <style>
-        :root { --primary: #ea580c; --bg: #f8fafc; --card: #ffffff; }
-        body { font-family: sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 3rem; }
+        :root { --primary: #ea580c; --primary-hover: #c2410c; --bg: #f8fafc; --card: #ffffff; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 3rem; }
         .container { background: var(--card); padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 650px; width: 100%; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
         .header a { text-decoration: none; color: var(--primary); font-weight: bold; }
-        .info-box { background: #fff7ed; border: 1px solid #fdba74; padding: 1rem; border-radius: 8px; margin-bottom: 1.5rem; color: #9a3412; line-height: 1.6; }
+        .upload-area { border: 2px dashed #cbd5e1; padding: 3rem; text-align: center; border-radius: 12px; cursor: pointer; margin-bottom: 1.5rem; }
+        .upload-area.dragover { border-color: var(--primary); background: #fff7ed; }
         .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1rem; }
+        .btn:disabled { background: #9ca3af; cursor: not-allowed; }
         #status { margin-top: 1rem; text-align: center; font-weight: 500; color: #475569; }
+        .btn-group { display: flex; gap: 1rem; margin-top: 1rem; }
+        .btn-group a { flex: 1; text-align: center; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; color: white; display: none; }
+        #downloadDocxBtn { background: #2563eb; }
+        #downloadMdBtn { background: #16a34a; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <a href="/">← 返回首頁</a>
+            <a href="/">◀ 返回首頁</a>
             <h2 style="margin: 0;">📄 全自動 OCR 與排版管線</h2>
             <div style="width: 80px;"></div>
         </div>
-        
-        <div class="info-box">
-            <strong>使用說明：</strong><br>
-            請先確保將需要處理的 PDF 放置於 data/database_text/ 目錄下，且檔名以 OCR 開頭。<br><br>
-            點擊下方按鈕後，系統將在背景執行：<br>
-            1. 呼叫 RapidDoc 進行光學辨識、表格解析與版面分析。<br>
-            2. 產生結構化的 Markdown 中繼檔案。<br>
-            3. 使用 pypandoc 與 template.docx 將 Markdown 轉換為包含原生複雜表格的 Word 文件。<br>
-            4. 最終檔案將保存於 data/03_output/ 資料夾中。
-        </div>
+        <p style="text-align: center; color: #64748b; margin-bottom: 2rem;">上傳 PDF 檔案，自動呼叫 RapidDoc 進行版面分析、表格識別與中文辨識，並轉為 Word 文件。</p>
 
-        <button type="button" class="btn" id="startBtn">▶ 啟動自動化轉檔管線</button>
+        <form id="uploadForm">
+            <div class="upload-area" id="dropZone">
+                <p>點擊選擇，或將 PDF 拖曳至此</p>
+                <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+            </div>
+            <div id="fileInfo" style="text-align: center; margin-bottom: 1rem; font-weight: bold;"></div>
+            <button type="submit" class="btn" id="submitBtn" disabled>開始上傳並執行 OCR</button>
+        </form>
         <div id="status"></div>
+        <div class="btn-group">
+            <a id="downloadDocxBtn" href="#">⬇️ 下載 Word (.docx)</a>
+            <a id="downloadMdBtn" href="#">📄 下載 Markdown (.md)</a>
+        </div>
     </div>
 
     <script>
-        const startBtn = document.getElementById('startBtn');
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const submitBtn = document.getElementById('submitBtn');
         const statusDiv = document.getElementById('status');
+        const downloadDocxBtn = document.getElementById('downloadDocxBtn');
+        const downloadMdBtn = document.getElementById('downloadMdBtn');
+        let currentFile = null;
 
-        startBtn.onclick = async () => {
-            startBtn.disabled = true;
-            statusDiv.textContent = '管線已啟動，這可能需要數分鐘至數小時，請至終端機查看進度...';
+        dropZone.onclick = () => fileInput.click();
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+        dropZone.ondrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
+        };
+        fileInput.onchange = (e) => {
+            if (e.target.files.length > 0) handleFile(e.target.files[0]);
+        };
+
+        function handleFile(file) {
+            currentFile = file;
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            fileInfo.innerHTML = `
+                <div style="display:flex; flex-direction:column; align-items:center; gap:5px; padding: 10px; background: #fff7ed; border-radius: 8px;">
+                    <span style="font-size:2rem;">📄</span>
+                    <span style="color: #334155;">已選擇: <b>${file.name}</b></span>
+                    <span style="color:#64748b; font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
+                </div>`;
+            submitBtn.disabled = false;
+            downloadDocxBtn.style.display = 'none';
+            downloadMdBtn.style.display = 'none';
+            statusDiv.textContent = '';
+        }
+
+        document.getElementById('uploadForm').onsubmit = async (e) => {
+            e.preventDefault();
+            if (!currentFile) return;
+
+            submitBtn.disabled = true;
             
+            // Create a step-by-step checklist UI
+            statusDiv.innerHTML = `
+                <div style="text-align: left; background: #f8fafc; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 1rem;">
+                    <div style="font-weight: bold; color: #ea580c; margin-bottom: 0.5rem;">🚀 處理管線已啟動，請勿關閉視窗...</div>
+                    <ul style="list-style: none; padding: 0; margin: 0; font-size: 0.95rem; color: #475569; line-height: 1.8;">
+                        <li id="step1">⏳ 1. 上傳檔案至伺服器</li>
+                        <li id="step2" style="color:#94a3b8;">⚪ 2. 背景觸發 RapidDoc 模型分析</li>
+                        <li id="step3" style="color:#94a3b8;">⚪ 3. 光學字元辨識與版面還原 (需時較長)</li>
+                        <li id="step4" style="color:#94a3b8;">⚪ 4. 產生 Word 排版與 Markdown 檔案</li>
+                    </ul>
+                </div>
+            `;
+            
+            downloadDocxBtn.style.display = 'none';
+            downloadMdBtn.style.display = 'none';
+
+            const formData = new FormData();
+            formData.append('file', currentFile);
+
             try {
-                const response = await fetch('/api/run_ocr_pipeline', {
-                    method: 'POST'
+                // Fake progress updates for UI reassurance
+                setTimeout(() => { 
+                    if(document.getElementById('step1')) document.getElementById('step1').innerHTML = '✅ 1. 上傳檔案至伺服器 (完成)'; 
+                    if(document.getElementById('step2')) { document.getElementById('step2').innerHTML = '⏳ 2. 背景觸發 RapidDoc 模型分析...'; document.getElementById('step2').style.color = '#475569'; }
+                }, 1500);
+                setTimeout(() => { 
+                    if(document.getElementById('step2')) document.getElementById('step2').innerHTML = '✅ 2. 背景觸發 RapidDoc 模型分析 (完成)'; 
+                    if(document.getElementById('step3')) { document.getElementById('step3').innerHTML = '⏳ 3. 光學字元辨識與版面還原 (執行中...)'; document.getElementById('step3').style.color = '#ea580c'; }
+                }, 3000);
+
+                const response = await fetch('/api/upload_and_run_ocr', {
+                    method: 'POST',
+                    body: formData
                 });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    statusDiv.textContent = '✅ ' + data.message;
-                } else {
-                    statusDiv.textContent = '❌ 啟動失敗，請檢查終端機日誌。';
+
+                if (!response.ok) {
+                    const errorData = await response.json().catch(() => ({}));
+                    throw new Error(errorData.detail || 'OCR 啟動失敗');
                 }
-            } catch (error) {
-                statusDiv.textContent = '❌ 網路錯誤: ' + error.message;
-            } finally {
-                setTimeout(() => { startBtn.disabled = false; }, 5000);
+
+                const result = await response.json();
+                
+                if(document.getElementById('step3')) document.getElementById('step3').innerHTML = '✅ 3. 光學字元辨識與版面還原 (排程成功)';
+                if(document.getElementById('step4')) { document.getElementById('step4').innerHTML = '⏳ 4. 產生 Word 排版 (背景處理中)'; document.getElementById('step4').style.color = '#16a34a'; }
+
+                statusDiv.innerHTML += `<div style="margin-top:1rem; color:#16a34a; font-weight:bold;">✅ ${result.message}。完成後可點擊下方按鈕下載結果。</div>`;
+                
+                downloadDocxBtn.href = `/api/download_ocr_result/${result.filename_stem}/docx`;
+                downloadMdBtn.href = `/api/download_ocr_result/${result.filename_stem}/md`;
+                downloadDocxBtn.style.display = 'block';
+                downloadMdBtn.style.display = 'block';
+
+            } catch (err) {
+                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background:#fef2f2; border:1px solid #f87171; border-radius:8px; color:#dc2626;">
+                    ❌ <b>啟動失敗：</b>${err.message} <br>
+                    <button onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: white; border: 1px solid #f87171; border-radius: 6px;">🔄 重新嘗試上傳</button>
+                </div>`;
+                submitBtn.disabled = false;
             }
         };
     </script>
+<script src="/static/sidebar.js"></script>
 </body>
 </html>

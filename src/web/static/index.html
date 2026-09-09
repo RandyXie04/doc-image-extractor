@@ -104,35 +104,45 @@
             <p>全方位整合「AI 公式萃取」、「文件圖片無損提取」、「方正排版 CMap 標點修復」與「自動化校註」的一站式桌面處理中心。</p>
         </div>
 
-        <div class="grid">
-            <a href="/static/formula.html" class="card">
-                <span class="badge purple">AI 深度學習模型</span>
-                <h3>🔍 1. PDF 數學公式提取</h3>
-                <p>載入 YOLOv8 (ONNX) 模型精準定位數學公式，提供預覽畫布調整範圍，將檔案轉檔並提供 Word 可編輯格式。</p>
-                <div class="action-text">開啟工具 <span>→</span></div>
-            </a>
+        <div style="margin-bottom: 2rem;">
+            <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: #1e293b;">📌 新手指南：建議處理流程</h2>
+            <p style="color: #64748b; line-height: 1.6;">若是處理古老電子書或學術論文，建議依循以下步驟進行數位化。您可以隨時點選左側面板快速切換工具。</p>
+        </div>
 
-            <a href="/static/extract_images.html" class="card">
-                <span class="badge blue">資源擷取</span>
-                <h3>🖼️ 2. 文件圖片無損提取</h3>
-                <p>支援批次拖曳 PDF 或 Word (DOCX) 檔案，自動提取最原始內嵌的高畫質圖片，支援自訂頁碼，並打包為 ZIP 壓縮檔。</p>
-                <div class="action-text">開啟工具 <span>→</span></div>
-            </a>
-
-            <a href="/static/founder_repair.html" class="card">
-                <span class="badge green">編碼問題修復</span>
-                <h3>🛠️ 3. 方正書版亂碼修復</h3>
-                <p>針對早期方正排版系統 (Founder Bookmaker) 產生的 CMap 編碼缺陷，修復亂碼、特殊字串、中英文標點符號。</p>
+        <div style="margin-bottom: 1.5rem; font-weight: bold; color: #4338ca; border-bottom: 2px solid #e0e7ff; padding-bottom: 0.5rem;">階段一：修復與前置準備</div>
+        <div class="grid" style="margin-bottom: 2rem;">
+            <a href="/static/founder_repair.html" class="card" style="border-left: 4px solid #16a34a;">
+                <span class="badge green">第一步：編碼修復</span>
+                <h3>🛠️ 方正書版亂碼修復</h3>
+                <p>若來源是早期方正系統出版的 PDF，請先經過此工具修復 CMap 編碼缺陷與亂碼，再進入後續處理。</p>
                 <div class="action-text">開啟工具 <span>→</span></div>
             </a>
             
-            <a href="/static/ocr_pipeline.html" class="card">
-                <span class="badge" style="background:#fff7ed;color:#ea580c;">光學字元辨識 (OCR)</span>
-                <h3>📄 4. 書籍 PDF 全自動 OCR 與排版</h3>
-                <p>呼叫 RapidDoc 進行高精度版面分析、表格識別與中文辨識，自動套用範本精準還原多階標題與複雜表格！</p>
+            <a href="/static/extract_images.html" class="card" style="border-left: 4px solid #0284c7;">
+                <span class="badge blue">可選：資源擷取</span>
+                <h3>🖼️ 文件圖片無損提取</h3>
+                <p>在轉換格式前，若需保留原版插圖，可使用此工具一鍵打包 PDF 內所有高畫質原始圖片。</p>
+                <div class="action-text">開啟工具 <span>→</span></div>
+            </a>
+        </div>
+
+        <div style="margin-bottom: 1.5rem; font-weight: bold; color: #4338ca; border-bottom: 2px solid #e0e7ff; padding-bottom: 0.5rem;">階段二：主轉換引擎</div>
+        <div class="grid">
+            <a href="/static/formula.html" class="card" style="border-left: 4px solid #4f46e5;">
+                <span class="badge purple">理科文獻專用</span>
+                <h3>🔍 PDF 數學公式提取</h3>
+                <p>適合包含大量數學公式的理工論文。使用 YOLOv8 模型定位獨立公式，精準轉換為 Word 格式並保留公式圖片。</p>
+                <div class="action-text">開啟工具 <span>→</span></div>
+            </a>
+
+            <a href="/static/ocr_pipeline.html" class="card" style="border-left: 4px solid #ea580c;">
+                <span class="badge" style="background:#fff7ed;color:#ea580c;">純文字與表格專用</span>
+                <h3>📄 全自動 OCR 與排版</h3>
+                <p>適合圖文混排、大量表格或掃描檔的純文字書籍。使用 RapidDoc 自動版面分析並重建層級排版。</p>
                 <div class="action-text">啟動管線 <span>→</span></div>
             </a>
         </div>
     </div>
+<script src="/static/sidebar.js"></script>
 </body>
 </html>

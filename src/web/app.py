@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -430,47 +430,94 @@ async def api_founder_repair(
         raise HTTPException(status_code=500, detail=f"修復過程發生異常: {str(e)}")
 
 
+@app.post("/api/report_issue")
+async def report_issue(request: Request):
+    import subprocess
+    import platform
+    
+    data = await request.json()
+    description = data.get("description", "").strip()
+    if not description:
+        raise HTTPException(status_code=400, detail="內容不可為空")
+        
+    sys_info = f"OS: {platform.system()} {platform.release()}"
+    body = f"**使用者回報:**\n{description}\n\n---\n**自動收集資訊:**\n```text\n{sys_info}\n```"
+    
+    try:
+        cmd = [
+            "gh", "issue", "create", 
+            "--title", f"內部回報: {description[:30]}...", 
+            "--body", body,
+            "--label", "user-feedback"
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
+        if result.returncode != 0 and "not found" in result.stderr:
+            # Fallback without label
+            cmd_fallback = [
+                "gh", "issue", "create", 
+                "--title", f"內部回報: {description[:30]}...", 
+                "--body", body
+            ]
+            result = subprocess.run(cmd_fallback, capture_output=True, text=True, check=True, encoding='utf-8')
+        elif result.returncode != 0:
+            raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr=result.stderr)
+        
+        issue_url = result.stdout.strip()
+        return {"success": True, "url": issue_url, "message": "回報成功！感謝您的反饋。"}
+    except subprocess.CalledProcessError as e:
+        error_msg = e.stderr if e.stderr else str(e)
+        raise HTTPException(status_code=500, detail=f"提交失敗: {error_msg}")
+    except FileNotFoundError:
+        raise HTTPException(status_code=500, detail="系統未安裝 GitHub CLI (gh)，或未加入 PATH。")
 
-@app.post("/api/run_ocr_pipeline")
-async def run_ocr_pipeline(background_tasks: BackgroundTasks):
+
+
+@app.post("/api/upload_and_run_ocr")
+async def upload_and_run_ocr(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     import subprocess
     import sys
     import shutil
     import os
+    import tempfile
     from config import PATHS
+    
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext != ".pdf":
+        raise HTTPException(status_code=400, detail="僅支援 PDF 檔案格式")
 
-    def run_scripts():
-        pdf_dir = PATHS.root / 'data' / 'database_text'
+    # Save to database_text folder
+    pdf_dir = PATHS.root / 'data' / 'database_text'
+    pdf_dir.mkdir(parents=True, exist_ok=True)
+    
+    temp_pdf_path = pdf_dir / file.filename
+    with open(temp_pdf_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    def run_scripts(pdf_path_str, filename_stem):
         output_dir = PATHS.root / 'data' / '03_output'
         backup_dir = output_dir / 'backup_originals'
         
-        # 1. 執行前狀態檢查／清理選項：若 03_output 已存在同名輸出，自動封存
-        pdf_files = list(pdf_dir.glob('*.pdf'))
-        for pdf_path in pdf_files:
-            stem = pdf_path.stem
-            md_file = output_dir / f"{stem}.md"
-            docx_file = output_dir / f"{stem}.docx"
-            
-            for f in [md_file, docx_file]:
-                if f.exists():
-                    backup_dir.mkdir(parents=True, exist_ok=True)
-                    backup_path = backup_dir / f.name
-                    print(f"[Cleanup] Backing up existing output {f.name} to {backup_dir}")
-                    try:
-                        shutil.move(str(f), str(backup_path))
-                    except Exception as e:
-                        print(f"Error moving {f.name}: {e}")
+        # 1. 執行前狀態檢查／清理選項
+        md_file = output_dir / f"{filename_stem}.md"
+        docx_file = output_dir / f"{filename_stem}.docx"
+        
+        for f in [md_file, docx_file]:
+            if f.exists():
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                backup_path = backup_dir / f.name
+                print(f"[Cleanup] Backing up existing output {f.name} to {backup_dir}")
+                try:
+                    shutil.move(str(f), str(backup_path))
+                except Exception as e:
+                    print(f"Error moving {f.name}: {e}")
 
-        # 2. Run OCR and MD generation
-        subprocess.run([sys.executable, str(PATHS.root / "src" / "scripts" / "process_ocr.py")], cwd=str(PATHS.root))
+        # 2. Run OCR and MD generation specifically for this file
+        subprocess.run([sys.executable, str(PATHS.root / "src" / "scripts" / "process_ocr.py"), "--file", pdf_path_str], cwd=str(PATHS.root))
         
         # 3. 收集本次成功生成的 .md 清單傳遞給 md_to_docx.py
         new_md_files = []
-        for pdf_path in pdf_files:
-            stem = pdf_path.stem
-            md_file = output_dir / f"{stem}.md"
-            if md_file.exists():
-                new_md_files.append(str(md_file))
+        if md_file.exists():
+            new_md_files.append(str(md_file))
                 
         # Run MD to DOCX conversion passing specific files
         if new_md_files:
@@ -479,8 +526,27 @@ async def run_ocr_pipeline(background_tasks: BackgroundTasks):
         else:
             print("No new markdown files were generated.")
 
-    background_tasks.add_task(run_scripts)
-    return {
-        "status": "started",
-        "message": "OCR and layout pipeline started in background. Results will be saved to data/03_output/."
-    }
+    # Execute script in background task
+    background_tasks.add_task(run_scripts, str(temp_pdf_path), Path(file.filename).stem)
+    return {"message": "OCR 管線已成功啟動", "filename_stem": Path(file.filename).stem}
+
+@app.get("/api/download_ocr_result/{filename_stem}/{ext}")
+async def download_ocr_result(filename_stem: str, ext: str):
+    from config import PATHS
+    import os
+    from fastapi.responses import FileResponse
+    
+    if ext not in ["docx", "md"]:
+        raise HTTPException(status_code=400, detail="僅支援下載 docx 或 md")
+        
+    output_dir = PATHS.root / 'data' / '03_output'
+    file_path = output_dir / f"{filename_stem}.{ext}"
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"檔案尚未產生或處理失敗: {filename_stem}.{ext}")
+        
+    return FileResponse(
+        file_path,
+        filename=f"{filename_stem}.{ext}"
+    )
+

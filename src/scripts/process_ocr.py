@@ -324,6 +324,12 @@ def generate_audit_report(pdf_name, total_pages, audit_records, report_path):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--file", type=str, help="Specific PDF file to process")
+    parser.add_argument("--output_dir", type=str, default="data/03_output", help="Output directory")
+    args = parser.parse_args()
+
     if not RapidDoc:
         print("RapidDoc is not available.")
         return
@@ -340,16 +346,19 @@ def main():
     }
     engine = RapidDoc(layout_config=layout_cfg)
 
-    input_dir = os.path.join('data', 'database_text')
-    output_dir = os.path.join('data', '03_output')
+    output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
 
-    pdf_files = glob.glob(os.path.join(input_dir, 'OCR*.pdf'))
-    if not pdf_files:
-        pdf_files = [
-            f for f in glob.glob(os.path.join(input_dir, '*.pdf'))
-            if not os.path.basename(f).startswith('temp_')
-        ]
+    if args.file:
+        pdf_files = [args.file]
+    else:
+        input_dir = os.path.join('data', 'database_text')
+        pdf_files = glob.glob(os.path.join(input_dir, 'OCR*.pdf'))
+        if not pdf_files:
+            pdf_files = [
+                f for f in glob.glob(os.path.join(input_dir, '*.pdf'))
+                if not os.path.basename(f).startswith('temp_')
+            ]
 
     print(f"Found {len(pdf_files)} PDF files to process.")
 

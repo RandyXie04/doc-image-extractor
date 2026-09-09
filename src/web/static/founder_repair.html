@@ -62,7 +62,13 @@
 
         function handleFile(file) {
             currentFile = file;
-            fileInfo.textContent = `已選擇: ${file.name}`;
+            const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
+            fileInfo.innerHTML = `
+                <div style="display:flex; flex-direction:column; align-items:center; gap:5px; padding: 10px; background: #f1f5f9; border-radius: 8px;">
+                    <span style="font-size:2rem;">📄</span>
+                    <span style="color: #334155;">已選擇: <b>${file.name}</b></span>
+                    <span style="color:#64748b; font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
+                </div>`;
             submitBtn.disabled = false;
             downloadBtn.style.display = 'none';
             statusDiv.textContent = '';
@@ -98,14 +104,15 @@
                     statusDiv.textContent = '✅ 修復完成！請點擊下方按鈕下載。';
                 } else {
                     const err = await response.json();
-                    statusDiv.textContent = `❌ 錯誤: ${err.detail || '未知錯誤'}`;
+                    statusDiv.innerHTML = `❌ <b>發生錯誤：</b>${err.detail || '檔案格式或內容可能有誤'} <br><button onclick="submitBtn.click()" style="margin-top:10px; padding: 5px 10px; cursor:pointer;">🔄 重新嘗試</button>`;
                 }
             } catch (error) {
-                statusDiv.textContent = `❌ 網路錯誤: ${error.message}`;
+                statusDiv.innerHTML = `❌ <b>網路連線中斷：</b>${error.message} <br><button onclick="submitBtn.click()" style="margin-top:10px; padding: 5px 10px; cursor:pointer;">🔄 重新連線</button>`;
             } finally {
                 submitBtn.disabled = false;
             }
         };
     </script>
+<script src="/static/sidebar.js"></script>
 </body>
 </html>
