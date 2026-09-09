@@ -399,11 +399,16 @@ class PDFConversionAgent:
             first_page = doc[0]
             rect = first_page.rect
 
+        # // 修正底部比例：若傳入 < 0.5 (如前端的 0.10 代表裁切底部的 10%)，轉為從頂部向下的絕對門檻 (1.0 - 0.10 = 0.90)
+        calc_footer_ratio = self.footer_ratio
+        if calc_footer_ratio < 0.5:
+            calc_footer_ratio = 1.0 - calc_footer_ratio
+
         return {
             "page_width": rect.width,
             "page_height": rect.height,
             "header_threshold": rect.height * self.header_ratio,
-            "footer_threshold": rect.height * self.footer_ratio,
+            "footer_threshold": rect.height * calc_footer_ratio,
             "left_threshold": rect.width * self.left_ratio,
             "right_threshold": rect.width * (1.0 - self.right_ratio),
             "sample_pages": [0, 1, -1]
@@ -457,6 +462,12 @@ class PDFConversionAgent:
 
         final_top = detected_header_y + 5 if detected_header_y > 0 else 0.0
         final_bottom = detected_footer_y - 5 if detected_footer_y < rect.height else rect.height
+
+        # // 核心防護 (Safety Clamps)：防止誤判導致整頁被一刀切斷
+        # // 頂部裁切不可超過 30%，底部裁切不可侵入至 70% 以上，保留至少 60% 正文核心
+        final_top = min(final_top, rect.height * 0.3)
+        final_bottom = max(final_bottom, rect.height * 0.7)
+
         final_left = plan.get("left_threshold", 0.0)
         final_right = plan.get("right_threshold", rect.width)
 
