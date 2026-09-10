@@ -452,6 +452,7 @@ async def api_extract_images(
     to_grayscale: bool = Form(False)
 ):
     from src.scripts.extract_images import process_document_images
+    import asyncio
 
     orig_filename = file.filename or "document"
     orig_ext = Path(orig_filename).suffix.lower()
@@ -470,7 +471,8 @@ async def api_extract_images(
         shutil.copyfileobj(file.file, buffer)
 
     try:
-        count, zip_path = process_document_images(
+        count, zip_path = await asyncio.to_thread(
+            process_document_images,
             file_path=str(input_file_path),
             output_zip_path=str(output_zip_path),
             temp_dir=str(extracted_folder),
@@ -610,13 +612,13 @@ def _cleanup_temp_files(*file_paths):
 
 @app.post("/api/founder/repair")
 async def api_founder_repair(
-    background_tasks: BackgroundTasks,
     file: UploadFile = File(...)
 ):
     import tempfile
     import os
     import shutil
     from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
     from src.founder_tools.fix_founder_fonts import repair_pdf_file, repair_docx_file
     
     ext = os.path.splitext(file.filename)[1].lower()
@@ -641,8 +643,8 @@ async def api_founder_repair(
             
             repair_pdf_file(temp_input, temp_out_txt, temp_out_docx)
             # 將中間 txt 與輸入 input 清理，輸出 docx 待傳輸完後清理
-            background_tasks.add_task(_cleanup_temp_files, temp_input, temp_out_txt, temp_out_docx)
-            return {"status": "success", "file_path": temp_out_docx, "filename": f"repaired_{file.filename}.docx"}
+            bg_task = BackgroundTask(_cleanup_temp_files, temp_input, temp_out_txt, temp_out_docx)
+            return FileResponse(temp_out_docx, filename=f"repaired_{file.filename}.docx", background=bg_task)
             
         elif ext == ".docx":
             fd_docx, temp_out_docx = tempfile.mkstemp(suffix=".docx")
@@ -650,8 +652,8 @@ async def api_founder_repair(
             created_temps.append(temp_out_docx)
             
             repair_docx_file(temp_input, temp_out_docx)
-            background_tasks.add_task(_cleanup_temp_files, temp_input, temp_out_docx)
-            return {"status": "success", "file_path": temp_out_docx, "filename": f"repaired_{file.filename}"}
+            bg_task = BackgroundTask(_cleanup_temp_files, temp_input, temp_out_docx)
+            return FileResponse(temp_out_docx, filename=f"repaired_{file.filename}", background=bg_task)
             
     except Exception as e:
         _cleanup_temp_files(*created_temps)

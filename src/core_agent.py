@@ -22,6 +22,7 @@ import sys
 import io
 import glob
 import re
+import uuid
 import zipfile
 import threading
 from pathlib import Path
@@ -401,8 +402,8 @@ class PDFConversionAgent:
         self.preview_dir = preview_dir if preview_dir else str(PATHS.preview_dir)
         self.formula_dir = formula_dir if formula_dir else str(PATHS.formula_dir_v2)
 
-        # ✅ 臨時 PDF 錨定至專案根目錄，不再污染 CWD
-        self.temp_cropped_pdf = str(PATHS.root / "temp_cropped_optimized.pdf")
+        # ✅ 臨時 PDF 錨定至專案中間層，並加上 UUID 防止多工作業互相覆蓋 (Race Condition)
+        self.temp_cropped_pdf = str(PATHS.data_dir / "02_intermediate" / f"temp_cropped_{uuid.uuid4().hex[:8]}.pdf")
 
         # ✅ 探測比例預設由 CFG 提供（可由 .env 覆寫）
         self.header_ratio = header_ratio if header_ratio is not None else CFG.header_ratio
