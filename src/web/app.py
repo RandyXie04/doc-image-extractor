@@ -695,17 +695,15 @@ async def upload_and_run_ocr(
     left_ratio: float = Form(0.0),
     right_ratio: float = Form(0.0)
 ):
-    import subprocess
     import sys
     import shutil
     import os
-    import tempfile
     from config import PATHS
     
     pdf_dir = PATHS.root / 'data' / 'database_text'
     pdf_dir.mkdir(parents=True, exist_ok=True)
     
-    # 支援透過預先上傳之 file_id 或即時上傳 file
+    # Support pre-uploaded file_id or direct upload
     if file_id and (PATHS.input_dir / file_id).exists():
         raw_pdf_path = PATHS.input_dir / file_id
         filename_stem = filename_orig or Path(file_id).stem
@@ -721,7 +719,7 @@ async def upload_and_run_ocr(
     else:
         raise HTTPException(status_code=400, detail="請提供 PDF 檔案或檔案代碼")
 
-    # 執行所見即所得裁切 (WYSIWYG pre-crop using fitz)
+    # WYSIWYG pre-crop using fitz
     input_pdf_path = raw_pdf_path
     if header_ratio > 0 or footer_ratio > 0 or left_ratio > 0 or right_ratio > 0:
         cropped_pdf_path = pdf_dir / f"cropped_{filename_stem}.pdf"
@@ -744,52 +742,59 @@ async def upload_and_run_ocr(
 
     ocr_progress_dict[filename_stem] = {"progress": 0, "message": "正在初始化任務...", "status": "processing"}
 
-    def run_scripts(pdf_path_str, stem, style_map_json, eng):
+    async def run_scripts_async(pdf_path_str, stem, style_map_json, eng):
+        import asyncio
+        import json as _json
         try:
             output_dir = PATHS.root / 'data' / '03_output'
             backup_dir = output_dir / 'backup_originals'
+            output_dir.mkdir(parents=True, exist_ok=True)
             
             md_file = output_dir / f"{stem}.md"
             docx_file = output_dir / f"{stem}.docx"
             
-            for f in [md_file, docx_file]:
-                if f.exists():
+            for f_path in [md_file, docx_file]:
+                if f_path.exists():
                     backup_dir.mkdir(parents=True, exist_ok=True)
-                    backup_path = backup_dir / f.name
-                    try: shutil.move(str(f), str(backup_path))
+                    backup_path = backup_dir / f_path.name
+                    try: shutil.move(str(f_path), str(backup_path))
                     except: pass
 
             cmd = [
                 sys.executable, str(PATHS.root / "src" / "scripts" / "pdf_engine_dispatcher.py"), 
                 "--file", pdf_path_str,
+                "--output_dir", str(output_dir),  # absolute path
                 "--output_stem", stem,
                 "--engine", eng
             ]
             if style_map_json:
                 cmd.extend(["--style_mapping", style_map_json])
                 
-            proc = subprocess.Popen(
-                cmd, 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.STDOUT, 
-                text=True, 
-                encoding="utf-8", 
-                errors="replace",
+            # Use asyncio subprocess to avoid blocking the event loop
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
                 cwd=str(PATHS.root)
             )
-            for line in proc.stdout:
-                line = line.strip()
+            
+            async for raw_line in proc.stdout:
+                try:
+                    line = raw_line.decode("utf-8", errors="replace").strip()
+                except Exception:
+                    line = ""
                 if line:
                     if line.startswith("{") and "progress" in line:
                         try:
-                            data = json.loads(line)
+                            data = _json.loads(line)
                             ocr_progress_dict[stem]["progress"] = data.get("progress", ocr_progress_dict[stem]["progress"])
                             ocr_progress_dict[stem]["message"] = data.get("message", line)
-                        except:
+                        except Exception:
                             pass
                     else:
                         ocr_progress_dict[stem]["message"] = line[:120]
-            proc.wait()
+            
+            await proc.wait()
             
             if proc.returncode != 0:
                 ocr_progress_dict[stem]["status"] = "failed"
@@ -799,16 +804,15 @@ async def upload_and_run_ocr(
             ocr_progress_dict[stem]["progress"] = 92
             ocr_progress_dict[stem]["message"] = "正在套用樣式並產生 Word (.docx) 文件..."
             
-            new_md_files = []
             if md_file.exists():
-                new_md_files.append(str(md_file))
-                    
-            if new_md_files:
-                subprocess.run(
-                    [sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py"), "--files"] + new_md_files, 
+                md_proc = await asyncio.create_subprocess_exec(
+                    sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py"),
+                    "--files", str(md_file),
                     cwd=str(PATHS.root),
-                    check=False
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL
                 )
+                await md_proc.wait()
                 
             ocr_progress_dict[stem]["progress"] = 100
             ocr_progress_dict[stem]["message"] = "轉檔完成！"
@@ -817,7 +821,8 @@ async def upload_and_run_ocr(
             ocr_progress_dict[stem]["status"] = "failed"
             ocr_progress_dict[stem]["message"] = f"處理過程異常: {str(err)}"
 
-    background_tasks.add_task(run_scripts, str(input_pdf_path), filename_stem, style_mapping, engine)
+    import asyncio
+    asyncio.ensure_future(run_scripts_async(str(input_pdf_path), filename_stem, style_mapping, engine))
     return {"message": "OCR 管道已成功啟動", "filename_stem": filename_stem}
 
 
