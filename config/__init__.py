@@ -1,1 +1,2 @@
-from .settings import PATHS, AI, CFG
+from .settings import PATHS, AI, CFG, VERSION
+

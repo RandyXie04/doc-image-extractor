@@ -148,6 +148,9 @@ class _Config:
     embed_formulas_in_word: bool = field(default_factory=lambda: os.getenv("EMBED_FORMULAS_IN_WORD", "true").lower() == "true")
     easyocr_langs:  list  = field(default_factory=lambda: os.getenv("EASYOCR_LANGS", "ch_sim,en").split(","))
     
+    # // Operation Mode: 'editor' (default for publishing house) or 'dev' (for engineers)
+    app_mode:       str   = field(default_factory=lambda: os.getenv("APP_MODE", "editor").lower())
+    
     # // Resource guardrails
     max_safe_pages: int   = field(default_factory=lambda: int(os.getenv("MAX_SAFE_PAGES", "300")))
     batch_size:     int   = field(default_factory=lambda: int(os.getenv("BATCH_SIZE", "50")))

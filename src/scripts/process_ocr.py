@@ -110,7 +110,7 @@ def parse_footnote_entries(text):
     return entries
 
 
-def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_records):
+def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_records, style_mapping=None):
     """
     Process layout blocks of a single page:
     1. Separate candidate footnote blocks from definite body blocks while tracking indices.
@@ -119,6 +119,9 @@ def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_re
     4. If unmatched and lacking citation semantics, preserve block in original reading order.
     5. Render page markdown with Pandoc footnotes [^n].
     """
+    if style_mapping is None:
+        style_mapping = {}
+
     page_size = page_info.get("page_size", [1000, 1000])
     page_h = page_size[1] if len(page_size) >= 2 else 1000
     para_blocks = page_info.get("para_blocks", [])
@@ -162,6 +165,30 @@ def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_re
 
     # Initial body markdown list
     body_markdown_list = make_blocks_to_markdown(initial_body_blocks, MakeMode.MM_MD, img_buket_path="")
+
+    # Apply Heading Detection to upgrade headings based on geometry & regex
+    try:
+        from src.founder_tools.core.heading_detector import HeadingDetector
+        # We assume initial_body_blocks and body_markdown_list have 1-to-1 mapping
+        for idx in range(min(len(initial_body_blocks), len(body_markdown_list))):
+            blk = initial_body_blocks[idx]
+            md_text = body_markdown_list[idx]
+            
+            # 假設頁寬為 600 (可用實際資訊替換)
+            level = HeadingDetector.detect_block_level(blk, page_width=600.0)
+            
+            if level > 0:
+                # Remove existing header hashes if any
+                clean_text = md_text.lstrip('#').strip()
+                prefix = '#' * level
+                custom_style = style_mapping.get(f'h{level}')
+                if custom_style:
+                    # Pandoc heading attribute syntax
+                    body_markdown_list[idx] = f"{prefix} {clean_text} {{custom-style=\"{custom_style}\"}}"
+                else:
+                    body_markdown_list[idx] = f"{prefix} {clean_text}"
+    except ImportError:
+        pass
 
     final_footnotes = []
     blocks_to_restore = []
@@ -325,10 +352,18 @@ def generate_audit_report(pdf_name, total_pages, audit_records, report_path):
 
 def main():
     import argparse
+    import json
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", type=str, help="Specific PDF file to process")
     parser.add_argument("--output_dir", type=str, default="data/03_output", help="Output directory")
+    parser.add_argument("--style_mapping", type=str, default="{}", help="JSON string for heading style mapping")
     args = parser.parse_args()
+    
+    style_mapping = {}
+    try:
+        style_mapping = json.loads(args.style_mapping)
+    except:
+        pass
 
     if not RapidDoc:
         print("RapidDoc is not available.")
@@ -383,7 +418,7 @@ def main():
                     page_num = page_idx + 1
 
                     body_list, parsed_entries, previous_open_footnote = process_page_footnotes(
-                        page_info, page_num, previous_open_footnote, audit_records
+                        page_info, page_num, previous_open_footnote, audit_records, style_mapping
                     )
                     pages_data.append({
                         "page_num": page_num,

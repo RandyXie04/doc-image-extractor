@@ -27,6 +27,38 @@
             <h2 style="margin: 0;">📄 全自動 OCR 與排版管線</h2>
             <div style="width: 80px;"></div>
         </div>
+        
+        <!-- 自訂範本區塊 -->
+        <div style="background: #f1f5f9; padding: 1.5rem; border-radius: 12px; margin-bottom: 2rem; border: 1px solid #cbd5e1;">
+            <h3 style="margin-top: 0; color: #334155;">📚 樣式範本設定</h3>
+            <p style="color: #64748b; font-size: 0.95rem; margin-bottom: 1rem;">
+                目前使用範本: <strong id="currentTemplateName">載入中...</strong>
+            </p>
+            <div style="display: flex; gap: 10px;">
+                <input type="file" id="templateInput" accept=".docx" style="display: none;">
+                <button class="btn" style="background: #475569; width: auto; font-size: 1rem; padding: 8px 16px;" onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
+                <span id="templateUploadStatus" style="align-self: center; color: #16a34a; font-weight: bold; font-size: 0.9rem;"></span>
+            </div>
+            
+            <div id="styleMappingSection" style="margin-top: 1rem; display: none;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #475569;">自訂階層樣式對應 (可選)</h4>
+                <div style="display: flex; gap: 1rem; align-items: center; font-size: 0.9rem;">
+                    <div>
+                        <label for="h1Style">一級標題 (#): </label>
+                        <select id="h1Style" style="padding: 4px; border-radius: 4px;"><option value="">(預設 Heading 1)</option></select>
+                    </div>
+                    <div>
+                        <label for="h2Style">二級標題 (##): </label>
+                        <select id="h2Style" style="padding: 4px; border-radius: 4px;"><option value="">(預設 Heading 2)</option></select>
+                    </div>
+                    <div>
+                        <label for="h3Style">三級標題 (###): </label>
+                        <select id="h3Style" style="padding: 4px; border-radius: 4px;"><option value="">(預設 Heading 3)</option></select>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <p style="text-align: center; color: #64748b; margin-bottom: 2rem;">上傳 PDF 檔案，自動呼叫 RapidDoc 進行版面分析、表格識別與中文辨識，並轉為 Word 文件。</p>
 
         <form id="uploadForm">
@@ -41,6 +73,18 @@
         <div class="btn-group">
             <a id="downloadDocxBtn" href="#">⬇️ 下載 Word (.docx)</a>
             <a id="downloadMdBtn" href="#">📄 下載 Markdown (.md)</a>
+            <a id="outlineEditorBtn" href="javascript:void(0)" style="background: #8b5cf6;">✏️ 檢視與微調大綱</a>
+        </div>
+        
+        <!-- Outline Editor Modal/Section -->
+        <div id="outlineEditorSection" style="display: none; margin-top: 2rem; background: #f8fafc; padding: 1.5rem; border-radius: 12px; border: 1px solid #cbd5e1;">
+            <h3 style="margin-top: 0;">🌳 大綱微調 (Outline Editor)</h3>
+            <p style="color: #64748b; font-size: 0.9rem;">系統擷取出的標題如下，您可以手動修正階層，完成後點擊重新產生 DOCX。</p>
+            <div id="outlineList" style="max-height: 400px; overflow-y: auto; background: white; padding: 1rem; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 1rem;">
+                載入中...
+            </div>
+            <button id="saveOutlineBtn" class="btn" style="background: #16a34a; width: 100%;">儲存並重新產生 Word 文件</button>
+            <div id="outlineSaveStatus" style="margin-top: 1rem; text-align: center; font-weight: bold;"></div>
         </div>
     </div>
 
@@ -53,6 +97,84 @@
         const downloadDocxBtn = document.getElementById('downloadDocxBtn');
         const downloadMdBtn = document.getElementById('downloadMdBtn');
         let currentFile = null;
+
+        const templateInput = document.getElementById('templateInput');
+        const templateUploadStatus = document.getElementById('templateUploadStatus');
+        const currentTemplateName = document.getElementById('currentTemplateName');
+
+        async function fetchTemplateStyles() {
+            try {
+                const res = await fetch('/api/get_template_styles');
+                const data = await res.json();
+                if (data.status === 'success' && data.styles.length > 0) {
+                    const h1 = document.getElementById('h1Style');
+                    const h2 = document.getElementById('h2Style');
+                    const h3 = document.getElementById('h3Style');
+                    
+                    // Clear existing options except default
+                    h1.innerHTML = '<option value="">(預設 Heading 1)</option>';
+                    h2.innerHTML = '<option value="">(預設 Heading 2)</option>';
+                    h3.innerHTML = '<option value="">(預設 Heading 3)</option>';
+                    
+                    data.styles.forEach(s => {
+                        h1.innerHTML += `<option value="${s}">${s}</option>`;
+                        h2.innerHTML += `<option value="${s}">${s}</option>`;
+                        h3.innerHTML += `<option value="${s}">${s}</option>`;
+                    });
+                    
+                    document.getElementById('styleMappingSection').style.display = 'block';
+                }
+            } catch (err) {
+                console.error("無法取得樣式", err);
+            }
+        }
+
+        // Fetch current template on load
+        async function loadCurrentTemplate() {
+            try {
+                const res = await fetch('/api/get_current_template');
+                const data = await res.json();
+                currentTemplateName.textContent = data.name;
+                if (data.has_custom) {
+                    currentTemplateName.style.color = '#ea580c';
+                }
+                fetchTemplateStyles();
+            } catch (err) {
+                currentTemplateName.textContent = '無法取得狀態';
+            }
+        }
+        window.addEventListener('DOMContentLoaded', loadCurrentTemplate);
+
+        // Handle template upload
+        templateInput.onchange = async (e) => {
+            if (e.target.files.length === 0) return;
+            const file = e.target.files[0];
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            templateUploadStatus.textContent = '上傳中...';
+            templateUploadStatus.style.color = '#64748b';
+            
+            try {
+                const res = await fetch('/api/upload_template', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    templateUploadStatus.textContent = '✅ ' + data.message;
+                    templateUploadStatus.style.color = '#16a34a';
+                    loadCurrentTemplate();
+                } else {
+                    throw new Error(data.detail);
+                }
+            } catch (err) {
+                templateUploadStatus.textContent = '❌ 上傳失敗: ' + err.message;
+                templateUploadStatus.style.color = '#dc2626';
+            }
+            // Reset input so the same file can be selected again
+            templateInput.value = '';
+        };
 
         dropZone.onclick = () => fileInput.click();
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
@@ -105,6 +227,17 @@
 
             const formData = new FormData();
             formData.append('file', currentFile);
+            
+            const h1Style = document.getElementById('h1Style').value;
+            const h2Style = document.getElementById('h2Style').value;
+            const h3Style = document.getElementById('h3Style').value;
+            if (h1Style || h2Style || h3Style) {
+                formData.append('style_mapping', JSON.stringify({
+                    h1: h1Style,
+                    h2: h2Style,
+                    h3: h3Style
+                }));
+            }
 
             try {
                 // Fake progress updates for UI reassurance
@@ -138,6 +271,8 @@
                 downloadMdBtn.href = `/api/download_ocr_result/${result.filename_stem}/md`;
                 downloadDocxBtn.style.display = 'block';
                 downloadMdBtn.style.display = 'block';
+                document.getElementById('outlineEditorBtn').style.display = 'block';
+                document.getElementById('outlineEditorBtn').dataset.stem = result.filename_stem;
 
             } catch (err) {
                 statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background:#fef2f2; border:1px solid #f87171; border-radius:8px; color:#dc2626;">
@@ -146,6 +281,106 @@
                 </div>`;
                 submitBtn.disabled = false;
             }
+        };
+
+        // Outline Editor Logic
+        let currentMdLines = [];
+        
+        document.getElementById('outlineEditorBtn').onclick = async function() {
+            const stem = this.dataset.stem;
+            if (!stem) return;
+            
+            document.getElementById('outlineEditorSection').style.display = 'block';
+            document.getElementById('outlineList').innerHTML = '讀取中...';
+            
+            try {
+                const res = await fetch(`/api/get_markdown/${stem}`);
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail);
+                
+                currentMdLines = data.content.split('\n');
+                renderOutlineList();
+            } catch (err) {
+                document.getElementById('outlineList').innerHTML = `<span style="color:red">無法讀取 Markdown 檔案: ${err.message}</span>`;
+            }
+        };
+        
+        function renderOutlineList() {
+            const listDiv = document.getElementById('outlineList');
+            listDiv.innerHTML = '';
+            
+            currentMdLines.forEach((line, index) => {
+                const match = line.match(/^(#{1,3})\s+(.*)$/);
+                if (match) {
+                    const level = match[1].length;
+                    const text = match[2];
+                    
+                    const row = document.createElement('div');
+                    row.style.display = 'flex';
+                    row.style.gap = '10px';
+                    row.style.marginBottom = '8px';
+                    row.style.alignItems = 'center';
+                    row.style.paddingLeft = `${(level - 1) * 20}px`;
+                    
+                    const select = document.createElement('select');
+                    select.innerHTML = `
+                        <option value="0">一般內文</option>
+                        <option value="1" ${level===1?'selected':''}>H1</option>
+                        <option value="2" ${level===2?'selected':''}>H2</option>
+                        <option value="3" ${level===3?'selected':''}>H3</option>
+                    `;
+                    select.onchange = (e) => {
+                        const newLevel = parseInt(e.target.value);
+                        // Update line content
+                        let cleanText = line.replace(/^(#{1,3})\s+/, '');
+                        if (newLevel > 0) {
+                            currentMdLines[index] = '#'.repeat(newLevel) + ' ' + cleanText;
+                        } else {
+                            currentMdLines[index] = cleanText;
+                        }
+                    };
+                    
+                    const span = document.createElement('span');
+                    span.textContent = text;
+                    span.style.flex = '1';
+                    
+                    row.appendChild(select);
+                    row.appendChild(span);
+                    listDiv.appendChild(row);
+                }
+            });
+            
+            if (listDiv.children.length === 0) {
+                listDiv.innerHTML = '<span style="color:#64748b;">未偵測到任何標題，這可能是因為全文書籍皆為內文，或者偵測未命中。</span>';
+            }
+        }
+        
+        document.getElementById('saveOutlineBtn').onclick = async function() {
+            const stem = document.getElementById('outlineEditorBtn').dataset.stem;
+            const statusDiv = document.getElementById('outlineSaveStatus');
+            
+            statusDiv.textContent = '儲存並重新產生 Word 中...';
+            statusDiv.style.color = '#ea580c';
+            this.disabled = true;
+            
+            try {
+                const res = await fetch(`/api/update_and_rebuild_docx/${stem}`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ content: currentMdLines.join('\n') })
+                });
+                const data = await res.json();
+                if (res.ok) {
+                    statusDiv.textContent = '✅ ' + data.message;
+                    statusDiv.style.color = '#16a34a';
+                } else {
+                    throw new Error(data.detail);
+                }
+            } catch (err) {
+                statusDiv.textContent = '❌ 失敗: ' + err.message;
+                statusDiv.style.color = '#dc2626';
+            }
+            this.disabled = false;
         };
     </script>
 <script src="/static/sidebar.js"></script>

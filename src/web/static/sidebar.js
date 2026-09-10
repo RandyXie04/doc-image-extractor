@@ -23,6 +23,9 @@ document.addEventListener("DOMContentLoaded", () => {
         </nav>
         <div style="padding: 1.5rem; margin-top: auto; display: flex; flex-direction: column; gap: 8px;">
             <div id="versionDisplay" style="font-size: 0.8rem; color: #64748b; text-align: center;">版本: 讀取中...</div>
+            <button id="modeToggleBtn" style="width: 100%; background: #1e293b; color: #94a3b8; border: 1px dashed #475569; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 4px;">
+                🏢 模式：編輯專用 (點擊切換)
+            </button>
             <button id="checkUpdateBtn" style="width: 100%; background: #0284c7; color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
                 🔄 檢查更新
             </button>
@@ -218,4 +221,51 @@ document.addEventListener("DOMContentLoaded", () => {
             closeUpdateBtn.disabled = false;
         }
     };
+
+    // --- Mode Toggle Logic (Editor vs Dev) ---
+    const modeToggleBtn = document.getElementById('modeToggleBtn');
+    if (modeToggleBtn) {
+        function updateModeBtnUI(mode) {
+            if (mode === 'dev') {
+                modeToggleBtn.innerHTML = '🛠️ 模式：工程師除錯 (點擊切換)';
+                modeToggleBtn.style.color = '#38bdf8';
+                modeToggleBtn.style.borderColor = '#0284c7';
+                modeToggleBtn.style.background = '#0f172a';
+            } else {
+                modeToggleBtn.innerHTML = '🏢 模式：編輯專用 (點擊切換)';
+                modeToggleBtn.style.color = '#94a3b8';
+                modeToggleBtn.style.borderColor = '#475569';
+                modeToggleBtn.style.background = '#1e293b';
+            }
+        }
+
+        // 讀取當前模式
+        fetch('/api/app_mode').then(r => r.json()).then(d => {
+            if (d && d.mode) updateModeBtnUI(d.mode);
+        }).catch(() => {});
+
+        modeToggleBtn.onclick = async () => {
+            const currentIsDev = modeToggleBtn.textContent.includes('工程師');
+            const targetMode = currentIsDev ? 'editor' : 'dev';
+            try {
+                const res = await fetch('/api/set_app_mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: targetMode })
+                });
+                const d = await res.json();
+                if (d.status === 'success') {
+                    updateModeBtnUI(d.mode);
+                    // 觸發全域事件並重整頁面狀態
+                    window.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: d.mode } }));
+                    // 重新導向或小提示
+                    const msg = d.mode === 'dev' ? '已切換為【🛠️ 工程師除錯模式】！解鎖 Log、ZIP 下載與內部目錄。' : '已切換為【🏢 出版社編輯模式】！僅保留 Word 另存檔案功能。';
+                    alert(msg);
+                    window.location.reload();
+                }
+            } catch (e) {
+                alert('模式切換失敗：' + e.message);
+            }
+        };
+    }
 });

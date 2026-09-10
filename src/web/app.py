@@ -62,7 +62,65 @@ async def upload_file(file: UploadFile = File(...)):
             file_path.unlink()
         raise HTTPException(status_code=400, detail=f"無法解析此 PDF 檔案: {e}")
 
-    return {"file_id": file_id, "total_pages": total_pages}
+    orig_name = Path(file.filename).stem if file.filename else "已轉檔"
+    return {"file_id": file_id, "total_pages": total_pages, "orig_name": orig_name}
+
+@app.post("/api/upload_template")
+async def upload_template(file: UploadFile = File(...)):
+    if not file.filename.endswith('.docx'):
+        raise HTTPException(status_code=400, detail="僅支援上傳 .docx 格式的範本檔案")
+    
+    template_dir = Path("data/database_text/custom_templates")
+    template_dir.mkdir(parents=True, exist_ok=True)
+    
+    file_path = template_dir / "user_template.docx"
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+        
+    return {"status": "success", "message": f"範本 {file.filename} 上傳成功", "filename": file.filename}
+
+@app.get("/api/get_current_template")
+async def get_current_template():
+    template_path = Path("data/database_text/custom_templates/user_template.docx")
+    default_template_path = Path("data/database_text/template.docx")
+    
+    if template_path.exists():
+        # Ideally we might want to store the original filename in a metadata file, 
+        # but for simplicity we just return a static name or checking existence.
+        return {"has_custom": True, "name": "user_template.docx"}
+    elif default_template_path.exists():
+        return {"has_custom": False, "name": "系統預設範本"}
+    else:
+        return {"has_custom": False, "name": "無可用範本"}
+
+@app.get("/api/get_template_styles")
+async def get_template_styles():
+    import zipfile
+    import xml.etree.ElementTree as ET
+    
+    template_path = Path("data/database_text/custom_templates/user_template.docx")
+    if not template_path.exists():
+        template_path = Path("data/database_text/template.docx")
+        if not template_path.exists():
+            return {"status": "error", "message": "無可用範本"}
+            
+    styles = []
+    W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    try:
+        with zipfile.ZipFile(template_path, 'r') as z:
+            if 'word/styles.xml' in z.namelist():
+                tree = ET.fromstring(z.read('word/styles.xml'))
+                for s in tree.findall(f"{W_NS}style"):
+                    if s.get(f"{W_NS}type") == "paragraph":
+                        name_el = s.find(f"{W_NS}name")
+                        if name_el is not None:
+                            name_val = name_el.get(f"{W_NS}val")
+                            if name_val:
+                                styles.append(name_val)
+    except Exception as e:
+        return {"status": "error", "message": f"解析樣式失敗: {e}"}
+        
+    return {"status": "success", "styles": styles}
 
 @app.get("/api/version")
 async def get_version():
@@ -214,7 +272,8 @@ async def start_process(
     left_ratio: float = Form(0.0),
     right_ratio: float = Form(0.0),
     extract_inline: bool = Form(False),
-    embed_formulas_in_word: bool = Form(True)
+    embed_formulas_in_word: bool = Form(True),
+    orig_name: str = Form("")
 ):
     file_path = PATHS.input_dir / file_id
     if not file_path.exists():
@@ -228,7 +287,8 @@ async def start_process(
         "log": "任務已加入佇列...\n",
         "result_file": None,
         "word_file": None,
-        "zip_file": None
+        "zip_file": None,
+        "orig_name": orig_name or "已轉檔"
     }
     
     background_tasks.add_task(
@@ -247,6 +307,25 @@ async def start_process(
         embed_formulas_in_word
     )
     return {"task_id": task_id}
+
+@app.get("/api/app_mode")
+async def get_app_mode():
+    """取得當前運行模式：editor (出版社編輯) 或 dev (內部工程師)"""
+    from config import CFG
+    return {"mode": CFG.app_mode}
+
+@app.post("/api/set_app_mode")
+async def set_app_mode(request: Request):
+    """動態切換運行模式 (免重啟)"""
+    data = await request.json()
+    new_mode = data.get("mode", "editor").lower()
+    if new_mode not in ["editor", "dev"]:
+        raise HTTPException(status_code=400, detail="模式必須為 'editor' 或 'dev'")
+    import config.settings
+    object.__setattr__(config.settings.CFG, "app_mode", new_mode)
+    return {"status": "success", "mode": new_mode}
+
+
 
 # Mount static files
 static_dir = Path(__file__).parent / "static"
@@ -405,6 +484,79 @@ async def open_folder(task_id: str):
             return {"status": "success"}
     raise HTTPException(status_code=404, detail="成果檔案不存在或尚未生成")
 
+@app.post("/api/save_word_dialog/{task_id}")
+async def save_word_dialog(task_id: str):
+    """
+    [出版社編輯專用] 彈出 Windows 原生檔案總管『另存新檔』視窗，
+    讓編輯指定任意儲存路徑 (如桌面或工作資料夾)，並自動複製檔案。
+    """
+    if task_id not in tasks or not tasks[task_id].get("word_file"):
+        raise HTTPException(status_code=404, detail="找不到轉檔成果")
+        
+    src_word = tasks[task_id]["word_file"]
+    if not os.path.exists(src_word):
+        raise HTTPException(status_code=404, detail="生成的 Word 檔案不存在")
+
+    orig_name = tasks[task_id].get("orig_name", "已轉檔書籍")
+    default_filename = f"{orig_name}_已轉檔.docx"
+
+    # 在本機彈出 Windows 原生檔案對話框
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        import threading
+        
+        save_path = [None]
+        
+        def _ask_dialog():
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            res = filedialog.asksaveasfilename(
+                parent=root,
+                title="請選擇 Word 文件儲存位置",
+                initialfile=default_filename,
+                defaultextension=".docx",
+                filetypes=[("Word 文件 (*.docx)", "*.docx"), ("所有檔案 (*.*)", "*.*")]
+            )
+            root.destroy()
+            save_path[0] = res
+
+        t = threading.Thread(target=_ask_dialog)
+        t.start()
+        t.join(timeout=120.0) # 等待對話框
+
+        target = save_path[0]
+        if not target:
+            return {"status": "cancelled", "message": "已取消儲存"}
+
+        if not target.lower().endswith(".docx"):
+            target += ".docx"
+
+        shutil.copy2(src_word, target)
+        tasks[task_id]["saved_user_path"] = target
+        return {
+            "status": "success",
+            "saved_path": target,
+            "filename": os.path.basename(target),
+            "message": f"成功儲存至：{target}"
+        }
+    except Exception as e:
+        print(f"[SaveDialog] 原生檔案對話框失敗: {e}")
+        return {"status": "fallback", "message": "請使用瀏覽器直接下載"}
+
+@app.post("/api/open_saved_folder/{task_id}")
+async def open_saved_folder(task_id: str):
+    """在 Windows 檔案總管中開啟編輯剛才指定另存的檔案目錄並選取檔案"""
+    if task_id in tasks and tasks[task_id].get("saved_user_path"):
+        target = tasks[task_id]["saved_user_path"]
+        if os.path.exists(target):
+            import subprocess
+            subprocess.Popen(f'explorer /select,"{os.path.abspath(target)}"')
+            return {"status": "success"}
+    return await open_folder(task_id)
+
+
 # =========================================================================
 # Founder Tools API (方正排版修復)
 # =========================================================================
@@ -518,7 +670,7 @@ async def report_issue(request: Request):
 
 
 @app.post("/api/upload_and_run_ocr")
-async def upload_and_run_ocr(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+async def upload_and_run_ocr(background_tasks: BackgroundTasks, file: UploadFile = File(...), style_mapping: str = Form(None)):
     import subprocess
     import sys
     import shutil
@@ -538,7 +690,7 @@ async def upload_and_run_ocr(background_tasks: BackgroundTasks, file: UploadFile
     with open(temp_pdf_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    def run_scripts(pdf_path_str, filename_stem):
+    def run_scripts(pdf_path_str, filename_stem, style_map_json):
         output_dir = PATHS.root / 'data' / '03_output'
         backup_dir = output_dir / 'backup_originals'
         
@@ -557,7 +709,10 @@ async def upload_and_run_ocr(background_tasks: BackgroundTasks, file: UploadFile
                     print(f"Error moving {f.name}: {e}")
 
         # 2. Run OCR and MD generation specifically for this file
-        subprocess.run([sys.executable, str(PATHS.root / "src" / "scripts" / "process_ocr.py"), "--file", pdf_path_str], cwd=str(PATHS.root))
+        cmd = [sys.executable, str(PATHS.root / "src" / "scripts" / "process_ocr.py"), "--file", pdf_path_str]
+        if style_map_json:
+            cmd.extend(["--style_mapping", style_map_json])
+        subprocess.run(cmd, cwd=str(PATHS.root))
         
         # 3. 收集本次成功生成的 .md 清單傳遞給 md_to_docx.py
         new_md_files = []
@@ -572,26 +727,49 @@ async def upload_and_run_ocr(background_tasks: BackgroundTasks, file: UploadFile
             print("No new markdown files were generated.")
 
     # Execute script in background task
-    background_tasks.add_task(run_scripts, str(temp_pdf_path), Path(file.filename).stem)
+    background_tasks.add_task(run_scripts, str(temp_pdf_path), Path(file.filename).stem, style_mapping)
     return {"message": "OCR 管線已成功啟動", "filename_stem": Path(file.filename).stem}
 
 @app.get("/api/download_ocr_result/{filename_stem}/{ext}")
 async def download_ocr_result(filename_stem: str, ext: str):
     from config import PATHS
-    import os
-    from fastapi.responses import FileResponse
-    
     if ext not in ["docx", "md"]:
         raise HTTPException(status_code=400, detail="僅支援下載 docx 或 md")
-        
     output_dir = PATHS.root / 'data' / '03_output'
     file_path = output_dir / f"{filename_stem}.{ext}"
-    
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail=f"檔案尚未產生或處理失敗: {filename_stem}.{ext}")
+        raise HTTPException(status_code=404, detail="檔案尚未生成或不存在")
+    return FileResponse(file_path, filename=f"{filename_stem}.{ext}")
+
+from pydantic import BaseModel
+class MarkdownUpdate(BaseModel):
+    content: str
+
+@app.get("/api/get_markdown/{filename_stem}")
+async def get_markdown(filename_stem: str):
+    from config import PATHS
+    md_file = PATHS.root / 'data' / '03_output' / f"{filename_stem}.md"
+    if not md_file.exists():
+        raise HTTPException(status_code=404, detail="Markdown file not found")
+    with open(md_file, "r", encoding="utf-8") as f:
+        return {"content": f.read()}
+
+@app.post("/api/update_and_rebuild_docx/{filename_stem}")
+async def update_and_rebuild_docx(filename_stem: str, data: MarkdownUpdate):
+    import subprocess
+    import sys
+    from config import PATHS
+    
+    md_file = PATHS.root / 'data' / '03_output' / f"{filename_stem}.md"
+    if not md_file.exists():
+        raise HTTPException(status_code=404, detail="Markdown file not found")
         
-    return FileResponse(
-        file_path,
-        filename=f"{filename_stem}.{ext}"
-    )
+    with open(md_file, "w", encoding="utf-8") as f:
+        f.write(data.content)
+        
+    # Re-run md_to_docx.py
+    cmd = [sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py"), "--files", str(md_file)]
+    subprocess.run(cmd, cwd=str(PATHS.root))
+    
+    return {"status": "success", "message": "已成功更新大綱並重新生成 Word 文件！"}
 
