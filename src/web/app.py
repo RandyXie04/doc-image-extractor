@@ -136,13 +136,24 @@ async def check_update():
     from src.scripts.updater_service import check_latest_release
     info = check_latest_release()
     if not info:
-        return {"has_update": False, "msg": "無法連線至 GitHub 檢查更新。"}
+        return {"has_update": False, "status": "error", "msg": "無法連線至 GitHub 檢查更新。"}
+    
+    if info.get('status') == 'no_releases':
+        info['has_update'] = False
+        info['msg'] = "目前線上尚未發布新版本，您使用的是最新本機版本。"
+        return info
+
+    if info.get('status') == 'error':
+        return info
     
     try:
-        remote_ver = [int(x) for x in info['latest_version'].split('.')]
-        local_ver = [int(x) for x in VERSION.app_version.split('.')]
-        has_update = remote_ver > local_ver
-    except:
+        if info.get('latest_version'):
+            remote_ver = [int(x) for x in info['latest_version'].split('.')]
+            local_ver = [int(x) for x in VERSION.app_version.split('.')]
+            has_update = remote_ver > local_ver
+        else:
+            has_update = False
+    except Exception:
         has_update = False
             
     info['has_update'] = has_update
@@ -629,43 +640,26 @@ async def api_founder_repair(
 
 @app.post("/api/report_issue")
 async def report_issue(request: Request):
-    import subprocess
     import platform
+    import urllib.parse
     
     data = await request.json()
-    description = data.get("description", "").strip()
-    if not description:
-        raise HTTPException(status_code=400, detail="內容不可為空")
-        
+    description = (data.get("description") or "").strip()[:2000]
+    
     sys_info = f"OS: {platform.system()} {platform.release()}"
     body = f"**使用者回報:**\n{description}\n\n---\n**自動收集資訊:**\n```text\n{sys_info}\n```"
     
-    try:
-        cmd = [
-            "gh", "issue", "create", 
-            "--title", f"內部回報: {description[:30]}...", 
-            "--body", body,
-            "--label", "user-feedback"
-        ]
-        result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')
-        if result.returncode != 0 and "not found" in result.stderr:
-            # Fallback without label
-            cmd_fallback = [
-                "gh", "issue", "create", 
-                "--title", f"內部回報: {description[:30]}...", 
-                "--body", body
-            ]
-            result = subprocess.run(cmd_fallback, capture_output=True, text=True, check=True, encoding='utf-8')
-        elif result.returncode != 0:
-            raise subprocess.CalledProcessError(result.returncode, cmd, output=result.stdout, stderr=result.stderr)
-        
-        issue_url = result.stdout.strip()
-        return {"success": True, "url": issue_url, "message": "回報成功！感謝您的反饋。"}
-    except subprocess.CalledProcessError as e:
-        error_msg = e.stderr if e.stderr else str(e)
-        raise HTTPException(status_code=500, detail=f"提交失敗: {error_msg}")
-    except FileNotFoundError:
-        raise HTTPException(status_code=500, detail="系統未安裝 GitHub CLI (gh)，或未加入 PATH。")
+    repo = "RandyXie04/doc-image-extractor"
+    encoded_title = urllib.parse.quote(f"[問題回報] {description[:30]}..." if description else "[問題回報] 請簡述問題")
+    encoded_body = urllib.parse.quote(body)
+    web_url = f"https://github.com/{repo}/issues/new?title={encoded_title}&body={encoded_body}"
+    
+    return {
+        "status": "success",
+        "url": web_url,
+        "msg": "已生成 GitHub 官方回報頁面網址。"
+    }
+
 
 
 
