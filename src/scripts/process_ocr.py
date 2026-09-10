@@ -362,12 +362,16 @@ def main():
     style_mapping = {}
     try:
         style_mapping = json.loads(args.style_mapping)
-    except:
+    except Exception:
         pass
 
     if not RapidDoc:
-        print("RapidDoc is not available.")
-        return
+        print(json.dumps({"progress": 0, "message": "[ERROR] RapidDoc is not installed. Please run: pip install rapid-doc"}))
+        sys.stdout.flush()
+        sys.exit(1)
+
+    print(json.dumps({"progress": 5, "message": "[INFO] Initializing RapidDoc OCR engine..."}))
+    sys.stdout.flush()
 
     layout_cfg = {
         "markdown_ignore_labels": [
@@ -395,10 +399,12 @@ def main():
                 if not os.path.basename(f).startswith('temp_')
             ]
 
-    print(f"Found {len(pdf_files)} PDF files to process.")
+    print(json.dumps({"progress": 10, "message": f"[INFO] Found {len(pdf_files)} PDF file(s). Starting OCR pipeline..."}))
+    sys.stdout.flush()
 
     for pdf_path in pdf_files:
-        print(f"Processing: {pdf_path}")
+        print(json.dumps({"progress": 15, "message": f"[INFO] Running RapidDoc OCR on: {os.path.basename(pdf_path)} (this may take a while...)"}))
+        sys.stdout.flush()
         pdf_name = os.path.basename(pdf_path)
         try:
             res = engine(pdf_path)
@@ -452,17 +458,21 @@ def main():
             with open(out_path, 'w', encoding='utf-8') as out_f:
                 out_f.write(final_md)
 
-            print(f"Saved MD with footnotes to {out_path}")
+            print(json.dumps({"progress": 85, "message": f"[INFO] OCR Markdown saved: {out_path}"}))
+            sys.stdout.flush()
 
             # Generate footnote review audit report
             report_path = os.path.join(output_dir, "footnote_review.txt")
             generate_audit_report(pdf_name, total_pages, audit_records, report_path)
-            print(f"Saved Footnote Review Report to {report_path}")
+            print(json.dumps({"progress": 90, "message": "[INFO] Footnote audit report generated."}))
+            sys.stdout.flush()
 
         except Exception as e:
             import traceback
             traceback.print_exc()
-            print(f"Error processing {pdf_path}: {e}")
+            print(json.dumps({"progress": 0, "message": f"[ERROR] Failed: {e}"}))
+            sys.stdout.flush()
+            sys.exit(1)
 
 
 if __name__ == '__main__':
