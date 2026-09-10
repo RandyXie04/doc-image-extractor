@@ -54,7 +54,10 @@ _orig_pixmap_save = fitz.Pixmap.save
 
 def _safe_pixmap_tobytes(self, output="png", *args, **kwargs):
     if str(output).lower() == "png":
-        if self.colorspace and self.colorspace.name not in (fitz.csGRAY.name, fitz.csRGB.name):
+        if self.colorspace and self.colorspace.name == fitz.csCMYK.name:
+            # 針對印刷用的 CMYK 圖片，為避免轉 PNG 崩潰且不破壞其 CMYK 屬性，改以 JPEG 格式輸出二進位資料
+            return _orig_pixmap_tobytes(self, "jpeg", *args, **kwargs)
+        elif self.colorspace and self.colorspace.name not in (fitz.csGRAY.name, fitz.csRGB.name):
             try:
                 return fitz.Pixmap(fitz.csRGB, self).tobytes(output, *args, **kwargs)
             except Exception:
@@ -69,7 +72,11 @@ def _safe_pixmap_tobytes(self, output="png", *args, **kwargs):
 def _safe_pixmap_save(self, filename, output=None, *args, **kwargs):
     fmt = output or os.path.splitext(filename)[1].lstrip('.').lower() or "png"
     if fmt == "png":
-        if self.colorspace and self.colorspace.name not in (fitz.csGRAY.name, fitz.csRGB.name):
+        if self.colorspace and self.colorspace.name == fitz.csCMYK.name:
+            # 修改擴展名為 jpg，並以 jpeg 格式輸出
+            new_filename = os.path.splitext(filename)[0] + ".jpg"
+            return _orig_pixmap_save(self, new_filename, output="jpeg", *args, **kwargs)
+        elif self.colorspace and self.colorspace.name not in (fitz.csGRAY.name, fitz.csRGB.name):
             try:
                 return fitz.Pixmap(fitz.csRGB, self).save(filename, output=output, *args, **kwargs)
             except Exception:
