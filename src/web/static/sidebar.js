@@ -30,7 +30,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 🔄 檢查更新
             </button>
             <button id="globalReportBtn" style="width: 100%; background: #334155; color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
-                💬 問題回報
+                🐞 前往 GitHub 回報 ↗
             </button>
         </div>
     </div>
@@ -66,78 +66,28 @@ document.addEventListener("DOMContentLoaded", () => {
         document.head.appendChild(link);
     }
 
-    // Modal HTML for Issue Reporting
-    const modalHtml = `
-    <div id="issueModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 1000;">
-        <div style="background: white; padding: 2rem; border-radius: 12px; width: 400px; max-width: 90%;">
-            <h3 style="margin-top: 0;">💬 提交問題回報</h3>
-            <p style="font-size: 0.9rem; color: #64748b;">請用簡單的描述告訴我們您遇到了什麼問題，或希望新增什麼功能。送出後將自動建立內部任務。</p>
-            <textarea id="issueDesc" rows="5" style="width: 100%; padding: 10px; border: 1px solid #cbd5e1; border-radius: 8px; margin-bottom: 1rem; box-sizing: border-box;" placeholder="例如：我上傳的 PDF 檔案一直轉圈圈沒有反應..."></textarea>
-            <div id="issueMsg" style="margin-bottom: 1rem; font-size: 0.9rem; font-weight: bold;"></div>
-            <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                <button id="closeIssueBtn" style="padding: 8px 16px; border: none; background: #e2e8f0; border-radius: 6px; cursor: pointer;">取消</button>
-                <button id="submitIssueBtn" style="padding: 8px 16px; border: none; background: #0f172a; color: white; border-radius: 6px; cursor: pointer;">送出回報</button>
-            </div>
-        </div>
-    </div>
-    `;
-    document.body.insertAdjacentHTML('beforeend', modalHtml);
+    // Direct GitHub Issue Reporting Button logic
+    const globalReportBtn = document.getElementById('globalReportBtn');
+    if (globalReportBtn) {
+        globalReportBtn.onclick = () => {
+            const repo = 'RandyXie04/doc-image-extractor';
+            const title = encodeURIComponent('[問題回報] 請簡述您遇到的問題');
+            const versionText = document.getElementById('versionDisplay')?.textContent || 'App 版本未知';
+            const bodyContent = 
+`### 📌 問題描述
+<!-- 請在此詳細描述您遇到的異常現象、錯誤訊息或改進建議 -->
 
-    // Modal logic
-    const modal = document.getElementById('issueModal');
-    const openBtn = document.getElementById('globalReportBtn');
-    const closeBtn = document.getElementById('closeIssueBtn');
-    const submitBtn = document.getElementById('submitIssueBtn');
-    const issueDesc = document.getElementById('issueDesc');
-    const issueMsg = document.getElementById('issueMsg');
+### ⚙️ 系統資訊
+- **應用版本**: ${versionText}
+- **瀏覽器**: ${navigator.userAgent}
+- **回報時間**: ${new Date().toLocaleString()}
 
-    openBtn.onclick = () => { modal.style.display = 'flex'; issueMsg.textContent = ''; issueDesc.value = ''; };
-    closeBtn.onclick = () => { modal.style.display = 'none'; };
-    
-    // Wire any in-page report links to also open this modal
-    document.querySelectorAll('a[href*="issues"]').forEach(link => {
-        link.onclick = (e) => {
-            e.preventDefault();
-            modal.style.display = 'flex';
-            issueMsg.textContent = '';
-            issueDesc.value = '';
+---
+*由網頁端「一鍵前往 GitHub 回報」按鈕自動產生*`;
+            const issueUrl = `https://github.com/${repo}/issues/new?title=${title}&body=${encodeURIComponent(bodyContent)}`;
+            window.open(issueUrl, '_blank');
         };
-    });
-    
-    submitBtn.onclick = async () => {
-        if (!issueDesc.value.trim()) {
-            issueMsg.style.color = '#dc2626';
-            issueMsg.textContent = '內容不可為空';
-            return;
-        }
-        submitBtn.disabled = true;
-        submitBtn.textContent = '傳送中...';
-        issueMsg.style.color = '#0284c7';
-
-        try {
-            const res = await fetch('/api/report_issue', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ description: issueDesc.value.trim() })
-            });
-            const data = await res.json();
-            if (data.status === 'success') {
-                issueMsg.style.color = '#15803d';
-                issueMsg.textContent = '✅ 回報成功！Issue 已建立。';
-                setTimeout(() => { modal.style.display = 'none'; }, 2000);
-            } else {
-                issueMsg.style.color = '#dc2626';
-                issueMsg.textContent = '❌ 發生錯誤: ' + (data.msg || '未知錯誤');
-                submitBtn.disabled = false;
-                submitBtn.textContent = '送出回報';
-            }
-        } catch (e) {
-            issueMsg.style.color = '#dc2626';
-            issueMsg.textContent = '❌ 網路錯誤，請稍後再試。';
-            submitBtn.disabled = false;
-            submitBtn.textContent = '送出回報';
-        }
-    };
+    }
 
     // --- Version and Update Logic ---
     const versionDisplay = document.getElementById('versionDisplay');
