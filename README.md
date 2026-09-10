@@ -11,7 +11,15 @@
     *   提供互動預覽畫布調整邊界，自動將文件轉為圖文並茂的 Word 可編輯格式，並高解析度裁切獨立公式打包為 ZIP。
 *   **🖼️ 2. 文件圖片無損提取**：支援批次拖曳 PDF 或 Word (DOCX) 檔案，自動提取最原始內嵌的高畫質圖片。支援自訂頁碼提取，並打包為 ZIP 壓縮檔。
 *   **🛠️ 3. 方正書版亂碼修復**：針對早期方正排版系統 (Founder Bookmaker) 產生的 CMap 編碼缺陷，自動修復無法被正常選取或複製的亂碼、特殊字串與中英文標點符號。
-*   **📄 4. 書籍 PDF 全自動 OCR 與排版**：基於 `RapidDoc`，針對被轉曲或掃描的 PDF，進行高精度版面分析、表格識別與中文 OCR 辨識。自動產出語意化 Markdown 並透過 Pandoc 套用 `template.docx` 範本，精準還原多階標題與原生複雜表格！具備**智慧 Pipeline 任務對齊機制**，僅轉換當前 OCR 產出的檔案並自動封存舊檔，避免轉檔髒資料殘留。
+*   **📄 4. 書籍 PDF 全自動 OCR 與排版（含自動整稿優化）**：
+    *   基於 `RapidDoc`，針對被轉曲或掃描的 PDF 進行高精度版面分析、表格識別與中文 OCR 辨識。
+    *   **自訂 Word 樣式範本**：支援從 WebUI 上傳自案範本 (`.docx`)，自動解析內部段落樣式（Heading 1、標題 1 等）。
+    *   **幾何與語意啟發式標題偵測 (`HeadingDetector`)**：打破純正則限制，結合排版幾何特徵（置中對齊、單行字數、粗體、前後間距）與章節規則，將各級標題精準升級為 Markdown 語意（`#`、`##`、`###`）。
+    *   **階層樣式下拉對應**：允許在前端介面將各級標題手動映射至範本特定樣式，透過 Pandoc 屬性無縫套用。
+    *   **視覺化大綱編輯器 (Outline Editor)**：OCR 完成後即時產生樹狀大綱，允許人工校對與階層微調（H1/H2/H3/內文），支援一鍵重新生成最終 Word 文件！
+*   **🏢 5. 雙運作模式（編輯專用 vs 工程師除錯）**：
+    *   **出版社編輯模式（預設）**：極簡 UX 流程，隱藏技術日誌與內部暫存，產檔後直接彈出 Windows 原生「另存新檔」對話框，儲存後可一鍵在檔案總管中開啟。
+    *   **工程師除錯模式**：解鎖完整即時轉檔 Log、內部資料夾開啟與各階段 ZIP 下載，可透過左側側邊欄按鈕切換或執行 `start_app_dev.bat` 啟動。
 
 ## 📂 資料夾架構
 
@@ -20,16 +28,18 @@
  ├── config/                 # ⚙️ 系統設定與開發環境規範 (settings.py, RULE.md)
  ├── src/                    # 🧠 核心業務邏輯
  │   ├── core_agent.py       # 公式提取、Word 轉檔與右界中文覆核引擎
- │   ├── founder_tools/      # 方正亂碼修復工具與樣式範本 (template.docx)
- │   ├── scripts/            # 核心腳本 (process_ocr.py, md_to_docx.py, yolo_onnx_utils.py)
- │   └── web/                # 🌐 FastAPI 後端與 WebView2 前端介面
+ │   ├── founder_tools/      # 樣式範本、標記偵測與啟發式標題偵測 (HeadingDetector)
+ │   ├── scripts/            # 核心腳本 (process_ocr.py, md_to_docx.py, extract_images.py)
+ │   └── web/                # 🌐 FastAPI 後端與 WebView2 前端介面 (含大綱編輯器)
  ├── data/                   # 📁 資料與產出物目錄 (已排除於 Git)
  │   ├── 01_input/           # 預設上傳暫存目錄
  │   ├── 02_intermediate/    # 轉檔過程快取
  │   ├── 03_output/          # 最終產出的 ZIP、DOCX 與覆核 TXT
- │   └── database_text/      # 待 OCR 的原始 PDF 與 Word 範本
+ │   └── database_text/      # 待 OCR 的原始 PDF、系統/使用者自訂 Word 範本
  ├── scratch/                # 🗑️ 開發測試快取暫存區 (定時自動清理)
  ├── app_window.py           # 🚀 主程式入口 (WebView2 原生桌面視窗 + FastAPI)
+ ├── start_app.bat           # 🏢 出版社編輯模式啟動腳本
+ ├── start_app_dev.bat       # 🛠️ 工程師除錯模式啟動腳本
  ├── build_app.spec          # 📦 PyInstaller 打包規格設定檔
  ├── build_exe.bat           # 🔨 一鍵打包為獨立 EXE 腳本
  ├── version.json            # 🏷️ 應用程式與模型雙軌版本規範
