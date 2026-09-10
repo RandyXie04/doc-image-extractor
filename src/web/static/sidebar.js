@@ -1,3 +1,17 @@
+// 全域錯誤監聽器，防止隱含 SyntaxError 或 Runtime Error 讓按鈕靜默失效
+window.addEventListener('error', function(e) {
+    let errorBanner = document.getElementById('global-error-banner');
+    if (!errorBanner) {
+        errorBanner = document.createElement('div');
+        errorBanner.id = 'global-error-banner';
+        errorBanner.style.cssText = 'position:fixed; top:0; left:0; width:100%; background:#dc2626; color:white; padding:10px; z-index:9999; text-align:center; font-family:sans-serif; cursor:pointer; font-weight:bold; box-shadow:0 4px 6px rgba(0,0,0,0.1);';
+        errorBanner.title = '點擊關閉此錯誤提示';
+        errorBanner.onclick = () => errorBanner.remove();
+        if (document.body) document.body.prepend(errorBanner);
+    }
+    errorBanner.textContent = '系統發生異常：' + e.message + ' (請檢查主控台)';
+});
+
 document.addEventListener("DOMContentLoaded", () => {
     // Check if sidebar already exists
     if (document.getElementById('sidebar')) return;
