@@ -399,77 +399,39 @@ class PDFConversionAgent:
             first_page = doc[0]
             rect = first_page.rect
 
-        # // 修正底部比例：若傳入 < 0.5 (如前端的 0.10 代表裁切底部的 10%)，轉為從頂部向下的絕對門檻 (1.0 - 0.10 = 0.90)
-        calc_footer_ratio = self.footer_ratio
-        if calc_footer_ratio < 0.5:
-            calc_footer_ratio = 1.0 - calc_footer_ratio
+        # // 統一計算滑桿比例 (所見即所得)
+        f_ratio = self.footer_ratio if self.footer_ratio < 0.5 else (1.0 - self.footer_ratio)
 
         return {
             "page_width": rect.width,
             "page_height": rect.height,
             "header_threshold": rect.height * self.header_ratio,
-            "footer_threshold": rect.height * calc_footer_ratio,
+            "footer_threshold": rect.height * (1.0 - f_ratio),
             "left_threshold": rect.width * self.left_ratio,
             "right_threshold": rect.width * (1.0 - self.right_ratio),
             "sample_pages": [0, 1, -1]
         }
 
     def _detect_page_boundaries(self, page: fitz.Page, plan: dict):
-        """傳入單一頁面，分析該頁文字區塊，回傳動態計算的專屬裁切邊界 (上下左右)。"""
+        """
+        [所見即所得] 依照使用者在前端滑桿所見之輔助線比例，精確計算裁切矩形。
+        保證與預覽畫面 (紅線=頂, 藍線=底, 綠線=左右) 100% 完全一致。
+        """
         rect = page.rect
-        blocks = page.get_text("blocks")
         
-        # 使用者指定的探測極限 (由滑桿控制)
-        header_search_limit = plan["header_threshold"]
-        footer_search_limit = plan["footer_threshold"]
+        # // 頂部邊界 (紅線)
+        final_top = rect.height * self.header_ratio
         
-        detected_header_y = 0.0
-        detected_footer_y = rect.height
-        header_text = "(無)"
-        footer_text = "(無)"
+        # // 底部邊界 (藍線)
+        f_ratio = self.footer_ratio if self.footer_ratio < 0.5 else (1.0 - self.footer_ratio)
+        final_bottom = rect.height * (1.0 - f_ratio)
+        
+        # // 左右邊界 (綠線)
+        final_left = rect.width * self.left_ratio
+        final_right = rect.width * (1.0 - self.right_ratio)
 
-        # 將 blocks 依照 Y 座標排序，方便判斷上下區塊的間距
-        blocks.sort(key=lambda b: b[1])
-
-        for i, b in enumerate(blocks):
-            x0, y0, x1, y1, text, *_ = b
-            clean_text = text.strip()
-            if not clean_text:
-                continue
-
-            # 限制長度小於 25，真正的頁眉都很短，這能有效防止把正文第一行 (長句子) 誤認為頁眉
-            if y1 <= header_search_limit and len(clean_text) < 25:
-                # 尋找真正「下一行」文字的 y0 (解決左右並排文字干擾的問題)
-                next_y0 = rect.height
-                for next_b in blocks:
-                    if next_b[4].strip():
-                        # 只要另一個區塊的頂部 (y0) 高於我們底部的容錯值 (-2pt)，就認定它在我們「下方」
-                        if next_b[1] >= y1 - 2:
-                            next_y0 = min(next_y0, next_b[1])
-                            
-                gap_to_next_line = next_y0 - y1
-                
-                # 1. 絕對頂部安全區 (5%)
-                # 2. 或者與「下一行」有明顯間距 (大於 10pt)
-                if y1 <= (rect.height * 0.05) or gap_to_next_line > 10:
-                    detected_header_y = max(detected_header_y, y1)
-                    header_text = clean_text.replace("\n", " ")
-                    
-            # 頁尾判定：在下方探測區內，且為數字(頁碼)或短文字
-            elif y0 >= footer_search_limit and (clean_text.isdigit() or len(clean_text) < 25):
-                detected_footer_y = min(detected_footer_y, y0)
-                footer_text = clean_text.replace("\n", " ")
-
-        final_top = detected_header_y + 5 if detected_header_y > 0 else 0.0
-        final_bottom = detected_footer_y - 5 if detected_footer_y < rect.height else rect.height
-
-        # // 核心防護 (Safety Clamps)：防止誤判導致整頁被一刀切斷
-        # // 頂部裁切不可超過 30%，底部裁切不可侵入至 70% 以上，保留至少 60% 正文核心
-        final_top = min(final_top, rect.height * 0.3)
-        final_bottom = max(final_bottom, rect.height * 0.7)
-
-        final_left = plan.get("left_threshold", 0.0)
-        final_right = plan.get("right_threshold", rect.width)
+        header_text = f"Top {final_top:.1f}pt"
+        footer_text = f"Bottom {final_bottom:.1f}pt"
 
         return final_top, final_bottom, final_left, final_right, header_text, footer_text
 

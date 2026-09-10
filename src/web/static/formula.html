@@ -363,10 +363,19 @@
         let pollingInterval = null;
         let currentFileId = null;
         let currentFileName = "";
+        let currentFileOrigName = "";
         let debounceTimer = null;
         let currentPreviewPage = 1;
         let totalPdfPages = 1;
         let lastErrorLog = "";
+        let appMode = "editor"; // 預設為出版社編輯模式
+
+        // 取得當前系統運行模式 (出版社編輯 vs 內部工程師)
+        fetch('/api/app_mode').then(r => r.json()).then(d => {
+            if (d && d.mode) {
+                appMode = d.mode;
+            }
+        }).catch(() => {});
 
         // Drag and Drop Logic
         dropZone.addEventListener('click', () => fileInput.click());
@@ -387,6 +396,7 @@
             if (!fileInput.files.length) return;
             const file = fileInput.files[0];
             currentFileName = file.name;
+            currentFileOrigName = file.name.replace(/\.[^/.]+$/, "");
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
             fileNameDisplay.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
                 <span style="color: #334155;">上傳中: <b>${file.name}</b></span>
@@ -402,6 +412,7 @@
                 const data = await res.json();
                 if (data.file_id) {
                     currentFileId = data.file_id;
+                    if (data.orig_name) currentFileOrigName = data.orig_name;
                     const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
                     fileNameDisplay.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
                         <span style="font-size:2rem;">📄</span>
@@ -474,7 +485,11 @@
             submitBtn.disabled = true;
             submitBtn.textContent = "處理中...";
             progressContainer.style.display = 'block';
-            logContainer.style.display = 'block';
+            if (appMode === 'editor') {
+                logContainer.style.display = 'none';
+            } else {
+                logContainer.style.display = 'block';
+            }
             downloadActionGroup.style.display = 'none';
             reportIssueBtn.style.display = 'none';
             progressBar.style.width = '0%';
@@ -484,6 +499,7 @@
 
             const formData = new FormData();
             formData.append('file_id', currentFileId);
+            formData.append('orig_name', currentFileOrigName);
             formData.append('convert_word', document.querySelector('[name="convert_word"]').checked);
             formData.append('extract_formulas', document.querySelector('[name="extract_formulas"]').checked);
             formData.append('header_ratio', headerSlider.value);
@@ -524,8 +540,10 @@
                         
                         if (data.log) {
                             lastErrorLog = data.log;
-                            logContainer.innerHTML = data.log.replace(/\n/g, '<br>');
-                            logContainer.scrollTop = logContainer.scrollHeight;
+                            if (appMode !== 'editor') {
+                                logContainer.innerHTML = data.log.replace(/\n/g, '<br>');
+                                logContainer.scrollTop = logContainer.scrollHeight;
+                            }
                         }
                     } 
                     else if (data.status === 'completed') {
@@ -538,7 +556,7 @@
                         // 呈現成果操作按鈕群組
                         downloadActionGroup.style.display = 'flex';
                         
-                        // 定義通用 Blob 下載器，完全相容 WebView2 與瀏覽器環境
+                        // 定義通用 Blob 下載器 (Fallback 用)
                         async function downloadFileBlob(url, fallbackName, btnElement) {
                             const origText = btnElement.textContent;
                             btnElement.disabled = true;
@@ -572,34 +590,100 @@
                             }
                         }
 
-                        if (data.word_file) {
-                            downloadWordBtn.style.display = 'block';
-                            downloadWordBtn.onclick = () => {
-                                downloadFileBlob(`/api/download/${taskId}/word`, '已轉檔.docx', downloadWordBtn);
-                            };
-                        } else {
-                            downloadWordBtn.style.display = 'none';
-                        }
-                        
-                        if (data.zip_file) {
-                            downloadZipBtn.style.display = 'block';
-                            downloadZipBtn.onclick = () => {
-                                downloadFileBlob(`/api/download/${taskId}/formulas`, 'formulas.zip', downloadZipBtn);
-                            };
-                        } else {
+                        // 模式閘門：出版社編輯模式 (預設) vs 內部工程師模式
+                        if (appMode === 'editor') {
+                            logContainer.style.display = 'none';
                             downloadZipBtn.style.display = 'none';
-                        }
+                            openFolderBtn.style.display = 'none';
 
-                        openFolderBtn.onclick = async () => {
-                            try {
-                                const res = await fetch(`/api/open_folder/${taskId}`, { method: 'POST' });
-                                if (!res.ok) {
-                                    alert("無法自動打開檔案總管，檔案路徑位於專案 data 目錄下");
-                                }
-                            } catch (e) {
-                                alert("呼叫開啟檔案總管失敗: " + e.message);
+                            if (data.word_file) {
+                                downloadWordBtn.style.display = 'block';
+                                downloadWordBtn.style.width = '100%';
+                                downloadWordBtn.textContent = '📥 另存 Word 文件 (.docx)';
+                                downloadWordBtn.style.backgroundColor = '#2563eb';
+
+                                downloadWordBtn.onclick = async () => {
+                                    const origText = downloadWordBtn.textContent;
+                                    downloadWordBtn.disabled = true;
+                                    downloadWordBtn.textContent = '⏳ 請在開啟的視窗中選擇儲存位置...';
+
+                                    try {
+                                        const res = await fetch(`/api/save_word_dialog/${taskId}`, { method: 'POST' });
+                                        const saveResult = await res.json();
+
+                                        if (saveResult.status === 'success') {
+                                            downloadWordBtn.style.backgroundColor = '#16a34a';
+                                            downloadWordBtn.textContent = '✅ 已成功儲存！點擊可再次另存他處';
+                                            downloadWordBtn.disabled = false;
+
+                                            let savedInfo = document.getElementById('savedPathDisplay');
+                                            if (!savedInfo) {
+                                                savedInfo = document.createElement('div');
+                                                savedInfo.id = 'savedPathDisplay';
+                                                savedInfo.style.marginTop = '0.8rem';
+                                                savedInfo.style.padding = '0.8rem';
+                                                savedInfo.style.background = '#f0fdf4';
+                                                savedInfo.style.border = '1px solid #bbf7d0';
+                                                savedInfo.style.borderRadius = '8px';
+                                                savedInfo.style.color = '#166534';
+                                                savedInfo.style.fontSize = '0.9rem';
+                                                downloadActionGroup.appendChild(savedInfo);
+                                            }
+                                            savedInfo.innerHTML = `<div><b>Word 文件已成功儲存至：</b></div>
+                                            <div style="margin:4px 0; word-break:break-all; font-family:monospace; background:#fff; padding:6px; border-radius:4px; border:1px solid #dcfce7;">${saveResult.saved_path}</div>
+                                            <button id="openSavedDirBtn" type="button" style="margin-top:6px; padding:6px 12px; background:#15803d; color:white; border:none; border-radius:6px; cursor:pointer; font-size:0.85rem;">📂 在 Windows 檔案總管中開啟</button>`;
+
+                                            document.getElementById('openSavedDirBtn').onclick = () => {
+                                                fetch(`/api/open_saved_folder/${taskId}`, { method: 'POST' });
+                                            };
+                                        } else if (saveResult.status === 'cancelled') {
+                                            downloadWordBtn.textContent = origText;
+                                            downloadWordBtn.disabled = false;
+                                        } else {
+                                            downloadFileBlob(`/api/download/${taskId}/word`, `${currentFileOrigName || '已轉檔'}.docx`, downloadWordBtn);
+                                        }
+                                    } catch (err) {
+                                        downloadFileBlob(`/api/download/${taskId}/word`, `${currentFileOrigName || '已轉檔'}.docx`, downloadWordBtn);
+                                    }
+                                };
+                            } else {
+                                downloadWordBtn.style.display = 'none';
                             }
-                        };
+                        } else {
+                            // 內部工程師模式：顯示完整除錯日誌與全套按鈕
+                            logContainer.style.display = 'block';
+
+                            if (data.word_file) {
+                                downloadWordBtn.style.display = 'block';
+                                downloadWordBtn.textContent = '📥 下載 Word 文件 (.docx)';
+                                downloadWordBtn.onclick = () => {
+                                    downloadFileBlob(`/api/download/${taskId}/word`, `${currentFileOrigName || '已轉檔'}.docx`, downloadWordBtn);
+                                };
+                            } else {
+                                downloadWordBtn.style.display = 'none';
+                            }
+                            
+                            if (data.zip_file) {
+                                downloadZipBtn.style.display = 'block';
+                                downloadZipBtn.onclick = () => {
+                                    downloadFileBlob(`/api/download/${taskId}/formulas`, 'formulas.zip', downloadZipBtn);
+                                };
+                            } else {
+                                downloadZipBtn.style.display = 'none';
+                            }
+
+                            openFolderBtn.style.display = 'block';
+                            openFolderBtn.onclick = async () => {
+                                try {
+                                    const res = await fetch(`/api/open_folder/${taskId}`, { method: 'POST' });
+                                    if (!res.ok) {
+                                        alert("無法自動打開檔案總管，檔案路徑位於專案 data 目錄下");
+                                    }
+                                } catch (e) {
+                                    alert("呼叫開啟檔案總管失敗: " + e.message);
+                                }
+                            };
+                        }
 
                         reportIssueBtn.style.display = 'none';
                         resetUI(false);
