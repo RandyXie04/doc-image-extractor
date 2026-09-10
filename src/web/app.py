@@ -614,11 +614,7 @@ async def api_founder_repair(
             repair_pdf_file(temp_input, temp_out_txt, temp_out_docx)
             # 將中間 txt 與輸入 input 清理，輸出 docx 待傳輸完後清理
             background_tasks.add_task(_cleanup_temp_files, temp_input, temp_out_txt, temp_out_docx)
-            return FileResponse(
-                temp_out_docx, 
-                filename=f"repaired_{file.filename}.docx", 
-                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+            return {"status": "success", "file_path": temp_out_docx, "filename": f"repaired_{file.filename}.docx"}
             
         elif ext == ".docx":
             fd_docx, temp_out_docx = tempfile.mkstemp(suffix=".docx")
@@ -627,11 +623,7 @@ async def api_founder_repair(
             
             repair_docx_file(temp_input, temp_out_docx)
             background_tasks.add_task(_cleanup_temp_files, temp_input, temp_out_docx)
-            return FileResponse(
-                temp_out_docx, 
-                filename=f"repaired_{file.filename}", 
-                media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            )
+            return {"status": "success", "file_path": temp_out_docx, "filename": f"repaired_{file.filename}"}
             
     except Exception as e:
         _cleanup_temp_files(*created_temps)
@@ -663,8 +655,21 @@ async def report_issue(request: Request):
 
 
 
+
+@app.get("/api/ocr_progress/{filename_stem}")
+async def get_ocr_progress(filename_stem: str):
+    progress = ocr_progress_dict.get(filename_stem, {"progress": 0, "message": "Waiting...", "status": "processing"})
+    return progress
+
 @app.post("/api/upload_and_run_ocr")
-async def upload_and_run_ocr(background_tasks: BackgroundTasks, file: UploadFile = File(...), style_mapping: str = Form(None)):
+async def upload_and_run_ocr(
+    background_tasks: BackgroundTasks, 
+    file: UploadFile = File(...), 
+    style_mapping: str = Form(None),
+    engine: str = Form("auto"),
+    left_ratio: float = Form(0.0),
+    right_ratio: float = Form(1.0)
+):
     import subprocess
     import sys
     import shutil
@@ -676,53 +681,72 @@ async def upload_and_run_ocr(background_tasks: BackgroundTasks, file: UploadFile
     if ext != ".pdf":
         raise HTTPException(status_code=400, detail="僅支援 PDF 檔案格式")
 
-    # Save to database_text folder
     pdf_dir = PATHS.root / 'data' / 'database_text'
     pdf_dir.mkdir(parents=True, exist_ok=True)
     
     temp_pdf_path = pdf_dir / file.filename
     with open(temp_pdf_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
+        
+    filename_stem = Path(file.filename).stem
+    ocr_progress_dict[filename_stem] = {"progress": 0, "message": "Starting...", "status": "processing"}
 
-    def run_scripts(pdf_path_str, filename_stem, style_map_json):
+    def run_scripts(pdf_path_str, stem, style_map_json, eng, lr, rr):
         output_dir = PATHS.root / 'data' / '03_output'
         backup_dir = output_dir / 'backup_originals'
         
-        # 1. 執行前狀態檢查／清理選項
-        md_file = output_dir / f"{filename_stem}.md"
-        docx_file = output_dir / f"{filename_stem}.docx"
+        md_file = output_dir / f"{stem}.md"
+        docx_file = output_dir / f"{stem}.docx"
         
         for f in [md_file, docx_file]:
             if f.exists():
                 backup_dir.mkdir(parents=True, exist_ok=True)
                 backup_path = backup_dir / f.name
-                print(f"[Cleanup] Backing up existing output {f.name} to {backup_dir}")
-                try:
-                    shutil.move(str(f), str(backup_path))
-                except Exception as e:
-                    print(f"Error moving {f.name}: {e}")
+                try: shutil.move(str(f), str(backup_path))
+                except: pass
 
-        # 2. Run OCR and MD generation specifically for this file
-        cmd = [sys.executable, str(PATHS.root / "src" / "scripts" / "process_ocr.py"), "--file", pdf_path_str]
+        cmd = [
+            sys.executable, str(PATHS.root / "src" / "scripts" / "pdf_engine_dispatcher.py"), 
+            "--file", pdf_path_str,
+            "--engine", eng,
+            "--left_ratio", str(lr),
+            "--right_ratio", str(rr)
+        ]
         if style_map_json:
             cmd.extend(["--style_mapping", style_map_json])
-        subprocess.run(cmd, cwd=str(PATHS.root))
+            
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=str(PATHS.root))
+        for line in proc.stdout:
+            line = line.strip()
+            if line:
+                if line.startswith("{") and "progress" in line:
+                    try:
+                        data = json.loads(line)
+                        ocr_progress_dict[stem]["progress"] = data.get("progress", ocr_progress_dict[stem]["progress"])
+                        ocr_progress_dict[stem]["message"] = data.get("message", line)
+                    except:
+                        pass
+                else:
+                    ocr_progress_dict[stem]["message"] = line[:100]
+        proc.wait()
         
-        # 3. 收集本次成功生成的 .md 清單傳遞給 md_to_docx.py
+        ocr_progress_dict[stem]["progress"] = 90
+        ocr_progress_dict[stem]["message"] = "Converting Markdown to DOCX..."
+        
         new_md_files = []
         if md_file.exists():
             new_md_files.append(str(md_file))
                 
-        # Run MD to DOCX conversion passing specific files
         if new_md_files:
-            print(f"Passing {len(new_md_files)} files to md_to_docx.py: {new_md_files}")
             subprocess.run([sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py"), "--files"] + new_md_files, cwd=str(PATHS.root))
-        else:
-            print("No new markdown files were generated.")
+            
+        ocr_progress_dict[stem]["progress"] = 100
+        ocr_progress_dict[stem]["message"] = "Done!"
+        ocr_progress_dict[stem]["status"] = "completed"
 
-    # Execute script in background task
-    background_tasks.add_task(run_scripts, str(temp_pdf_path), Path(file.filename).stem, style_mapping)
-    return {"message": "OCR 管線已成功啟動", "filename_stem": Path(file.filename).stem}
+    background_tasks.add_task(run_scripts, str(temp_pdf_path), filename_stem, style_mapping, engine, left_ratio, right_ratio)
+    return {"message": "OCR 管道已成功啟動", "filename_stem": filename_stem}
+
 
 @app.get("/api/download_ocr_result/{filename_stem}/{ext}")
 async def download_ocr_result(filename_stem: str, ext: str):
