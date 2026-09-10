@@ -2,22 +2,25 @@
 <html lang="zh-TW">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>書籍 PDF 全自動 OCR 與排版</title>
     <style>
         :root { --primary: #ea580c; --primary-hover: #c2410c; --bg: #f8fafc; --card: #ffffff; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 3rem; }
-        .container { background: var(--card); padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 650px; width: 100%; }
+        .container { background: var(--card); padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 680px; width: 100%; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
         .header a { text-decoration: none; color: var(--primary); font-weight: bold; }
-        .upload-area { border: 2px dashed #cbd5e1; padding: 3rem; text-align: center; border-radius: 12px; cursor: pointer; margin-bottom: 1.5rem; }
+        .upload-area { border: 2px dashed #cbd5e1; padding: 3rem; text-align: center; border-radius: 12px; cursor: pointer; margin-bottom: 1.5rem; transition: border-color 0.2s, background-color 0.2s; }
         .upload-area.dragover { border-color: var(--primary); background: #fff7ed; }
-        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1rem; }
+        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1rem; transition: background 0.2s; }
+        .btn:hover { background: var(--primary-hover); }
         .btn:disabled { background: #9ca3af; cursor: not-allowed; }
         #status { margin-top: 1rem; text-align: center; font-weight: 500; color: #475569; }
-        .btn-group { display: flex; gap: 1rem; margin-top: 1rem; }
-        .btn-group a { flex: 1; text-align: center; text-decoration: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; color: white; display: none; }
+        .btn-group { display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; }
+        .btn-group a { flex: 1; min-width: 160px; text-align: center; text-decoration: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; color: white; display: none; }
         #downloadDocxBtn { background: #2563eb; }
         #downloadMdBtn { background: #16a34a; }
+        .setting-card { background: #f8fafc; padding: 1.25rem; border-radius: 12px; margin-bottom: 1.5rem; border: 1px solid #cbd5e1; }
     </style>
 </head>
 <body>
@@ -29,46 +32,76 @@
         </div>
         
         <!-- 自訂範本區塊 -->
-        <div style="background: #f1f5f9; padding: 1.5rem; border-radius: 12px; margin-bottom: 2rem; border: 1px solid #cbd5e1;">
-            <h3 style="margin-top: 0; color: #334155;">📚 樣式範本設定</h3>
+        <div class="setting-card">
+            <h3 style="margin-top: 0; color: #334155; font-size: 1.1rem;">📚 樣式範本設定</h3>
             <p style="color: #64748b; font-size: 0.95rem; margin-bottom: 1rem;">
                 目前使用範本: <strong id="currentTemplateName">載入中...</strong>
             </p>
             <div style="display: flex; gap: 10px;">
                 <input type="file" id="templateInput" accept=".docx" style="display: none;">
-                <button class="btn" style="background: #475569; width: auto; font-size: 1rem; padding: 8px 16px;" onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
+                <button type="button" class="btn" style="background: #475569; width: auto; font-size: 0.95rem; padding: 8px 16px;" onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
                 <span id="templateUploadStatus" style="align-self: center; color: #16a34a; font-weight: bold; font-size: 0.9rem;"></span>
             </div>
             
             <div id="styleMappingSection" style="margin-top: 1rem; display: none;">
-                <h4 style="margin: 0 0 0.5rem 0; color: #475569;">自訂階層樣式對應 (可選)</h4>
-                <div style="display: flex; gap: 1rem; align-items: center; font-size: 0.9rem;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #475569; font-size: 0.95rem;">自訂階層樣式對應 (可選)</h4>
+                <div style="display: flex; gap: 1rem; align-items: center; font-size: 0.9rem; flex-wrap: wrap;">
                     <div>
                         <label for="h1Style">一級標題 (#): </label>
-                        <select id="h1Style" style="padding: 4px; border-radius: 4px;"><option value="">(預設 Heading 1)</option></select>
+                        <select id="h1Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Heading 1)</option></select>
                     </div>
                     <div>
                         <label for="h2Style">二級標題 (##): </label>
-                        <select id="h2Style" style="padding: 4px; border-radius: 4px;"><option value="">(預設 Heading 2)</option></select>
+                        <select id="h2Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Heading 2)</option></select>
                     </div>
                     <div>
                         <label for="h3Style">三級標題 (###): </label>
-                        <select id="h3Style" style="padding: 4px; border-radius: 4px;"><option value="">(預設 Heading 3)</option></select>
+                        <select id="h3Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Heading 3)</option></select>
                     </div>
                 </div>
             </div>
         </div>
 
-        <p style="text-align: center; color: #64748b; margin-bottom: 2rem;">上傳 PDF 檔案，自動呼叫 RapidDoc 進行版面分析、表格識別與中文辨識，並轉為 Word 文件。</p>
-
         <form id="uploadForm">
+            <!-- 進階轉檔與裁切設定 -->
+            <div class="setting-card">
+                <h3 style="margin-top: 0; color: #334155; font-size: 1.1rem;">⚙️ 轉檔引擎與邊界裁切設定</h3>
+                
+                <div style="margin-bottom: 1rem;">
+                    <label style="display:block; margin-bottom: 6px; font-weight:bold; font-size: 0.9rem; color: #475569;">PDF 處理引擎</label>
+                    <select name="engine" id="engineSelect" style="padding: 8px 12px; width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; background: white;">
+                        <option value="auto">自動偵測 (推薦) - 向量 PDF 啟用 PyMuPDF 高速解析；掃描 PDF 啟用 RapidDoc 深度 OCR</option>
+                        <option value="pymupdf">高速提取 (PyMuPDF) - 適用原生向量 PDF，秒級解析且記憶體輕量</option>
+                        <option value="rapiddoc">深度識別 (RapidDoc) - 適用掃描書、圖片轉曲 PDF，支援中文 OCR 與複雜版面</option>
+                    </select>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                    <div>
+                        <label style="display:block; margin-bottom: 4px; font-weight:bold; font-size: 0.9rem; color: #475569;">
+                            左側裁切比例: <span id="leftRatioVal" style="color: #ea580c;">0.0</span>
+                        </label>
+                        <input type="range" id="leftRatio" name="left_ratio" min="0" max="0.4" step="0.01" value="0.0" style="width: 100%;">
+                        <div style="font-size: 0.8rem; color: #94a3b8;">可裁除左側裝訂線或黑邊</div>
+                    </div>
+                    <div>
+                        <label style="display:block; margin-bottom: 4px; font-weight:bold; font-size: 0.9rem; color: #475569;">
+                            右側裁切比例: <span id="rightRatioVal" style="color: #ea580c;">1.0</span>
+                        </label>
+                        <input type="range" id="rightRatio" name="right_ratio" min="0.6" max="1.0" step="0.01" value="1.0" style="width: 100%;">
+                        <div style="font-size: 0.8rem; color: #94a3b8;">可裁除右側留白或裝訂線</div>
+                    </div>
+                </div>
+            </div>
+
             <div class="upload-area" id="dropZone">
-                <p>點擊選擇，或將 PDF 拖曳至此</p>
+                <p style="margin: 0; font-size: 1.1rem; color: #475569;">點擊選擇，或將 PDF 拖曳至此</p>
                 <input type="file" id="fileInput" accept=".pdf" style="display: none;">
             </div>
             <div id="fileInfo" style="text-align: center; margin-bottom: 1rem; font-weight: bold;"></div>
-            <button type="submit" class="btn" id="submitBtn" disabled>開始上傳並執行 OCR</button>
+            <button type="submit" class="btn" id="submitBtn" disabled>開始上傳並執行 OCR / 轉檔</button>
         </form>
+
         <div id="status"></div>
         <div class="btn-group">
             <a id="downloadDocxBtn" href="#">⬇️ 下載 Word (.docx)</a>
@@ -96,11 +129,25 @@
         const statusDiv = document.getElementById('status');
         const downloadDocxBtn = document.getElementById('downloadDocxBtn');
         const downloadMdBtn = document.getElementById('downloadMdBtn');
+        const outlineEditorBtn = document.getElementById('outlineEditorBtn');
         let currentFile = null;
 
         const templateInput = document.getElementById('templateInput');
         const templateUploadStatus = document.getElementById('templateUploadStatus');
         const currentTemplateName = document.getElementById('currentTemplateName');
+
+        // Margin sliders
+        const leftRatioInput = document.getElementById('leftRatio');
+        const rightRatioInput = document.getElementById('rightRatio');
+        const leftRatioVal = document.getElementById('leftRatioVal');
+        const rightRatioVal = document.getElementById('rightRatioVal');
+
+        if (leftRatioInput && leftRatioVal) {
+            leftRatioInput.oninput = function() { leftRatioVal.textContent = this.value; };
+        }
+        if (rightRatioInput && rightRatioVal) {
+            rightRatioInput.oninput = function() { rightRatioVal.textContent = this.value; };
+        }
 
         async function fetchTemplateStyles() {
             try {
@@ -111,7 +158,6 @@
                     const h2 = document.getElementById('h2Style');
                     const h3 = document.getElementById('h3Style');
                     
-                    // Clear existing options except default
                     h1.innerHTML = '<option value="">(預設 Heading 1)</option>';
                     h2.innerHTML = '<option value="">(預設 Heading 2)</option>';
                     h3.innerHTML = '<option value="">(預設 Heading 3)</option>';
@@ -129,7 +175,6 @@
             }
         }
 
-        // Fetch current template on load
         async function loadCurrentTemplate() {
             try {
                 const res = await fetch('/api/get_current_template');
@@ -145,7 +190,6 @@
         }
         window.addEventListener('DOMContentLoaded', loadCurrentTemplate);
 
-        // Handle template upload
         templateInput.onchange = async (e) => {
             if (e.target.files.length === 0) return;
             const file = e.target.files[0];
@@ -172,7 +216,6 @@
                 templateUploadStatus.textContent = '❌ 上傳失敗: ' + err.message;
                 templateUploadStatus.style.color = '#dc2626';
             }
-            // Reset input so the same file can be selected again
             templateInput.value = '';
         };
 
@@ -189,10 +232,14 @@
         };
 
         function handleFile(file) {
+            if (!file.name.toLowerCase().endsWith('.pdf')) {
+                alert('請選擇 PDF 格式之檔案！');
+                return;
+            }
             currentFile = file;
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
             fileInfo.innerHTML = `
-                <div style="display:flex; flex-direction:column; align-items:center; gap:5px; padding: 10px; background: #fff7ed; border-radius: 8px;">
+                <div style="display:flex; flex-direction:column; align-items:center; gap:5px; padding: 10px; background: #fff7ed; border-radius: 8px; border: 1px solid #fed7aa;">
                     <span style="font-size:2rem;">📄</span>
                     <span style="color: #334155;">已選擇: <b>${file.name}</b></span>
                     <span style="color:#64748b; font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
@@ -200,6 +247,7 @@
             submitBtn.disabled = false;
             downloadDocxBtn.style.display = 'none';
             downloadMdBtn.style.display = 'none';
+            outlineEditorBtn.style.display = 'none';
             statusDiv.textContent = '';
         }
 
@@ -208,29 +256,16 @@
             if (!currentFile) return;
 
             submitBtn.disabled = true;
-            
-            // Create a step-by-step checklist UI
-            statusDiv.innerHTML = `
-                <div style="text-align: left; background: #f8fafc; padding: 1.5rem; border-radius: 8px; border: 1px solid #e2e8f0; margin-top: 1rem;">
-                    <div style="font-weight: bold; color: #ea580c; margin-bottom: 0.5rem;">🚀 處理管線已啟動，請勿關閉視窗...</div>
-                    <ul style="list-style: none; padding: 0; margin: 0; font-size: 0.95rem; color: #475569; line-height: 1.8;">
-                        <li id="step1">⏳ 1. 上傳檔案至伺服器</li>
-                        <li id="step2" style="color:#94a3b8;">⚪ 2. 背景觸發 RapidDoc 模型分析</li>
-                        <li id="step3" style="color:#94a3b8;">⚪ 3. 光學字元辨識與版面還原 (需時較長)</li>
-                        <li id="step4" style="color:#94a3b8;">⚪ 4. 產生 Word 排版與 Markdown 檔案</li>
-                    </ul>
-                </div>
-            `;
-            
             downloadDocxBtn.style.display = 'none';
             downloadMdBtn.style.display = 'none';
+            outlineEditorBtn.style.display = 'none';
 
             const formData = new FormData();
             formData.append('file', currentFile);
             
-            const h1Style = document.getElementById('h1Style').value;
-            const h2Style = document.getElementById('h2Style').value;
-            const h3Style = document.getElementById('h3Style').value;
+            const h1Style = document.getElementById('h1Style')?.value;
+            const h2Style = document.getElementById('h2Style')?.value;
+            const h3Style = document.getElementById('h3Style')?.value;
             if (h1Style || h2Style || h3Style) {
                 formData.append('style_mapping', JSON.stringify({
                     h1: h1Style,
@@ -239,19 +274,21 @@
                 }));
             }
 
-            
-            formData.append('engine', document.getElementById('engineSelect').value);
-            formData.append('left_ratio', document.getElementById('leftRatio').value);
-            formData.append('right_ratio', document.getElementById('rightRatio').value);
+            const engineVal = document.getElementById('engineSelect')?.value || 'auto';
+            const leftRatioVal = document.getElementById('leftRatio')?.value || '0.0';
+            const rightRatioVal = document.getElementById('rightRatio')?.value || '1.0';
 
-            // Hide old fake progress
+            formData.append('engine', engineVal);
+            formData.append('left_ratio', leftRatioVal);
+            formData.append('right_ratio', rightRatioVal);
+
             statusDiv.innerHTML = `
-                <div style="margin-top:20px; padding:20px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc;">
-                    <div style="font-weight:bold; margin-bottom:10px;">伺服器處理進度</div>
-                    <div style="width: 100%; background: #e2e8f0; border-radius: 4px; overflow: hidden; height: 10px; margin-bottom:10px;">
-                        <div id="progressBar" style="height: 10px; background: #3b82f6; width: 0%; transition: width 0.3s;"></div>
+                <div style="margin-top:20px; padding:20px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; text-align: left;">
+                    <div style="font-weight:bold; margin-bottom:10px; color:#334155;">🚀 伺服器處理進度</div>
+                    <div style="width: 100%; background: #e2e8f0; border-radius: 4px; overflow: hidden; height: 12px; margin-bottom:10px;">
+                        <div id="progressBar" style="height: 12px; background: #ea580c; width: 0%; transition: width 0.3s;"></div>
                     </div>
-                    <div id="progressText" style="color: #475569; font-size: 0.9rem;">準備中...</div>
+                    <div id="progressText" style="color: #475569; font-size: 0.9rem;">正在啟動背景轉檔任務...</div>
                 </div>
             `;
 
@@ -269,57 +306,73 @@
                 const result = await response.json();
                 const stem = result.filename_stem;
                 
-                // Start polling
+                let isFinished = false;
                 const pollInterval = setInterval(async () => {
+                    if (isFinished) return;
                     try {
                         const res = await fetch(`/api/ocr_progress/${stem}`);
                         const prog = await res.json();
                         
-                        if(document.getElementById('progressBar')) {
-                            document.getElementById('progressBar').style.width = prog.progress + '%';
-                            document.getElementById('progressText').innerText = prog.message;
+                        const pBar = document.getElementById('progressBar');
+                        const pText = document.getElementById('progressText');
+                        
+                        if (pBar && prog.progress !== undefined) {
+                            pBar.style.width = prog.progress + '%';
+                        }
+                        if (pText && prog.message) {
+                            pText.innerText = prog.message;
                         }
                         
                         if (prog.status === 'completed' || prog.progress === 100) {
+                            isFinished = true;
                             clearInterval(pollInterval);
                             onComplete(stem);
+                        } else if (prog.status === 'failed') {
+                            isFinished = true;
+                            clearInterval(pollInterval);
+                            throw new Error(prog.message || '後端轉檔發生錯誤');
                         }
                     } catch(e) {
-                        console.error('Polling error', e);
+                        console.error('Polling error:', e);
                     }
                 }, 1000);
                 
                 function onComplete(filename_stem) {
-                    statusDiv.innerHTML += `<div style="margin-top:1rem; color:#16a34a; font-weight:bold;">✅ 處理完成，您可以下載檔案。</div>`;
+                    statusDiv.innerHTML += `<div style="margin-top:1rem; color:#16a34a; font-weight:bold;">✅ 處理完成！請點選以下按鈕另存新檔：</div>`;
                     
                     const btnContainer = document.createElement('div');
                     btnContainer.style.display = 'flex';
                     btnContainer.style.gap = '10px';
                     btnContainer.style.marginTop = '15px';
+                    btnContainer.style.flexWrap = 'wrap';
                     
                     const btnDocx = document.createElement('button');
+                    btnDocx.className = 'btn';
+                    btnDocx.style.background = '#2563eb';
+                    btnDocx.style.flex = '1';
                     btnDocx.innerText = '📁 本機另存 DOCX (原生視窗)';
-                    btnDocx.style.padding = '10px 15px';
                     btnDocx.onclick = () => nativeSave(filename_stem, 'docx');
                     
                     const btnMd = document.createElement('button');
+                    btnMd.className = 'btn';
+                    btnMd.style.background = '#16a34a';
+                    btnMd.style.flex = '1';
                     btnMd.innerText = '📁 本機另存 Markdown (原生視窗)';
-                    btnMd.style.padding = '10px 15px';
                     btnMd.onclick = () => nativeSave(filename_stem, 'md');
                     
                     btnContainer.appendChild(btnDocx);
                     btnContainer.appendChild(btnMd);
-                    
                     statusDiv.appendChild(btnContainer);
                     
-                    document.getElementById('outlineEditorBtn').style.display = 'block';
-                    document.getElementById('outlineEditorBtn').dataset.stem = filename_stem;
+                    outlineEditorBtn.style.display = 'block';
+                    outlineEditorBtn.dataset.stem = filename_stem;
+                    submitBtn.disabled = false;
                 }
 
             } catch (err) {
                 statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background:#fef2f2; border:1px solid #f87171; border-radius:8px; color:#dc2626;">
                     ❌ <b>執行失敗：</b>${err.message} <br>
-                    <button onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: white; border: 1px solid #f87171; border-radius: 6px;">🔄 重新嘗試上傳</button>
+                    <button type="button" onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: white; border: 1px solid #f87171; border-radius: 6px;">🔄 重新嘗試上傳</button>
                 </div>`;
                 submitBtn.disabled = false;
             }
@@ -327,35 +380,25 @@
         
         async function nativeSave(stem, ext) {
             try {
-                // Determine source path based on conventions
-                // Using API to trigger save dialog on backend
                 const source_path = `data/03_output/${stem}.${ext}`;
                 const res = await fetch('/api/native_save_file', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({source_path, suggested_filename: `${stem}_extracted.${ext}`})
+                    body: JSON.stringify({source_path, suggested_filename: `${stem}.${ext}`})
                 });
                 const result = await res.json();
-                if(result.status === 'success') {
+                if (result.status === 'success') {
                     alert(`✅ 已成功儲存至：${result.saved_path}`);
                 }
             } catch(e) {
-                alert('❌ 儲存失敗');
+                alert('❌ 儲存失敗：' + e.message);
             }
         }
- catch (err) {
-                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background:#fef2f2; border:1px solid #f87171; border-radius:8px; color:#dc2626;">
-                    ❌ <b>啟動失敗：</b>${err.message} <br>
-                    <button onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: white; border: 1px solid #f87171; border-radius: 6px;">🔄 重新嘗試上傳</button>
-                </div>`;
-                submitBtn.disabled = false;
-            }
-        };
 
         // Outline Editor Logic
         let currentMdLines = [];
         
-        document.getElementById('outlineEditorBtn').onclick = async function() {
+        outlineEditorBtn.onclick = async function() {
             const stem = this.dataset.stem;
             if (!stem) return;
             
@@ -400,7 +443,6 @@
                     `;
                     select.onchange = (e) => {
                         const newLevel = parseInt(e.target.value);
-                        // Update line content
                         let cleanText = line.replace(/^(#{1,3})\s+/, '');
                         if (newLevel > 0) {
                             currentMdLines[index] = '#'.repeat(newLevel) + ' ' + cleanText;
@@ -425,7 +467,7 @@
         }
         
         document.getElementById('saveOutlineBtn').onclick = async function() {
-            const stem = document.getElementById('outlineEditorBtn').dataset.stem;
+            const stem = outlineEditorBtn.dataset.stem;
             const statusDiv = document.getElementById('outlineSaveStatus');
             
             statusDiv.textContent = '儲存並重新產生 Word 中...';

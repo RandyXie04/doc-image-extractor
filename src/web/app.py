@@ -677,72 +677,94 @@ async def upload_and_run_ocr(
     import tempfile
     from config import PATHS
     
-    ext = os.path.splitext(file.filename)[1].lower()
+    clean_filename = Path(file.filename or "document.pdf").name
+    ext = os.path.splitext(clean_filename)[1].lower()
     if ext != ".pdf":
         raise HTTPException(status_code=400, detail="僅支援 PDF 檔案格式")
 
     pdf_dir = PATHS.root / 'data' / 'database_text'
     pdf_dir.mkdir(parents=True, exist_ok=True)
     
-    temp_pdf_path = pdf_dir / file.filename
+    temp_pdf_path = pdf_dir / clean_filename
     with open(temp_pdf_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    filename_stem = Path(file.filename).stem
-    ocr_progress_dict[filename_stem] = {"progress": 0, "message": "Starting...", "status": "processing"}
+    filename_stem = Path(clean_filename).stem
+    ocr_progress_dict[filename_stem] = {"progress": 0, "message": "正在初始化任務...", "status": "processing"}
 
     def run_scripts(pdf_path_str, stem, style_map_json, eng, lr, rr):
-        output_dir = PATHS.root / 'data' / '03_output'
-        backup_dir = output_dir / 'backup_originals'
-        
-        md_file = output_dir / f"{stem}.md"
-        docx_file = output_dir / f"{stem}.docx"
-        
-        for f in [md_file, docx_file]:
-            if f.exists():
-                backup_dir.mkdir(parents=True, exist_ok=True)
-                backup_path = backup_dir / f.name
-                try: shutil.move(str(f), str(backup_path))
-                except: pass
+        try:
+            output_dir = PATHS.root / 'data' / '03_output'
+            backup_dir = output_dir / 'backup_originals'
+            
+            md_file = output_dir / f"{stem}.md"
+            docx_file = output_dir / f"{stem}.docx"
+            
+            for f in [md_file, docx_file]:
+                if f.exists():
+                    backup_dir.mkdir(parents=True, exist_ok=True)
+                    backup_path = backup_dir / f.name
+                    try: shutil.move(str(f), str(backup_path))
+                    except: pass
 
-        cmd = [
-            sys.executable, str(PATHS.root / "src" / "scripts" / "pdf_engine_dispatcher.py"), 
-            "--file", pdf_path_str,
-            "--engine", eng,
-            "--left_ratio", str(lr),
-            "--right_ratio", str(rr)
-        ]
-        if style_map_json:
-            cmd.extend(["--style_mapping", style_map_json])
-            
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=str(PATHS.root))
-        for line in proc.stdout:
-            line = line.strip()
-            if line:
-                if line.startswith("{") and "progress" in line:
-                    try:
-                        data = json.loads(line)
-                        ocr_progress_dict[stem]["progress"] = data.get("progress", ocr_progress_dict[stem]["progress"])
-                        ocr_progress_dict[stem]["message"] = data.get("message", line)
-                    except:
-                        pass
-                else:
-                    ocr_progress_dict[stem]["message"] = line[:100]
-        proc.wait()
-        
-        ocr_progress_dict[stem]["progress"] = 90
-        ocr_progress_dict[stem]["message"] = "Converting Markdown to DOCX..."
-        
-        new_md_files = []
-        if md_file.exists():
-            new_md_files.append(str(md_file))
+            cmd = [
+                sys.executable, str(PATHS.root / "src" / "scripts" / "pdf_engine_dispatcher.py"), 
+                "--file", pdf_path_str,
+                "--engine", eng,
+                "--left_ratio", str(lr),
+                "--right_ratio", str(rr)
+            ]
+            if style_map_json:
+                cmd.extend(["--style_mapping", style_map_json])
                 
-        if new_md_files:
-            subprocess.run([sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py"), "--files"] + new_md_files, cwd=str(PATHS.root))
+            proc = subprocess.Popen(
+                cmd, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.STDOUT, 
+                text=True, 
+                encoding="utf-8", 
+                errors="replace",
+                cwd=str(PATHS.root)
+            )
+            for line in proc.stdout:
+                line = line.strip()
+                if line:
+                    if line.startswith("{") and "progress" in line:
+                        try:
+                            data = json.loads(line)
+                            ocr_progress_dict[stem]["progress"] = data.get("progress", ocr_progress_dict[stem]["progress"])
+                            ocr_progress_dict[stem]["message"] = data.get("message", line)
+                        except:
+                            pass
+                    else:
+                        ocr_progress_dict[stem]["message"] = line[:120]
+            proc.wait()
             
-        ocr_progress_dict[stem]["progress"] = 100
-        ocr_progress_dict[stem]["message"] = "Done!"
-        ocr_progress_dict[stem]["status"] = "completed"
+            if proc.returncode != 0:
+                ocr_progress_dict[stem]["status"] = "failed"
+                ocr_progress_dict[stem]["message"] = f"轉檔程序執行失敗 (代碼: {proc.returncode})"
+                return
+
+            ocr_progress_dict[stem]["progress"] = 92
+            ocr_progress_dict[stem]["message"] = "正在套用樣式並產生 Word (.docx) 文件..."
+            
+            new_md_files = []
+            if md_file.exists():
+                new_md_files.append(str(md_file))
+                    
+            if new_md_files:
+                subprocess.run(
+                    [sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py"), "--files"] + new_md_files, 
+                    cwd=str(PATHS.root),
+                    check=False
+                )
+                
+            ocr_progress_dict[stem]["progress"] = 100
+            ocr_progress_dict[stem]["message"] = "轉檔完成！"
+            ocr_progress_dict[stem]["status"] = "completed"
+        except Exception as err:
+            ocr_progress_dict[stem]["status"] = "failed"
+            ocr_progress_dict[stem]["message"] = f"處理過程異常: {str(err)}"
 
     background_tasks.add_task(run_scripts, str(temp_pdf_path), filename_stem, style_mapping, engine, left_ratio, right_ratio)
     return {"message": "OCR 管道已成功啟動", "filename_stem": filename_stem}
