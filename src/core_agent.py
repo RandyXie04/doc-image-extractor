@@ -100,30 +100,37 @@ except ImportError:
 _onnx_session = None
 _onnx_input_name = None
 
+_engine_type = None
+_pt_model = None
+
 def _init_mfd_worker(use_gpu=False):
-    global _onnx_session, _onnx_input_name
-    if _onnx_session is None:
+    global _onnx_session, _onnx_input_name, _engine_type, _pt_model
+    if _onnx_session is None and _engine_type is None:
         try:
-            import onnxruntime as ort
-            from config import PATHS
             import os
+            from src.scripts.model_manager import ensure_model_ready
             
-            model_path_obj = PATHS.get_model_path("yolo_v8_ft.onnx")
-            if model_path_obj and model_path_obj.exists():
-                model_path = str(model_path_obj)
+            model_info = ensure_model_ready()
+            _engine_type = model_info.get("engine", "none")
+            model_path = model_info.get("path")
+            
+            if _engine_type == "onnx" and model_path:
+                import onnxruntime as ort
                 options = ort.SessionOptions()
                 options.intra_op_num_threads = 2
                 from src.scripts.hardware_probe import get_best_providers
-                _onnx_session = ort.InferenceSession(model_path, sess_options=options, providers=get_best_providers())
+                _onnx_session = ort.InferenceSession(str(model_path), sess_options=options, providers=get_best_providers())
                 _onnx_input_name = _onnx_session.get_inputs()[0].name
+            elif _engine_type == "pt" and model_path:
+                from ultralytics import YOLO
+                _pt_model = YOLO(str(model_path))
+                _onnx_session = "MOCK"  # To bypass the old check
             else:
-                print("=========================================")
-                print("[WARN] 請先下載模型權重檔 yolo_v8_ft.onnx")
-                print("請將檔案放置於 'models/' 或 'config/' 目錄下")
-                print("=========================================")
                 _onnx_session = "MOCK"
-        except Exception:
+        except Exception as e:
+            print(f"[Model Loader Error] {e}")
             _onnx_session = "MOCK"
+            _engine_type = "none"
 
 def _mock_detect(img):
     # 用於在尚未準備好模型時，測試 Multiprocessing 流程不會崩潰
@@ -216,6 +223,21 @@ def _process_single_page(args):
                         'score': float(score),
                         'box': np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
                     })
+            elif _engine_type == "pt" and _pt_model is not None:
+                # PyTorch Inference
+                results = _pt_model.predict(img, conf=0.15, iou=0.45, verbose=False)
+                if results and len(results) > 0:
+                    r = results[0]
+                    boxes = r.boxes
+                    for box in boxes:
+                        b_type = 'inline' if int(box.cls[0]) == 0 else 'isolated'
+                        score = float(box.conf[0])
+                        x1, y1, x2, y2 = box.xyxy[0].tolist()
+                        detections.append({
+                            'type': b_type,
+                            'score': score,
+                            'box': np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
+                        })
             else:
                 detections = _mock_detect(img)
         except Exception as e:
