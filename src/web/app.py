@@ -23,6 +23,20 @@ from src.scripts.cleanup_scratch import cleanup_scratch
 
 app = FastAPI(title="PDF AI 公式萃取站")
 
+def cleanup_old_files():
+    """自動清理 03_output 超過 24 小時之快取與產出檔案"""
+    output_dir = PATHS.root / 'data' / '03_output'
+    if not output_dir.exists():
+        return
+    import time
+    now = time.time()
+    for f in output_dir.glob('*'):
+        if f.is_file() and (now - f.stat().st_mtime > 86400):
+            try:
+                f.unlink()
+            except Exception:
+                pass
+
 @app.on_event("startup")
 async def on_startup():
     # 每月 1 號自動清空 scratch 暫存
@@ -30,6 +44,11 @@ async def on_startup():
         cleanup_scratch(force=False, log_fn=print)
     except Exception as e:
         print(f"[Startup Warning] Scratch cleanup failed: {e}")
+    # 啟動時自動清理 24 小時過期輸出
+    try:
+        cleanup_old_files()
+    except Exception as e:
+        print(f"[Startup Warning] Old files cleanup failed: {e}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +60,8 @@ app.add_middleware(
 
 # Simple in-memory task tracker
 tasks = {}
+# Global OCR progress tracking
+ocr_progress_dict = {}
 
 @app.post("/api/upload_file")
 async def upload_file(file: UploadFile = File(...)):
@@ -664,11 +685,15 @@ async def get_ocr_progress(filename_stem: str):
 @app.post("/api/upload_and_run_ocr")
 async def upload_and_run_ocr(
     background_tasks: BackgroundTasks, 
-    file: UploadFile = File(...), 
+    file: UploadFile = File(None), 
+    file_id: str = Form(None),
+    filename_orig: str = Form(None),
     style_mapping: str = Form(None),
     engine: str = Form("auto"),
+    header_ratio: float = Form(0.1),
+    footer_ratio: float = Form(0.1),
     left_ratio: float = Form(0.0),
-    right_ratio: float = Form(1.0)
+    right_ratio: float = Form(0.0)
 ):
     import subprocess
     import sys
@@ -677,22 +702,49 @@ async def upload_and_run_ocr(
     import tempfile
     from config import PATHS
     
-    clean_filename = Path(file.filename or "document.pdf").name
-    ext = os.path.splitext(clean_filename)[1].lower()
-    if ext != ".pdf":
-        raise HTTPException(status_code=400, detail="僅支援 PDF 檔案格式")
-
     pdf_dir = PATHS.root / 'data' / 'database_text'
     pdf_dir.mkdir(parents=True, exist_ok=True)
     
-    temp_pdf_path = pdf_dir / clean_filename
-    with open(temp_pdf_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
-    filename_stem = Path(clean_filename).stem
+    # 支援透過預先上傳之 file_id 或即時上傳 file
+    if file_id and (PATHS.input_dir / file_id).exists():
+        raw_pdf_path = PATHS.input_dir / file_id
+        filename_stem = filename_orig or Path(file_id).stem
+    elif file and file.filename:
+        clean_filename = Path(file.filename).name
+        ext = os.path.splitext(clean_filename)[1].lower()
+        if ext != ".pdf":
+            raise HTTPException(status_code=400, detail="僅支援 PDF 檔案格式")
+        raw_pdf_path = pdf_dir / clean_filename
+        with open(raw_pdf_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        filename_stem = Path(clean_filename).stem
+    else:
+        raise HTTPException(status_code=400, detail="請提供 PDF 檔案或檔案代碼")
+
+    # 執行所見即所得裁切 (WYSIWYG pre-crop using fitz)
+    input_pdf_path = raw_pdf_path
+    if header_ratio > 0 or footer_ratio > 0 or left_ratio > 0 or right_ratio > 0:
+        cropped_pdf_path = pdf_dir / f"cropped_{filename_stem}.pdf"
+        try:
+            with fitz.open(raw_pdf_path) as doc:
+                for page in doc:
+                    rect = page.rect
+                    y_top = rect.height * max(0.0, min(header_ratio, 0.49))
+                    f_r = footer_ratio if footer_ratio < 0.5 else (1.0 - footer_ratio)
+                    y_bottom = rect.height * (1.0 - max(0.0, min(f_r, 0.49)))
+                    x_left = rect.width * max(0.0, min(left_ratio, 0.49))
+                    r_r = right_ratio if right_ratio < 0.5 else (1.0 - right_ratio)
+                    x_right = rect.width * (1.0 - max(0.0, min(r_r, 0.49)))
+                    page.set_cropbox(fitz.Rect(x_left, y_top, x_right, y_bottom))
+                doc.save(cropped_pdf_path)
+            input_pdf_path = cropped_pdf_path
+        except Exception as crop_err:
+            print(f"[Warning] PDF pre-crop failed: {crop_err}")
+            input_pdf_path = raw_pdf_path
+
     ocr_progress_dict[filename_stem] = {"progress": 0, "message": "正在初始化任務...", "status": "processing"}
 
-    def run_scripts(pdf_path_str, stem, style_map_json, eng, lr, rr):
+    def run_scripts(pdf_path_str, stem, style_map_json, eng):
         try:
             output_dir = PATHS.root / 'data' / '03_output'
             backup_dir = output_dir / 'backup_originals'
@@ -710,9 +762,8 @@ async def upload_and_run_ocr(
             cmd = [
                 sys.executable, str(PATHS.root / "src" / "scripts" / "pdf_engine_dispatcher.py"), 
                 "--file", pdf_path_str,
-                "--engine", eng,
-                "--left_ratio", str(lr),
-                "--right_ratio", str(rr)
+                "--output_stem", stem,
+                "--engine", eng
             ]
             if style_map_json:
                 cmd.extend(["--style_mapping", style_map_json])
@@ -766,7 +817,7 @@ async def upload_and_run_ocr(
             ocr_progress_dict[stem]["status"] = "failed"
             ocr_progress_dict[stem]["message"] = f"處理過程異常: {str(err)}"
 
-    background_tasks.add_task(run_scripts, str(temp_pdf_path), filename_stem, style_mapping, engine, left_ratio, right_ratio)
+    background_tasks.add_task(run_scripts, str(input_pdf_path), filename_stem, style_mapping, engine)
     return {"message": "OCR 管道已成功啟動", "filename_stem": filename_stem}
 
 

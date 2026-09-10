@@ -5,47 +5,48 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>書籍 PDF 全自動 OCR 與排版</title>
     <style>
-        :root { --primary: #ea580c; --primary-hover: #c2410c; --bg: #f8fafc; --card: #ffffff; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 3rem; }
+        :root { --primary: #ea580c; --primary-hover: #c2410c; --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 2.5rem 1rem; }
         .container { background: var(--card); padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 680px; width: 100%; }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .header a { text-decoration: none; color: var(--primary); font-weight: bold; }
-        .upload-area { border: 2px dashed #cbd5e1; padding: 3rem; text-align: center; border-radius: 12px; cursor: pointer; margin-bottom: 1.5rem; transition: border-color 0.2s, background-color 0.2s; }
-        .upload-area.dragover { border-color: var(--primary); background: #fff7ed; }
-        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1rem; transition: background 0.2s; }
+        .header a { text-decoration: none; color: var(--primary); font-weight: bold; font-size: 0.95rem; }
+        .upload-area { border: 2px dashed #cbd5e1; padding: 2.5rem 1.5rem; text-align: center; border-radius: 12px; cursor: pointer; margin-bottom: 1.5rem; transition: all 0.2s; background: #f8fafc; }
+        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background: #fff7ed; }
+        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.05rem; transition: background 0.2s; }
         .btn:hover { background: var(--primary-hover); }
         .btn:disabled { background: #9ca3af; cursor: not-allowed; }
         #status { margin-top: 1rem; text-align: center; font-weight: 500; color: #475569; }
-        .btn-group { display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; }
-        .btn-group a { flex: 1; min-width: 160px; text-align: center; text-decoration: none; padding: 12px 20px; border-radius: 8px; font-weight: bold; color: white; display: none; }
-        #downloadDocxBtn { background: #2563eb; }
-        #downloadMdBtn { background: #16a34a; }
-        .setting-card { background: #f8fafc; padding: 1.25rem; border-radius: 12px; margin-bottom: 1.5rem; border: 1px solid #cbd5e1; }
+        .card-section { background: #f8fafc; padding: 1.25rem; border-radius: 12px; margin-bottom: 1.5rem; border: 1px solid var(--border); }
+        .slider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; text-align: left; }
+        .slider-item { display: flex; flex-direction: column; gap: 4px; }
+        .slider-label { font-size: 0.88rem; font-weight: bold; color: #475569; display: flex; justify-content: space-between; }
+        .page-ctrl-btn { background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #334155; }
+        .page-ctrl-btn:hover { background: #cbd5e1; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <a href="/">◀ 返回首頁</a>
-            <h2 style="margin: 0;">📄 全自動 OCR 與排版管線</h2>
+            <h2 style="margin: 0; font-size: 1.4rem;">📄 全自動 OCR 與排版管線</h2>
             <div style="width: 80px;"></div>
         </div>
         
-        <!-- 自訂範本區塊 -->
-        <div class="setting-card">
-            <h3 style="margin-top: 0; color: #334155; font-size: 1.1rem;">📚 樣式範本設定</h3>
-            <p style="color: #64748b; font-size: 0.95rem; margin-bottom: 1rem;">
+        <!-- 樣式範本設定 -->
+        <div class="card-section">
+            <h3 style="margin-top: 0; color: #334155; font-size: 1.05rem;">📚 樣式範本設定</h3>
+            <p style="color: #64748b; font-size: 0.9rem; margin-bottom: 0.8rem;">
                 目前使用範本: <strong id="currentTemplateName">載入中...</strong>
             </p>
             <div style="display: flex; gap: 10px;">
                 <input type="file" id="templateInput" accept=".docx" style="display: none;">
-                <button type="button" class="btn" style="background: #475569; width: auto; font-size: 0.95rem; padding: 8px 16px;" onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
-                <span id="templateUploadStatus" style="align-self: center; color: #16a34a; font-weight: bold; font-size: 0.9rem;"></span>
+                <button type="button" class="btn" style="background: #475569; width: auto; font-size: 0.9rem; padding: 6px 14px;" onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
+                <span id="templateUploadStatus" style="align-self: center; color: #16a34a; font-weight: bold; font-size: 0.85rem;"></span>
             </div>
             
-            <div id="styleMappingSection" style="margin-top: 1rem; display: none;">
-                <h4 style="margin: 0 0 0.5rem 0; color: #475569; font-size: 0.95rem;">自訂階層樣式對應 (可選)</h4>
-                <div style="display: flex; gap: 1rem; align-items: center; font-size: 0.9rem; flex-wrap: wrap;">
+            <div id="styleMappingSection" style="margin-top: 0.8rem; display: none;">
+                <h4 style="margin: 0 0 0.5rem 0; color: #475569; font-size: 0.9rem;">自訂階層樣式對應 (可選)</h4>
+                <div style="display: flex; gap: 0.8rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap;">
                     <div>
                         <label for="h1Style">一級標題 (#): </label>
                         <select id="h1Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Heading 1)</option></select>
@@ -63,50 +64,76 @@
         </div>
 
         <form id="uploadForm">
-            <!-- 進階轉檔與裁切設定 -->
-            <div class="setting-card">
-                <h3 style="margin-top: 0; color: #334155; font-size: 1.1rem;">⚙️ 轉檔引擎與邊界裁切設定</h3>
-                
-                <div style="margin-bottom: 1rem;">
-                    <label style="display:block; margin-bottom: 6px; font-weight:bold; font-size: 0.9rem; color: #475569;">PDF 處理引擎</label>
-                    <select name="engine" id="engineSelect" style="padding: 8px 12px; width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.95rem; background: white;">
-                        <option value="auto">自動偵測 (推薦) - 向量 PDF 啟用 PyMuPDF 高速解析；掃描 PDF 啟用 RapidDoc 深度 OCR</option>
-                        <option value="pymupdf">高速提取 (PyMuPDF) - 適用原生向量 PDF，秒級解析且記憶體輕量</option>
-                        <option value="rapiddoc">深度識別 (RapidDoc) - 適用掃描書、圖片轉曲 PDF，支援中文 OCR 與複雜版面</option>
-                    </select>
-                </div>
-
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-                    <div>
-                        <label style="display:block; margin-bottom: 4px; font-weight:bold; font-size: 0.9rem; color: #475569;">
-                            左側裁切比例: <span id="leftRatioVal" style="color: #ea580c;">0.0</span>
-                        </label>
-                        <input type="range" id="leftRatio" name="left_ratio" min="0" max="0.4" step="0.01" value="0.0" style="width: 100%;">
-                        <div style="font-size: 0.8rem; color: #94a3b8;">可裁除左側裝訂線或黑邊</div>
-                    </div>
-                    <div>
-                        <label style="display:block; margin-bottom: 4px; font-weight:bold; font-size: 0.9rem; color: #475569;">
-                            右側裁切比例: <span id="rightRatioVal" style="color: #ea580c;">1.0</span>
-                        </label>
-                        <input type="range" id="rightRatio" name="right_ratio" min="0.6" max="1.0" step="0.01" value="1.0" style="width: 100%;">
-                        <div style="font-size: 0.8rem; color: #94a3b8;">可裁除右側留白或裝訂線</div>
-                    </div>
-                </div>
+            <!-- 引擎選擇 -->
+            <div class="card-section">
+                <label style="display:block; margin-bottom: 6px; font-weight:bold; font-size: 0.95rem; color: #334155;">⚙️ PDF 處理引擎選擇</label>
+                <select name="engine" id="engineSelect" style="padding: 8px 12px; width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 0.92rem; background: white;">
+                    <option value="auto">自動偵測 (推薦) - 向量 PDF 啟用 PyMuPDF 高速解析；掃描 PDF 啟用 RapidDoc 深度 OCR</option>
+                    <option value="pymupdf">高速提取 (PyMuPDF) - 適用原生向量 PDF，秒級解析且記憶體輕量</option>
+                    <option value="rapiddoc">深度識別 (RapidDoc) - 適用掃描書、圖片轉曲 PDF，支援中文 OCR 與複雜版面</option>
+                </select>
             </div>
 
+            <!-- PDF 上傳區 -->
             <div class="upload-area" id="dropZone">
-                <p style="margin: 0; font-size: 1.1rem; color: #475569;">點擊選擇，或將 PDF 拖曳至此</p>
+                <span style="font-size: 2.2rem; display: block; margin-bottom: 0.5rem;">📄</span>
+                <p id="fileNameDisplay" style="margin: 0; font-size: 1.05rem; color: #334155; font-weight: 500;">點擊選擇，或將 PDF 拖曳至此</p>
                 <input type="file" id="fileInput" accept=".pdf" style="display: none;">
             </div>
+
+            <!-- 裁切邊界預覽圖與四向滑桿 (與公式提取站一致) -->
+            <div id="previewContainer" class="card-section" style="display: none; text-align: center;">
+                <h4 style="margin-top: 0; color: #334155; font-size: 1rem;">🖼️ 裁切邊界預覽 (紅色=頂部, 藍色=底部, 綠色=左右)</h4>
+                
+                <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin: 0.8rem 0;">
+                    <button type="button" id="prevPageBtn" class="page-ctrl-btn">◀ 上一頁</button>
+                    <span style="font-size: 0.9rem; color: #475569;">預覽頁碼: <span id="previewPageDisplay" style="font-weight: bold; color: #ea580c;">1</span> / <span id="totalPagesDisplay">?</span></span>
+                    <button type="button" id="nextPageBtn" class="page-ctrl-btn">下一頁 ▶</button>
+                </div>
+
+                <div class="slider-grid">
+                    <div class="slider-item">
+                        <div class="slider-label">
+                            <span>頂部裁切 (紅線):</span>
+                            <span id="headerVal" style="color: #dc2626;">0.10</span>
+                        </div>
+                        <input type="range" id="headerSlider" min="0" max="0.5" step="0.01" value="0.10" style="width: 100%;">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-label">
+                            <span>底部裁切 (藍線):</span>
+                            <span id="footerVal" style="color: #2563eb;">0.10</span>
+                        </div>
+                        <input type="range" id="footerSlider" min="0" max="0.5" step="0.01" value="0.10" style="width: 100%;">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-label">
+                            <span>左側邊距 (綠線):</span>
+                            <span id="leftVal" style="color: #16a34a;">0.00</span>
+                        </div>
+                        <input type="range" id="leftSlider" min="0" max="0.3" step="0.01" value="0.00" style="width: 100%;">
+                    </div>
+                    <div class="slider-item">
+                        <div class="slider-label">
+                            <span>右側邊距 (綠線):</span>
+                            <span id="rightVal" style="color: #16a34a;">0.00</span>
+                        </div>
+                        <input type="range" id="rightSlider" min="0" max="0.3" step="0.01" value="0.00" style="width: 100%;">
+                    </div>
+                </div>
+
+                <div style="margin-top: 1rem; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; background: #fff;">
+                    <img id="previewImage" src="" alt="預覽載入中..." style="max-width: 100%; height: auto; max-height: 420px; display: block; margin: 0 auto;">
+                </div>
+            </div>
+
             <div id="fileInfo" style="text-align: center; margin-bottom: 1rem; font-weight: bold;"></div>
-            <button type="submit" class="btn" id="submitBtn" disabled>開始上傳並執行 OCR / 轉檔</button>
+            <button type="submit" class="btn" id="submitBtn" disabled>開始執行 OCR / 轉檔</button>
         </form>
 
         <div id="status"></div>
-        <div class="btn-group">
-            <a id="downloadDocxBtn" href="#">⬇️ 下載 Word (.docx)</a>
-            <a id="downloadMdBtn" href="#">📄 下載 Markdown (.md)</a>
-            <a id="outlineEditorBtn" href="javascript:void(0)" style="background: #8b5cf6;">✏️ 檢視與微調大綱</a>
+        <div id="outlineEditorBtnGroup" style="margin-top: 1rem; display: none;">
+            <a id="outlineEditorBtn" href="javascript:void(0)" class="btn" style="background: #8b5cf6; text-decoration: none; display: block; text-align: center;">✏️ 檢視與微調大綱 (Outline Editor)</a>
         </div>
         
         <!-- Outline Editor Modal/Section -->
@@ -124,29 +151,52 @@
     <script>
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
-        const fileInfo = document.getElementById('fileInfo');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
         const submitBtn = document.getElementById('submitBtn');
         const statusDiv = document.getElementById('status');
-        const downloadDocxBtn = document.getElementById('downloadDocxBtn');
-        const downloadMdBtn = document.getElementById('downloadMdBtn');
+        const outlineEditorBtnGroup = document.getElementById('outlineEditorBtnGroup');
         const outlineEditorBtn = document.getElementById('outlineEditorBtn');
-        let currentFile = null;
 
         const templateInput = document.getElementById('templateInput');
         const templateUploadStatus = document.getElementById('templateUploadStatus');
         const currentTemplateName = document.getElementById('currentTemplateName');
 
-        // Margin sliders
-        const leftRatioInput = document.getElementById('leftRatio');
-        const rightRatioInput = document.getElementById('rightRatio');
-        const leftRatioVal = document.getElementById('leftRatioVal');
-        const rightRatioVal = document.getElementById('rightRatioVal');
+        // Preview & Sliders
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const headerSlider = document.getElementById('headerSlider');
+        const footerSlider = document.getElementById('footerSlider');
+        const leftSlider = document.getElementById('leftSlider');
+        const rightSlider = document.getElementById('rightSlider');
+        const headerVal = document.getElementById('headerVal');
+        const footerVal = document.getElementById('footerVal');
+        const leftVal = document.getElementById('leftVal');
+        const rightVal = document.getElementById('rightVal');
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        const previewPageDisplay = document.getElementById('previewPageDisplay');
+        const totalPagesDisplay = document.getElementById('totalPagesDisplay');
 
-        if (leftRatioInput && leftRatioVal) {
-            leftRatioInput.oninput = function() { leftRatioVal.textContent = this.value; };
-        }
-        if (rightRatioInput && rightRatioVal) {
-            rightRatioInput.oninput = function() { rightRatioVal.textContent = this.value; };
+        let currentFile = null;
+        let currentFileId = null;
+        let currentFileOrigName = "";
+        let currentPreviewPage = 1;
+        let totalPdfPages = 1;
+        let debounceTimer = null;
+
+        // Fetch current template on load
+        async function loadCurrentTemplate() {
+            try {
+                const res = await fetch('/api/get_current_template');
+                const data = await res.json();
+                currentTemplateName.textContent = data.name;
+                if (data.has_custom) {
+                    currentTemplateName.style.color = '#ea580c';
+                }
+                fetchTemplateStyles();
+            } catch (err) {
+                currentTemplateName.textContent = '無法取得狀態';
+            }
         }
 
         async function fetchTemplateStyles() {
@@ -172,20 +222,6 @@
                 }
             } catch (err) {
                 console.error("無法取得樣式", err);
-            }
-        }
-
-        async function loadCurrentTemplate() {
-            try {
-                const res = await fetch('/api/get_current_template');
-                const data = await res.json();
-                currentTemplateName.textContent = data.name;
-                if (data.has_custom) {
-                    currentTemplateName.style.color = '#ea580c';
-                }
-                fetchTemplateStyles();
-            } catch (err) {
-                currentTemplateName.textContent = '無法取得狀態';
             }
         }
         window.addEventListener('DOMContentLoaded', loadCurrentTemplate);
@@ -219,6 +255,7 @@
             templateInput.value = '';
         };
 
+        // File Selection & Drag-and-Drop
         dropZone.onclick = () => fileInput.click();
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
         dropZone.ondragleave = () => dropZone.classList.remove('dragover');
@@ -231,37 +268,102 @@
             if (e.target.files.length > 0) handleFile(e.target.files[0]);
         };
 
-        function handleFile(file) {
+        async function handleFile(file) {
             if (!file.name.toLowerCase().endsWith('.pdf')) {
                 alert('請選擇 PDF 格式之檔案！');
                 return;
             }
             currentFile = file;
+            currentFileOrigName = file.name.replace(/\.[^/.]+$/, "");
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-            fileInfo.innerHTML = `
-                <div style="display:flex; flex-direction:column; align-items:center; gap:5px; padding: 10px; background: #fff7ed; border-radius: 8px; border: 1px solid #fed7aa;">
-                    <span style="font-size:2rem;">📄</span>
-                    <span style="color: #334155;">已選擇: <b>${file.name}</b></span>
-                    <span style="color:#64748b; font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
-                </div>`;
-            submitBtn.disabled = false;
-            downloadDocxBtn.style.display = 'none';
-            downloadMdBtn.style.display = 'none';
-            outlineEditorBtn.style.display = 'none';
+            
+            fileNameDisplay.innerHTML = `已選擇: <b>${file.name}</b> (${sizeMB} MB)`;
+            submitBtn.disabled = true;
+            submitBtn.textContent = '正在上傳並產生預覽...';
             statusDiv.textContent = '';
+            outlineEditorBtnGroup.style.display = 'none';
+
+            // 呼叫 upload_file 取得預覽與頁數
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/upload_file', { method: 'POST', body: formData });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || '上傳失敗');
+
+                currentFileId = data.file_id;
+                totalPdfPages = data.total_pages || 1;
+                currentPreviewPage = 1;
+                totalPagesDisplay.textContent = totalPdfPages;
+                previewPageDisplay.textContent = currentPreviewPage;
+
+                previewContainer.style.display = 'block';
+                updatePreview();
+
+                submitBtn.disabled = false;
+                submitBtn.textContent = '開始執行 OCR / 轉檔';
+            } catch (err) {
+                alert('無法載入 PDF 預覽: ' + err.message);
+                submitBtn.disabled = false;
+                submitBtn.textContent = '開始執行 OCR / 轉檔';
+            }
         }
 
+        function updatePreview() {
+            if (!currentFileId) return;
+            const h = headerSlider.value;
+            const f = footerSlider.value;
+            const l = leftSlider.value;
+            const r = rightSlider.value;
+            
+            headerVal.textContent = h;
+            footerVal.textContent = f;
+            leftVal.textContent = l;
+            rightVal.textContent = r;
+
+            clearTimeout(debounceTimer);
+            debounceTimer = setTimeout(() => {
+                previewImage.src = `/api/render_preview/${currentFileId}?page=${currentPreviewPage}&header=${h}&footer=${f}&left=${l}&right=${r}&_t=${Date.now()}`;
+            }, 300);
+        }
+
+        headerSlider.oninput = updatePreview;
+        footerSlider.oninput = updatePreview;
+        leftSlider.oninput = updatePreview;
+        rightSlider.oninput = updatePreview;
+
+        prevPageBtn.onclick = () => {
+            if (currentPreviewPage > 1) {
+                currentPreviewPage--;
+                previewPageDisplay.textContent = currentPreviewPage;
+                updatePreview();
+            }
+        };
+
+        nextPageBtn.onclick = () => {
+            if (currentPreviewPage < totalPdfPages) {
+                currentPreviewPage++;
+                previewPageDisplay.textContent = currentPreviewPage;
+                updatePreview();
+            }
+        };
+
+        // Form Submit
         document.getElementById('uploadForm').onsubmit = async (e) => {
             e.preventDefault();
-            if (!currentFile) return;
+            if (!currentFile && !currentFileId) return;
 
             submitBtn.disabled = true;
-            downloadDocxBtn.style.display = 'none';
-            downloadMdBtn.style.display = 'none';
-            outlineEditorBtn.style.display = 'none';
+            outlineEditorBtnGroup.style.display = 'none';
 
             const formData = new FormData();
-            formData.append('file', currentFile);
+            if (currentFileId) {
+                formData.append('file_id', currentFileId);
+                formData.append('filename_orig', currentFileOrigName);
+            } else if (currentFile) {
+                formData.append('file', currentFile);
+            }
             
             const h1Style = document.getElementById('h1Style')?.value;
             const h2Style = document.getElementById('h2Style')?.value;
@@ -274,13 +376,11 @@
                 }));
             }
 
-            const engineVal = document.getElementById('engineSelect')?.value || 'auto';
-            const leftRatioVal = document.getElementById('leftRatio')?.value || '0.0';
-            const rightRatioVal = document.getElementById('rightRatio')?.value || '1.0';
-
-            formData.append('engine', engineVal);
-            formData.append('left_ratio', leftRatioVal);
-            formData.append('right_ratio', rightRatioVal);
+            formData.append('engine', document.getElementById('engineSelect')?.value || 'auto');
+            formData.append('header_ratio', headerSlider.value);
+            formData.append('footer_ratio', footerSlider.value);
+            formData.append('left_ratio', leftSlider.value);
+            formData.append('right_ratio', rightSlider.value);
 
             statusDiv.innerHTML = `
                 <div style="margin-top:20px; padding:20px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; text-align: left;">
@@ -300,7 +400,8 @@
 
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
-                    throw new Error(errorData.detail || 'OCR 啟動失敗');
+                    const errMsg = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail || 'OCR 啟動失敗');
+                    throw new Error(errMsg);
                 }
 
                 const result = await response.json();
@@ -364,7 +465,7 @@
                     btnContainer.appendChild(btnMd);
                     statusDiv.appendChild(btnContainer);
                     
-                    outlineEditorBtn.style.display = 'block';
+                    outlineEditorBtnGroup.style.display = 'block';
                     outlineEditorBtn.dataset.stem = filename_stem;
                     submitBtn.disabled = false;
                 }
