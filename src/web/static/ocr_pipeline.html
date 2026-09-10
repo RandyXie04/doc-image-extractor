@@ -239,17 +239,23 @@
                 }));
             }
 
-            try {
-                // Fake progress updates for UI reassurance
-                setTimeout(() => { 
-                    if(document.getElementById('step1')) document.getElementById('step1').innerHTML = '✅ 1. 上傳檔案至伺服器 (完成)'; 
-                    if(document.getElementById('step2')) { document.getElementById('step2').innerHTML = '⏳ 2. 背景觸發 RapidDoc 模型分析...'; document.getElementById('step2').style.color = '#475569'; }
-                }, 1500);
-                setTimeout(() => { 
-                    if(document.getElementById('step2')) document.getElementById('step2').innerHTML = '✅ 2. 背景觸發 RapidDoc 模型分析 (完成)'; 
-                    if(document.getElementById('step3')) { document.getElementById('step3').innerHTML = '⏳ 3. 光學字元辨識與版面還原 (執行中...)'; document.getElementById('step3').style.color = '#ea580c'; }
-                }, 3000);
+            
+            formData.append('engine', document.getElementById('engineSelect').value);
+            formData.append('left_ratio', document.getElementById('leftRatio').value);
+            formData.append('right_ratio', document.getElementById('rightRatio').value);
 
+            // Hide old fake progress
+            statusDiv.innerHTML = `
+                <div style="margin-top:20px; padding:20px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc;">
+                    <div style="font-weight:bold; margin-bottom:10px;">伺服器處理進度</div>
+                    <div style="width: 100%; background: #e2e8f0; border-radius: 4px; overflow: hidden; height: 10px; margin-bottom:10px;">
+                        <div id="progressBar" style="height: 10px; background: #3b82f6; width: 0%; transition: width 0.3s;"></div>
+                    </div>
+                    <div id="progressText" style="color: #475569; font-size: 0.9rem;">準備中...</div>
+                </div>
+            `;
+
+            try {
                 const response = await fetch('/api/upload_and_run_ocr', {
                     method: 'POST',
                     body: formData
@@ -261,20 +267,83 @@
                 }
 
                 const result = await response.json();
+                const stem = result.filename_stem;
                 
-                if(document.getElementById('step3')) document.getElementById('step3').innerHTML = '✅ 3. 光學字元辨識與版面還原 (排程成功)';
-                if(document.getElementById('step4')) { document.getElementById('step4').innerHTML = '⏳ 4. 產生 Word 排版 (背景處理中)'; document.getElementById('step4').style.color = '#16a34a'; }
-
-                statusDiv.innerHTML += `<div style="margin-top:1rem; color:#16a34a; font-weight:bold;">✅ ${result.message}。完成後可點擊下方按鈕下載結果。</div>`;
+                // Start polling
+                const pollInterval = setInterval(async () => {
+                    try {
+                        const res = await fetch(`/api/ocr_progress/${stem}`);
+                        const prog = await res.json();
+                        
+                        if(document.getElementById('progressBar')) {
+                            document.getElementById('progressBar').style.width = prog.progress + '%';
+                            document.getElementById('progressText').innerText = prog.message;
+                        }
+                        
+                        if (prog.status === 'completed' || prog.progress === 100) {
+                            clearInterval(pollInterval);
+                            onComplete(stem);
+                        }
+                    } catch(e) {
+                        console.error('Polling error', e);
+                    }
+                }, 1000);
                 
-                downloadDocxBtn.href = `/api/download_ocr_result/${result.filename_stem}/docx`;
-                downloadMdBtn.href = `/api/download_ocr_result/${result.filename_stem}/md`;
-                downloadDocxBtn.style.display = 'block';
-                downloadMdBtn.style.display = 'block';
-                document.getElementById('outlineEditorBtn').style.display = 'block';
-                document.getElementById('outlineEditorBtn').dataset.stem = result.filename_stem;
+                function onComplete(filename_stem) {
+                    statusDiv.innerHTML += `<div style="margin-top:1rem; color:#16a34a; font-weight:bold;">✅ 處理完成，您可以下載檔案。</div>`;
+                    
+                    const btnContainer = document.createElement('div');
+                    btnContainer.style.display = 'flex';
+                    btnContainer.style.gap = '10px';
+                    btnContainer.style.marginTop = '15px';
+                    
+                    const btnDocx = document.createElement('button');
+                    btnDocx.innerText = '📁 本機另存 DOCX (原生視窗)';
+                    btnDocx.style.padding = '10px 15px';
+                    btnDocx.onclick = () => nativeSave(filename_stem, 'docx');
+                    
+                    const btnMd = document.createElement('button');
+                    btnMd.innerText = '📁 本機另存 Markdown (原生視窗)';
+                    btnMd.style.padding = '10px 15px';
+                    btnMd.onclick = () => nativeSave(filename_stem, 'md');
+                    
+                    btnContainer.appendChild(btnDocx);
+                    btnContainer.appendChild(btnMd);
+                    
+                    statusDiv.appendChild(btnContainer);
+                    
+                    document.getElementById('outlineEditorBtn').style.display = 'block';
+                    document.getElementById('outlineEditorBtn').dataset.stem = filename_stem;
+                }
 
             } catch (err) {
+                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background:#fef2f2; border:1px solid #f87171; border-radius:8px; color:#dc2626;">
+                    ❌ <b>執行失敗：</b>${err.message} <br>
+                    <button onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: white; border: 1px solid #f87171; border-radius: 6px;">🔄 重新嘗試上傳</button>
+                </div>`;
+                submitBtn.disabled = false;
+            }
+        };
+        
+        async function nativeSave(stem, ext) {
+            try {
+                // Determine source path based on conventions
+                // Using API to trigger save dialog on backend
+                const source_path = `data/03_output/${stem}.${ext}`;
+                const res = await fetch('/api/native_save_file', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({source_path, suggested_filename: `${stem}_extracted.${ext}`})
+                });
+                const result = await res.json();
+                if(result.status === 'success') {
+                    alert(`✅ 已成功儲存至：${result.saved_path}`);
+                }
+            } catch(e) {
+                alert('❌ 儲存失敗');
+            }
+        }
+ catch (err) {
                 statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background:#fef2f2; border:1px solid #f87171; border-radius:8px; color:#dc2626;">
                     ❌ <b>啟動失敗：</b>${err.message} <br>
                     <button onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: white; border: 1px solid #f87171; border-radius: 6px;">🔄 重新嘗試上傳</button>
