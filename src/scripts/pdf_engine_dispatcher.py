@@ -3,7 +3,13 @@ import argparse
 import os
 import json
 import subprocess
+from pathlib import Path
 import fitz
+
+# Anchor project root to sys.path
+root_dir = Path(__file__).parent.parent.parent.absolute()
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
 
 def is_vector_pdf(pdf_path, text_threshold=100):
     """
@@ -28,43 +34,34 @@ def is_vector_pdf(pdf_path, text_threshold=100):
 
 def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None):
     """
-    Fast extraction using PyMuPDF for vector PDFs with margin filtering.
+    High-precision extraction using book_layout_extractor:
+    - Header & footer removal
+    - Footnotes extraction and dual-way anchor matching
+    - Heading style detection (H1, H2, H3)
+    - Paragraph line-wrap reflow
     """
-    doc = fitz.open(pdf_path)
-    md_content = []
+    from src.scripts.book_layout_extractor import process_book_vector_pdf
     
-    total_pages = len(doc)
-    
-    for page_num in range(total_pages):
-        progress = int(((page_num + 1) / total_pages) * 85)
-        print(json.dumps({"progress": progress, "message": f"[INFO] 正在解析第 {page_num+1}/{total_pages} 頁 (PyMuPDF 高速引擎)..."}))
+    def on_progress(percent, msg):
+        print(json.dumps({"progress": percent, "message": msg}))
         sys.stdout.flush()
         
-        page = doc[page_num]
-        blocks = page.get_text("dict")["blocks"]
-        for b in blocks:
-            if b.get('type') == 0:  # text block
-                block_text = ""
-                for l in b.get("lines", []):
-                    for s in l.get("spans", []):
-                        text = s.get("text", "").strip()
-                        if text:
-                            # Basic heuristic for title detection
-                            if s.get("size", 10) > 14:
-                                block_text += f"# {text}\n"
-                            else:
-                                block_text += f"{text} "
-                if block_text.strip():
-                    md_content.append(block_text.strip())
-                    
-    stem = output_stem or os.path.basename(pdf_path).rsplit(".", 1)[0]
-    out_name = f"{stem}.md"
-    out_path = os.path.join(output_dir, out_name)
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write("\n\n".join(md_content))
+    out_md_path, audit_data = process_book_vector_pdf(
+        pdf_path=pdf_path,
+        output_dir=output_dir,
+        output_stem=output_stem,
+        style_mapping=style_mapping,
+        progress_callback=on_progress
+    )
     
-    print(json.dumps({"progress": 90, "message": "[INFO] PyMuPDF 向量文字提取完成，產出 Markdown 檔案。"}))
+    # Save structured audit tracking file
+    audit_txt_path = os.path.join(output_dir, f"{output_stem or 'conversion'}_audit.json")
+    with open(audit_txt_path, "w", encoding="utf-8") as f:
+        json.dump(audit_data, f, ensure_ascii=False, indent=2)
+        
+    print(json.dumps({"progress": 90, "message": f"[INFO] 版面分析與文字結構化完成，已消除頁眉頁碼並匹配 {audit_data['footnotes_matched'] + audit_data['footnotes_fallback']} 條腳注。"}))
     sys.stdout.flush()
+    return out_md_path, audit_data
 
 def main():
     parser = argparse.ArgumentParser()
