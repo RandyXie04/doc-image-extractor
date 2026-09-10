@@ -38,11 +38,13 @@
 *   **全功能 Windows 原生儲存對話框 (Native Save Dialog)**：
     *   所有功能模組（公式轉檔、OCR 轉檔、圖片擷取、方正修復）全面支援「📁 本機另存（原生視窗）」。
     *   點擊後直接彈出 Windows 檔案總管儲存視窗，讓使用者自行指定存放磁碟與路徑，徹底解決瀏覽器自動下載未提示路徑的痛點。
+    *   **儲存結果與即時定位**：儲存完成後即時顯示綠色路徑提示卡，並附帶「📂 在 Windows 檔案總管中開啟」按鈕，可直接開啟資料夾並精準高亮該檔案 (`explorer /select`)。
+    *   **安全防護與非同步架構**：採用非同步子進程 (`asyncio.create_subprocess_exec`) 呼叫對話框，避免阻塞 FastAPI Event Loop；實作嚴格路徑白名單校驗，防禦目錄遍歷 (Path Traversal / NIST PR.DS & ISO 27001)。
 *   **24 小時過期快取自動清理 (Auto-cleanup Mechanism)**：
     *   系統內建伺服器生命週期防護，每次啟動時自動掃描輸出目錄，安全清除超過 24 小時之過期中繼檔，避免伺服器磁碟耗盡。
 *   **雙運作模式（編輯專用 vs 工程師除錯）**：
     *   **出版社編輯模式（預設）**：極簡 UX 流程，隱藏技術日誌與內部暫存，產檔後直接彈出 Windows 原生「另存新檔」對話框。
-    *   **工程師除錯模式**：解鎖完整即時轉檔 Log、內部資料夾開啟與各階段 ZIP 下載，可透過左側側邊欄切換或執行 `start_app_dev.bat` 啟動。
+    *   **工程師除錯模式**：解鎖完整即時轉檔 Log、內部資料夾開啟與各階段 ZIP 下載，可透過左側側邊欄按鈕切換或執行 `start_app_dev.bat` 啟動。
 
 ---
 
@@ -51,6 +53,7 @@
 ```text
 📦 Project Root
  ├── config/                 # ⚙️ 系統設定與開發環境規範 (settings.py, RULE.md)
+ ├── skills/                 # 📚 專案專用架構與開發技能規範 (python-pdf-workbench)
  ├── src/                    # 🧠 核心業務邏輯
  │   ├── core_agent.py       # 公式提取、Word 轉檔與右界中文覆核引擎
  │   ├── founder_tools/      # 樣式範本、標記偵測與啟發式標題偵測 (HeadingDetector)

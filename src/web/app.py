@@ -490,6 +490,7 @@ async def api_extract_images(
             "count": count,
             "download_url": f"/api/download_extracted_images/{task_id}",
             "filename": output_zip_name,
+            "source_path": f"data/03_output/{output_zip_name}",
             "message": f"成功提取 {count} 張圖片！" if count > 0 else "未在此文件中偵測到任何內嵌圖片。"
         }
     except Exception as e:
@@ -530,6 +531,7 @@ async def save_word_dialog(task_id: str):
     """
     [出版社編輯專用] 彈出 Windows 原生檔案總管『另存新檔』視窗，
     讓編輯指定任意儲存路徑 (如桌面或工作資料夾)，並自動複製檔案。
+    採用非同步獨立進程以確保不阻塞 Event Loop，並強制視窗前置獲得焦點。
     """
     if task_id not in tasks or not tasks[task_id].get("word_file"):
         raise HTTPException(status_code=404, detail="找不到轉檔成果")
@@ -541,47 +543,39 @@ async def save_word_dialog(task_id: str):
     orig_name = tasks[task_id].get("orig_name", "已轉檔書籍")
     default_filename = f"{orig_name}_已轉檔.docx"
 
-    # 在本機彈出 Windows 原生檔案對話框
+    cmd = [
+        sys.executable,
+        str(PATHS.root / "src" / "scripts" / "native_dialog.py"),
+        str(src_word),
+        default_filename
+    ]
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-        import threading
-        
-        save_path = [None]
-        
-        def _ask_dialog():
-            root = tk.Tk()
-            root.withdraw()
-            root.attributes("-topmost", True)
-            res = filedialog.asksaveasfilename(
-                parent=root,
-                title="請選擇 Word 文件儲存位置",
-                initialfile=default_filename,
-                defaultextension=".docx",
-                filetypes=[("Word 文件 (*.docx)", "*.docx"), ("所有檔案 (*.*)", "*.*")]
-            )
-            root.destroy()
-            save_path[0] = res
-
-        t = threading.Thread(target=_ask_dialog)
-        t.start()
-        t.join(timeout=120.0) # 等待對話框
-
-        target = save_path[0]
-        if not target:
-            return {"status": "cancelled", "message": "已取消儲存"}
-
-        if not target.lower().endswith(".docx"):
-            target += ".docx"
-
-        shutil.copy2(src_word, target)
-        tasks[task_id]["saved_user_path"] = target
-        return {
-            "status": "success",
-            "saved_path": target,
-            "filename": os.path.basename(target),
-            "message": f"成功儲存至：{target}"
-        }
+        import asyncio
+        import json
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(PATHS.root)
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300.0)
+        output_str = stdout.decode("utf-8", errors="replace").strip()
+        if output_str:
+            try:
+                res_data = json.loads(output_str)
+                if res_data.get("status") == "success":
+                    tasks[task_id]["saved_user_path"] = res_data["saved_path"]
+                    return {
+                        "status": "success",
+                        "saved_path": res_data["saved_path"],
+                        "filename": os.path.basename(res_data["saved_path"]),
+                        "message": f"成功儲存至：{res_data['saved_path']}"
+                    }
+                elif res_data.get("status") == "cancelled":
+                    return {"status": "cancelled", "message": "已取消儲存"}
+            except Exception:
+                pass
+        return {"status": "cancelled", "message": "已取消儲存"}
     except Exception as e:
         print(f"[SaveDialog] 原生檔案對話框失敗: {e}")
         return {"status": "fallback", "message": "請使用瀏覽器直接下載"}
@@ -614,46 +608,54 @@ def _cleanup_temp_files(*file_paths):
 async def api_founder_repair(
     file: UploadFile = File(...)
 ):
-    import tempfile
     import os
     import shutil
-    from fastapi.responses import FileResponse
-    from starlette.background import BackgroundTask
+    import asyncio
+    import uuid
     from src.founder_tools.fix_founder_fonts import repair_pdf_file, repair_docx_file
+    from config import PATHS
     
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in [".pdf", ".docx"]:
         raise HTTPException(status_code=400, detail="不支援的檔案格式，請上傳 PDF 或 DOCX")
 
-    fd, temp_input = tempfile.mkstemp(suffix=ext)
-    os.close(fd)
+    task_id = str(uuid.uuid4())
+    temp_input = PATHS.root / "scratch" / f"founder_repair_{task_id}{ext}"
     
     with open(temp_input, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
-    created_temps = [temp_input]
+    created_temps = [str(temp_input)]
+    
+    output_dir = PATHS.root / "data" / "03_output"
+    output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         if ext == ".pdf":
-            fd_txt, temp_out_txt = tempfile.mkstemp(suffix=".txt")
-            os.close(fd_txt)
-            fd_docx, temp_out_docx = tempfile.mkstemp(suffix=".docx")
-            os.close(fd_docx)
-            created_temps.extend([temp_out_txt, temp_out_docx])
+            temp_out_txt = str(PATHS.root / "scratch" / f"founder_repair_{task_id}.txt")
+            output_docx = output_dir / f"repaired_{Path(file.filename).stem}.docx"
+            created_temps.append(temp_out_txt)
             
-            repair_pdf_file(temp_input, temp_out_txt, temp_out_docx)
-            # 將中間 txt 與輸入 input 清理，輸出 docx 待傳輸完後清理
-            bg_task = BackgroundTask(_cleanup_temp_files, temp_input, temp_out_txt, temp_out_docx)
-            return FileResponse(temp_out_docx, filename=f"repaired_{file.filename}.docx", background=bg_task)
+            await asyncio.to_thread(repair_pdf_file, str(temp_input), temp_out_txt, str(output_docx))
+            _cleanup_temp_files(*created_temps)
+            
+            return {
+                "success": True,
+                "source_path": f"data/03_output/{output_docx.name}",
+                "filename": output_docx.name
+            }
             
         elif ext == ".docx":
-            fd_docx, temp_out_docx = tempfile.mkstemp(suffix=".docx")
-            os.close(fd_docx)
-            created_temps.append(temp_out_docx)
+            output_docx = output_dir / f"repaired_{Path(file.filename).name}"
             
-            repair_docx_file(temp_input, temp_out_docx)
-            bg_task = BackgroundTask(_cleanup_temp_files, temp_input, temp_out_docx)
-            return FileResponse(temp_out_docx, filename=f"repaired_{file.filename}", background=bg_task)
+            await asyncio.to_thread(repair_docx_file, str(temp_input), str(output_docx))
+            _cleanup_temp_files(*created_temps)
+            
+            return {
+                "success": True,
+                "source_path": f"data/03_output/{output_docx.name}",
+                "filename": output_docx.name
+            }
             
     except Exception as e:
         _cleanup_temp_files(*created_temps)
@@ -877,4 +879,93 @@ async def update_and_rebuild_docx(filename_stem: str, data: MarkdownUpdate):
     subprocess.run(cmd, cwd=str(PATHS.root))
     
     return {"status": "success", "message": "已成功更新大綱並重新生成 Word 文件！"}
+
+class NativeSaveRequest(BaseModel):
+    source_path: str
+    suggested_filename: str = ""
+
+@app.post("/api/native_save_file")
+async def api_native_save_file(req: NativeSaveRequest):
+    """
+    [出版社編輯專用] 呼叫 Windows 原生檔案總管『另存新檔』視窗，
+    具備嚴格路徑白名單校驗 (Path Traversal 防禦 - NIST PR.DS / ISO 27001 A.8.28)
+    與非同步子進程防阻塞 (NIST PR.IP)。
+    """
+    import asyncio
+    import json
+    import sys
+    from config import PATHS
+    
+    # 1. 嚴格路徑校驗 (Path Traversal 防禦)
+    allowed_dirs = [
+        (PATHS.root / "data" / "03_output").resolve(),
+        (PATHS.root / "data" / "02_intermediate").resolve(),
+        PATHS.data_dir.resolve()
+    ]
+    
+    target_path = Path(req.source_path)
+    if not target_path.is_absolute():
+        target_path = (PATHS.root / req.source_path).resolve()
+    else:
+        target_path = target_path.resolve()
+        
+    is_safe = any(
+        str(target_path).startswith(str(d)) for d in allowed_dirs
+    )
+    if not is_safe:
+        raise HTTPException(status_code=403, detail="存取受限：路徑超出允許之專案輸出目錄")
+        
+    if not target_path.exists() or not target_path.is_file():
+        raise HTTPException(status_code=404, detail="指定之輸出檔案不存在")
+        
+    suggested_filename = req.suggested_filename or target_path.name
+    
+    # 2. 非同步子進程執行原生對話框 (非阻塞 Event Loop)
+    cmd = [
+        sys.executable,
+        str(PATHS.root / "src" / "scripts" / "native_dialog.py"),
+        str(target_path),
+        suggested_filename
+    ]
+    
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(PATHS.root)
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300.0)
+        output_str = stdout.decode("utf-8", errors="replace").strip()
+        
+        if output_str:
+            try:
+                res_data = json.loads(output_str)
+                return res_data
+            except Exception:
+                pass
+                
+        return {"status": "cancelled", "message": "對話框已關閉或未選取檔案"}
+    except asyncio.TimeoutError:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+        return {"status": "fallback", "message": "操作逾時，請改用瀏覽器直接下載"}
+    except Exception as e:
+        return {"status": "error", "message": f"原生另存失敗: {str(e)}"}
+
+class OpenFileFolderRequest(BaseModel):
+    file_path: str
+
+@app.post("/api/open_file_folder")
+async def api_open_file_folder(req: OpenFileFolderRequest):
+    """在 Windows 檔案總管中定位並選取已儲存之檔案"""
+    import subprocess
+    target = Path(req.file_path).resolve()
+    if not target.exists():
+        raise HTTPException(status_code=404, detail="目標檔案不存在")
+    subprocess.Popen(f'explorer /select,"{str(target)}"')
+    return {"status": "success"}
+
 
