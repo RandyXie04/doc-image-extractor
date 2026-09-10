@@ -39,6 +39,13 @@ def cleanup_old_files():
 
 @app.on_event("startup")
 async def on_startup():
+    # 首次啟動自動偵測並準備模型
+    try:
+        from src.scripts.model_manager import ensure_model_ready
+        ensure_model_ready()
+    except Exception as e:
+        print(f"[Startup Warning] Model preparation failed: {e}")
+
     # 每月 1 號自動清空 scratch 暫存
     try:
         cleanup_scratch(force=False, log_fn=print)
