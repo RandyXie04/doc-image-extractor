@@ -91,27 +91,114 @@
                     body: formData
                 });
                 
-                if (response.ok) {
-                    const blob = await response.blob();
-                    const url = window.URL.createObjectURL(blob);
-                    
-                    // 根據附檔名決定下載檔名
-                    const filename = response.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'repaired_file';
-                    
-                    downloadBtn.href = url;
-                    downloadBtn.download = filename;
-                    downloadBtn.style.display = 'block';
-                    statusDiv.textContent = '✅ 修復完成！請點擊下方按鈕下載。';
-                } else {
+                if (!response.ok) {
                     const err = await response.json();
-                    statusDiv.innerHTML = `❌ <b>發生錯誤：</b>${err.detail || '檔案格式或內容可能有誤'} <br><button onclick="submitBtn.click()" style="margin-top:10px; padding: 5px 10px; cursor:pointer;">🔄 重新嘗試</button>`;
+                    throw new Error(err.detail || '檔案格式或內容可能有誤');
+                }
+                
+                const result = await response.json();
+                if (result.success) {
+                    statusDiv.innerHTML = `✅ <b>修復完成！</b>`;
+                    
+                    const btnContainer = document.createElement('div');
+                    btnContainer.id = 'saveBtnContainer';
+                    btnContainer.style.display = 'flex';
+                    btnContainer.style.gap = '10px';
+                    btnContainer.style.marginTop = '15px';
+                    btnContainer.style.justifyContent = 'center';
+                    
+                    const btnSave = document.createElement('button');
+                    btnSave.className = 'btn';
+                    btnSave.style.background = '#2563eb';
+                    btnSave.innerText = '📁 本機另存修復檔案 (原生視窗)';
+                    // We don't have a fallback URL for Founder Repair as it used FileResponse before,
+                    // but if it fails we can just alert the user. 
+                    btnSave.onclick = (e) => nativeSave(result.source_path, result.filename, e.currentTarget);
+                    
+                    btnContainer.appendChild(btnSave);
+                    statusDiv.appendChild(btnContainer);
                 }
             } catch (error) {
-                statusDiv.innerHTML = `❌ <b>網路連線中斷：</b>${error.message} <br><button onclick="submitBtn.click()" style="margin-top:10px; padding: 5px 10px; cursor:pointer;">🔄 重新連線</button>`;
+                statusDiv.innerHTML = `❌ <b>處理錯誤：</b>${error.message} <br><button onclick="submitBtn.click()" style="margin-top:10px; padding: 5px 10px; cursor:pointer;">🔄 重新嘗試</button>`;
             } finally {
                 submitBtn.disabled = false;
             }
         };
+
+        async function nativeSave(source_path, suggested_filename, btnElement) {
+            const origText = btnElement ? btnElement.innerText : '';
+            if (btnElement) {
+                btnElement.disabled = true;
+                btnElement.innerText = '⏳ 請在開啟的視窗中選擇儲存位置...';
+            }
+            try {
+                const res = await fetch('/api/native_save_file', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({source_path, suggested_filename})
+                });
+                
+                if (!res.ok) {
+                    throw new Error(`伺服器回應異常 (${res.status})`);
+                }
+                const result = await res.json();
+                
+                if (result.status === 'success') {
+                    if (btnElement) {
+                        btnElement.innerText = `✅ 已儲存`;
+                        btnElement.disabled = false;
+                    }
+                    
+                    let saveInfoId = `savedInfo_repair`;
+                    let savedInfo = document.getElementById(saveInfoId);
+                    if (!savedInfo) {
+                        savedInfo = document.createElement('div');
+                        savedInfo.id = saveInfoId;
+                        savedInfo.style.marginTop = '0.8rem';
+                        savedInfo.style.padding = '0.8rem';
+                        savedInfo.style.background = '#f0fdf4';
+                        savedInfo.style.border = '1px solid #bbf7d0';
+                        savedInfo.style.borderRadius = '8px';
+                        savedInfo.style.color = '#166534';
+                        savedInfo.style.fontSize = '0.9rem';
+                        const container = document.getElementById('saveBtnContainer') || statusDiv;
+                        container.parentNode.insertBefore(savedInfo, container.nextSibling);
+                    }
+                    savedInfo.innerHTML = `<div><b>文件已成功儲存至：</b></div>
+                    <div style="margin:4px 0; word-break:break-all; font-family:monospace; background:#fff; padding:6px; border-radius:4px; border:1px solid #dcfce7;">${result.saved_path}</div>
+                    <button type="button" class="btn" style="margin-top:6px; padding:6px 12px; background:#15803d; color:white; font-size:0.85rem;" onclick="openSavedPath('${result.saved_path.replace(/\\/g, '\\\\')}')">📂 在 Windows 檔案總管中開啟</button>`;
+                } else if (result.status === 'cancelled') {
+                    if (btnElement) {
+                        btnElement.innerText = origText;
+                        btnElement.disabled = false;
+                    }
+                } else {
+                    alert('原生另存失敗: ' + result.message);
+                    if (btnElement) {
+                        btnElement.innerText = origText;
+                        btnElement.disabled = false;
+                    }
+                }
+            } catch(e) {
+                alert('原生另存發生錯誤: ' + e.message);
+                if (btnElement) {
+                    btnElement.innerText = origText;
+                    btnElement.disabled = false;
+                }
+            }
+        }
+
+        async function openSavedPath(filePath) {
+            try {
+                await fetch('/api/open_file_folder', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({file_path: filePath})
+                });
+            } catch(err) {
+                alert('無法開啟檔案總管: ' + err.message);
+            }
+        }
     </script>
 <script src="/static/sidebar.js"></script>
 </body>

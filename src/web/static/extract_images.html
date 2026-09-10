@@ -111,9 +111,22 @@
                 if (result.success && result.count > 0) {
                     statusDiv.style.color = '#16a34a';
                     statusDiv.innerHTML = `🎉 <b>處理完成！</b> 共成功提取 <b>${result.count}</b> 張高品質圖片。`;
-                    downloadBtn.href = result.download_url;
-                    downloadBtn.textContent = `⬇️ 下載圖片 ZIP 壓縮包 (${result.filename})`;
-                    downloadBtn.style.display = 'block';
+                    
+                    const btnContainer = document.createElement('div');
+                    btnContainer.id = 'saveBtnContainer';
+                    btnContainer.style.display = 'flex';
+                    btnContainer.style.gap = '10px';
+                    btnContainer.style.marginTop = '15px';
+                    btnContainer.style.justifyContent = 'center';
+                    
+                    const btnSave = document.createElement('button');
+                    btnSave.className = 'btn';
+                    btnSave.style.background = '#2563eb';
+                    btnSave.innerText = '📁 本機另存 ZIP (原生視窗)';
+                    btnSave.onclick = (e) => nativeSave(result.source_path, result.filename, e.currentTarget, result.download_url);
+                    
+                    btnContainer.appendChild(btnSave);
+                    statusDiv.appendChild(btnContainer);
                 } else {
                     statusDiv.style.color = '#eab308';
                     statusDiv.textContent = '⚠️ 此文件中未偵測到任何內嵌圖片。';
@@ -127,6 +140,83 @@
                 submitBtn.disabled = false;
             }
         };
+
+        async function nativeSave(source_path, suggested_filename, btnElement, fallbackUrl) {
+            const origText = btnElement ? btnElement.innerText : '';
+            if (btnElement) {
+                btnElement.disabled = true;
+                btnElement.innerText = '⏳ 請在開啟的視窗中選擇儲存位置...';
+            }
+            try {
+                const res = await fetch('/api/native_save_file', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({source_path, suggested_filename})
+                });
+                
+                if (!res.ok) {
+                    throw new Error(`伺服器回應異常 (${res.status})`);
+                }
+                const result = await res.json();
+                
+                if (result.status === 'success') {
+                    if (btnElement) {
+                        btnElement.innerText = `✅ 已儲存`;
+                        btnElement.disabled = false;
+                    }
+                    
+                    let saveInfoId = `savedInfo_img`;
+                    let savedInfo = document.getElementById(saveInfoId);
+                    if (!savedInfo) {
+                        savedInfo = document.createElement('div');
+                        savedInfo.id = saveInfoId;
+                        savedInfo.style.marginTop = '0.8rem';
+                        savedInfo.style.padding = '0.8rem';
+                        savedInfo.style.background = '#f0fdf4';
+                        savedInfo.style.border = '1px solid #bbf7d0';
+                        savedInfo.style.borderRadius = '8px';
+                        savedInfo.style.color = '#166534';
+                        savedInfo.style.fontSize = '0.9rem';
+                        const container = document.getElementById('saveBtnContainer') || statusDiv;
+                        container.parentNode.insertBefore(savedInfo, container.nextSibling);
+                    }
+                    savedInfo.innerHTML = `<div><b>文件已成功儲存至：</b></div>
+                    <div style="margin:4px 0; word-break:break-all; font-family:monospace; background:#fff; padding:6px; border-radius:4px; border:1px solid #dcfce7;">${result.saved_path}</div>
+                    <button type="button" class="btn" style="margin-top:6px; padding:6px 12px; background:#15803d; color:white; font-size:0.85rem;" onclick="openSavedPath('${result.saved_path.replace(/\\/g, '\\\\')}')">📂 在 Windows 檔案總管中開啟</button>`;
+                } else if (result.status === 'cancelled') {
+                    if (btnElement) {
+                        btnElement.innerText = origText;
+                        btnElement.disabled = false;
+                    }
+                } else {
+                    console.warn('原生另存降級為瀏覽器直接下載:', result.message);
+                    window.location.href = fallbackUrl;
+                    if (btnElement) {
+                        btnElement.innerText = origText;
+                        btnElement.disabled = false;
+                    }
+                }
+            } catch(e) {
+                console.warn('原生另存發生錯誤，降級為瀏覽器下載:', e);
+                window.location.href = fallbackUrl;
+                if (btnElement) {
+                    btnElement.innerText = origText;
+                    btnElement.disabled = false;
+                }
+            }
+        }
+
+        async function openSavedPath(filePath) {
+            try {
+                await fetch('/api/open_file_folder', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({file_path: filePath})
+                });
+            } catch(err) {
+                alert('無法開啟檔案總管: ' + err.message);
+            }
+        }
     </script>
 <script src="/static/sidebar.js"></script>
 </body>
