@@ -26,7 +26,7 @@ def is_vector_pdf(pdf_path, text_threshold=100):
         print(f"Error checking PDF type: {e}")
         return False
 
-def extract_with_pymupdf(pdf_path, output_dir, style_mapping, left_ratio=0.0, right_ratio=1.0):
+def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None):
     """
     Fast extraction using PyMuPDF for vector PDFs with margin filtering.
     """
@@ -41,32 +41,24 @@ def extract_with_pymupdf(pdf_path, output_dir, style_mapping, left_ratio=0.0, ri
         sys.stdout.flush()
         
         page = doc[page_num]
-        p_width = page.rect.width
-        min_x = p_width * left_ratio
-        max_x = p_width * right_ratio
-        
         blocks = page.get_text("dict")["blocks"]
         for b in blocks:
-            if b['type'] == 0:  # text block
-                # Bounding box filter: (x0, y0, x1, y1)
-                bbox = b.get("bbox", (0, 0, 0, 0))
-                if bbox[2] < min_x or bbox[0] > max_x:
-                    continue
-                
+            if b.get('type') == 0:  # text block
                 block_text = ""
-                for l in b["lines"]:
-                    for s in l["spans"]:
-                        text = s["text"].strip()
+                for l in b.get("lines", []):
+                    for s in l.get("spans", []):
+                        text = s.get("text", "").strip()
                         if text:
                             # Basic heuristic for title detection
-                            if s["size"] > 14:
+                            if s.get("size", 10) > 14:
                                 block_text += f"# {text}\n"
                             else:
                                 block_text += f"{text} "
                 if block_text.strip():
                     md_content.append(block_text.strip())
                     
-    out_name = os.path.basename(pdf_path).rsplit(".", 1)[0] + ".md"
+    stem = output_stem or os.path.basename(pdf_path).rsplit(".", 1)[0]
+    out_name = f"{stem}.md"
     out_path = os.path.join(output_dir, out_name)
     with open(out_path, "w", encoding="utf-8") as f:
         f.write("\n\n".join(md_content))
@@ -78,10 +70,13 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", type=str, required=True, help="Specific PDF file to process")
     parser.add_argument("--output_dir", type=str, default="data/03_output", help="Output directory")
+    parser.add_argument("--output_stem", type=str, default=None, help="Stem name for output files")
     parser.add_argument("--style_mapping", type=str, default="{}", help="JSON string for heading style mapping")
     parser.add_argument("--engine", type=str, default="auto", choices=["auto", "pymupdf", "rapiddoc"], help="Forced engine choice")
+    parser.add_argument("--header_ratio", type=float, default=0.1)
+    parser.add_argument("--footer_ratio", type=float, default=0.1)
     parser.add_argument("--left_ratio", type=float, default=0.0)
-    parser.add_argument("--right_ratio", type=float, default=1.0)
+    parser.add_argument("--right_ratio", type=float, default=0.0)
     args = parser.parse_args()
 
     engine_choice = args.engine
@@ -99,7 +94,7 @@ def main():
     sys.stdout.flush()
 
     if engine_choice == "pymupdf":
-        extract_with_pymupdf(args.file, args.output_dir, args.style_mapping, args.left_ratio, args.right_ratio)
+        extract_with_pymupdf(args.file, args.output_dir, args.style_mapping, output_stem=args.output_stem)
     else:
         script_dir = os.path.dirname(os.path.abspath(__file__))
         process_ocr_path = os.path.join(script_dir, "process_ocr.py")
@@ -125,6 +120,16 @@ def main():
                         print(json.dumps({"progress": progress_val, "message": line}))
                 sys.stdout.flush()
         proc.wait()
+        
+        # If output_stem is specified and RapidDoc produced a file based on args.file basename, rename if needed
+        if args.output_stem:
+            raw_base = os.path.basename(args.file).rsplit(".", 1)[0]
+            raw_out = os.path.join(args.output_dir, f"{raw_base}.md")
+            target_out = os.path.join(args.output_dir, f"{args.output_stem}.md")
+            if os.path.exists(raw_out) and raw_out != target_out:
+                import shutil
+                shutil.move(raw_out, target_out)
+
         if proc.returncode != 0:
             raise RuntimeError(f"RapidDoc execution failed with code {proc.returncode}")
 
