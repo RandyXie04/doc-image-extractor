@@ -51,20 +51,40 @@ def main():
         
     print(f"Found {len(md_files)} Markdown files to convert.")
     
+    import uuid
+    import re
+    import tempfile
+    
     for md_path in md_files:
         print(f"Converting: {md_path}")
+        temp_md_path = None
         try:
             out_name = Path(md_path).stem + ".docx"
             out_dir = os.path.dirname(md_path) or input_dir
             out_path = os.path.join(out_dir, out_name)
             
+            # Step 0: Read MD, escape numbered lists, save to isolated UUID temp file
+            with open(md_path, 'r', encoding='utf-8') as f:
+                md_content = f.read()
+            
+            # Escape "1. " to "1\. " to prevent Word auto-numbering
+            md_content = re.sub(r'(?m)^(\s*\d+)\.\s', r'\1\\. ', md_content)
+            
+            temp_md_path = os.path.join(tempfile.gettempdir(), f"temp_{uuid.uuid4().hex}.md")
+            with open(temp_md_path, 'w', encoding='utf-8') as f:
+                f.write(md_content)
+
             # Step 1: Convert MD (including raw HTML tables) to intermediate HTML
             html = pypandoc.convert_file(
-                md_path,
+                temp_md_path,
                 'html',
                 format='markdown+raw_html+tex_math_dollars',
                 extra_args=['--math-method=mathjax']
             )
+
+            # Inject Table CSS for Solid Black Borders
+            table_css = "<style>table, th, td { border: 1px solid black; border-collapse: collapse; }</style>\n"
+            html = table_css + html
 
             # Step 2: Convert HTML to DOCX with reference doc (native table generation)
             pypandoc.convert_text(
@@ -76,7 +96,20 @@ def main():
             )
             print(f"Saved DOCX to {out_path}")
         except Exception as e:
-            print(f"Error converting {md_path}: {e}")
+            import traceback
+            tb_str = traceback.format_exc()
+            print(f"[ERROR] Error converting {md_path}: {e}\n{tb_str}")
+        finally:
+            if temp_md_path and os.path.exists(temp_md_path):
+                try:
+                    os.remove(temp_md_path)
+                except OSError:
+                    pass
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        print(f"[FATAL] 未預期錯誤: {e}\n{traceback.format_exc()}")
+        sys.exit(1)

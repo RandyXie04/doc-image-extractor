@@ -174,6 +174,11 @@ def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_re
         # We assume initial_body_blocks and body_markdown_list have 1-to-1 mapping
         for idx in range(min(len(initial_body_blocks), len(body_markdown_list))):
             blk = initial_body_blocks[idx]
+            
+            # Skip heading detection for tables to prevent messing up markdown tables
+            if blk.get("type") == BlockType.TABLE:
+                continue
+
             md_text = body_markdown_list[idx]
             
             # 假設頁寬為 600 (可用實際資訊替換)
@@ -471,11 +476,27 @@ def main():
 
         except Exception as e:
             import traceback
-            traceback.print_exc()
-            print(json.dumps({"progress": 0, "message": f"[ERROR] Failed: {e}"}))
+            tb_str = traceback.format_exc()
+            error_data = {
+                "progress": 0,
+                "message": f"[ERROR] 處理檔案 {pdf_name} 時發生嚴重例外: {e}",
+                "traceback": tb_str
+            }
+            print(json.dumps(error_data, ensure_ascii=False))
             sys.stdout.flush()
-            sys.exit(1)
+            # 繼續處理下一個檔案，不中斷整個程序
+            continue
 
+    print(json.dumps({"progress": 100, "message": "[INFO] 批次處理結束"}))
+    sys.stdout.flush()
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        import json
+        tb_str = traceback.format_exc()
+        print(json.dumps({"progress": 0, "message": f"[FATAL] 未預期錯誤: {e}", "traceback": tb_str}, ensure_ascii=False))
+        sys.stdout.flush()
+        sys.exit(1)

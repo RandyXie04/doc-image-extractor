@@ -11,6 +11,7 @@ import os
 import sys
 import re
 import json
+# pyrefly: ignore [missing-import]
 import fitz
 
 # Try to import project helpers
@@ -221,10 +222,11 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
 
         page_paragraphs = []
         current_para_lines = []
+        current_para_is_kaiti = False
         last_heading_text = ""
 
         def flush_current_para():
-            nonlocal current_para_lines
+            nonlocal current_para_lines, current_para_is_kaiti
             if current_para_lines:
                 # Splice lines smoothly
                 para_text = ""
@@ -239,8 +241,11 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                             audit_data["paragraphs_reflowed"] += 1
                         else:
                             para_text += " " + line_txt
+                if current_para_is_kaiti:
+                    para_text = "> " + para_text
                 page_paragraphs.append(para_text)
                 current_para_lines = []
+                current_para_is_kaiti = False
         
         for bb in body_blocks:
             lines = bb.get("lines", [])
@@ -269,11 +274,12 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             has_sentence_punct = bool(re.search(r'[。，；？！“”‘’：:、]', clean_for_heading))
             
             if not is_toc_line:
-                # Rule 1: Regex for Major Chapters / Book Sections (H1)
+                # Rule 1: Regex for Major Chapters / Book Sections (H1/H2)
                 if re.match(r'^(?:[上下中]\s*篇(?:\s+[^\n]+)?)$', bb_text) or \
-                   re.match(r'^第[一二三四五六七八九十百]+章(?:\s+[^\n]+)?$', bb_text) or \
                    re.match(r'^(?:目\s*录|目录|序|后\s*记|后记|结\s*语|结语|主要参考文献)$', bb_text):
                     heading_level = 1
+                elif re.match(r'^第[一二三四五六七八九十百]+章(?:\s+[^\n]+)?$', bb_text):
+                    heading_level = 2
                 # Rule 2: Section titles (H2) - Must be short and without sentence punctuation
                 elif (is_centered or avg_size >= 10.8) and 2 <= len(clean_for_heading) <= 20 and not has_sentence_punct:
                     if not re.search(r'示意图|表$', bb_text) and not re.search(r'^[①-⑩]', bb_text):
@@ -307,12 +313,29 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 last_heading_text = ""
                 
             # Regular Body Text
+            # Check font for KaiTi
+            total_chars = 0
+            kaiti_chars = 0
+            for line in lines:
+                for span in line.get("spans", []):
+                    span_text = span.get("text", "").strip()
+                    if not span_text: continue
+                    total_chars += len(span_text)
+                    font_name = span.get("font", "").lower()
+                    if "kai" in font_name or "楷" in font_name or "kaiti" in font_name:
+                        kaiti_chars += len(span_text)
+            
+            is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
+
             # Check indentation to determine whether this block starts a new paragraph
             is_indented = (bbox[0] - base_x0) >= 12.0
             
             # If this block has an indent, flush the previous paragraph
             if is_indented:
                 flush_current_para()
+                
+            if is_block_kaiti:
+                current_para_is_kaiti = True
                 
             # Process lines in this block, replacing footnote anchors
             for line in lines:
