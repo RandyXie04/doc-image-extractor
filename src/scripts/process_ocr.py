@@ -11,6 +11,8 @@ root_dir = Path(__file__).parent.parent.parent.absolute()
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
+from config import PATHS
+
 try:
     from rapid_doc import RapidDoc
     from rapid_doc.backend.pipeline.pipeline_middle_json_mkcontent import make_blocks_to_markdown
@@ -355,7 +357,7 @@ def main():
     import json
     parser = argparse.ArgumentParser()
     parser.add_argument("--file", type=str, help="Specific PDF file to process")
-    parser.add_argument("--output_dir", type=str, default="data/03_output", help="Output directory")
+    parser.add_argument("--output_dir", type=str, default=str(PATHS.root / "data" / "03_output"), help="Output directory")
     parser.add_argument("--style_mapping", type=str, default="{}", help="JSON string for heading style mapping")
     args = parser.parse_args()
     
@@ -391,7 +393,7 @@ def main():
     if args.file:
         pdf_files = [args.file]
     else:
-        input_dir = os.path.join('data', 'database_text')
+        input_dir = str(PATHS.data_dir / "database_text")
         pdf_files = glob.glob(os.path.join(input_dir, 'OCR*.pdf'))
         if not pdf_files:
             pdf_files = [

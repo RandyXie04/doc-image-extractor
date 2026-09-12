@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 from dataclasses import dataclass, field
+# pyrefly: ignore [missing-import]
 from dotenv import load_dotenv
 import sys
 
@@ -23,6 +24,8 @@ else:
 # // Load .env from project root if available
 load_dotenv(_PROJECT_ROOT / ".env", override=False)
 
+import tempfile
+_TEMP_BASE = Path(tempfile.gettempdir()) / "doc-image-extractor-temp"
 
 # // Dynamic Path Configurations
 @dataclass(frozen=True)
@@ -34,19 +37,19 @@ class _Paths:
     # // Input area
     input_dir:      Path = _PROJECT_ROOT / "data" / "01_input"
 
-    # // Output area
-    formula_dir:    Path = _PROJECT_ROOT / "data" / "02_intermediate" / "extracted_formulas_mfd"
-    formula_dir_v2: Path = _PROJECT_ROOT / "data" / "02_intermediate" / "extracted_formulas_mfd-2"
-    cleaned_dir:    Path = _PROJECT_ROOT / "data" / "03_output" / "AI_Image_Processed"
-    preview_dir:    Path = _PROJECT_ROOT / "data" / "02_intermediate" / "previews"
-    backup_dir:     Path = _PROJECT_ROOT / "data" / "03_output" / "backup_originals"
+    # // Output area (Now in System Temp)
+    formula_dir:    Path = _TEMP_BASE / "02_intermediate" / "extracted_formulas_mfd"
+    formula_dir_v2: Path = _TEMP_BASE / "02_intermediate" / "extracted_formulas_mfd-2"
+    cleaned_dir:    Path = _TEMP_BASE / "03_output" / "AI_Image_Processed"
+    preview_dir:    Path = _TEMP_BASE / "02_intermediate" / "previews"
+    backup_dir:     Path = _TEMP_BASE / "03_output" / "backup_originals"
 
     # // Temporary files
-    temp_pdf:       Path = _PROJECT_ROOT / "data" / "02_intermediate" / "temp_cropped_optimized.pdf"
+    temp_pdf:       Path = _TEMP_BASE / "02_intermediate" / "temp_cropped_optimized.pdf"
 
     # // ZIP outputs
-    zip_mfd:        Path = _PROJECT_ROOT / "data" / "03_output" / "all_pdf_formulas_ai_mfd.zip"
-    zip_hybrid:     Path = _PROJECT_ROOT / "data" / "03_output" / "all_pdf_formulas_hybrid.zip"
+    zip_mfd:        Path = _TEMP_BASE / "03_output" / "all_pdf_formulas_ai_mfd.zip"
+    zip_hybrid:     Path = _TEMP_BASE / "03_output" / "all_pdf_formulas_hybrid.zip"
 
     # // Models
     models_dir:     Path = _PROJECT_ROOT / "models"

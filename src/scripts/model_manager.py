@@ -29,28 +29,71 @@ def _get_exact_model_path(model_name: str) -> Path | None:
 
 def download_file_with_progress(url: str, dest_path: Path):
     print(f"[ModelManager] 正在從 {url} 下載模型...")
+    import hashlib
     try:
+        existing_size = dest_path.stat().st_size if dest_path.exists() else 0
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req) as response:
-            total_size = int(response.info().get('Content-Length', 0))
-            downloaded = 0
-            block_size = 8192
+        if existing_size > 0:
+            req.add_header('Range', f'bytes={existing_size}-')
             
-            with open(dest_path, 'wb') as f:
-                while True:
-                    buffer = response.read(block_size)
-                    if not buffer:
-                        break
-                    f.write(buffer)
-                    downloaded += len(buffer)
-                    if total_size > 0:
-                        percent = downloaded * 100 / total_size
-                        print(f"\r[ModelManager] 下載進度: {percent:.1f}% ({downloaded}/{total_size} bytes)", end='')
-            print("\n[ModelManager] 下載完成！")
+        with urllib.request.urlopen(req) as response:
+            total_size_header = response.info().get('Content-Length')
+            content_range = response.info().get('Content-Range')
+            
+            if content_range:
+                # e.g., bytes 200-1000/1000
+                total_size = int(content_range.split('/')[-1])
+            elif total_size_header:
+                total_size = int(total_size_header) + existing_size
+            else:
+                total_size = 0
+
+            if existing_size > 0 and existing_size == total_size:
+                print("\n[ModelManager] 檔案已存在且完整，略過下載。")
+            else:
+                downloaded = existing_size
+                block_size = 8192
+                mode = 'ab' if existing_size > 0 else 'wb'
+                with open(dest_path, mode) as f:
+                    while True:
+                        buffer = response.read(block_size)
+                        if not buffer:
+                            break
+                        f.write(buffer)
+                        downloaded += len(buffer)
+                        if total_size > 0:
+                            percent = downloaded * 100 / total_size
+                            print(f"\r[ModelManager] 下載進度: {percent:.1f}% ({downloaded}/{total_size} bytes)", end='')
+                print("\n[ModelManager] 下載完成！")
+            
+            # Size check
+            if total_size > 0 and dest_path.stat().st_size != total_size:
+                dest_path.unlink()
+                raise RuntimeError(f"檔案大小校驗失敗: 預期 {total_size} bytes，實際 {dest_path.stat().st_size} bytes。")
+            
+            # Hash check if available in version.json
+            from config import VERSION
+            if VERSION.model_hash:
+                print("[ModelManager] 正在校驗檔案完整性 (SHA256)...")
+                sha256 = hashlib.sha256()
+                with open(dest_path, 'rb') as f:
+                    for chunk in iter(lambda: f.read(4096), b""):
+                        sha256.update(chunk)
+                if sha256.hexdigest() != VERSION.model_hash:
+                    dest_path.unlink()
+                    raise RuntimeError("檔案 Hash 校驗失敗，模型檔案可能損壞。")
+                print("[ModelManager] 檔案校驗通過！")
+
+    except urllib.error.HTTPError as e:
+        if e.code == 416: # Range Not Satisfiable
+            print("\n[ModelManager] 斷點續傳範圍無效，重新下載。")
+            if dest_path.exists():
+                dest_path.unlink()
+            download_file_with_progress(url, dest_path)
+        else:
+            raise RuntimeError(f"模型下載失敗 (HTTP {e.code}): {e}")
     except Exception as e:
-        if dest_path.exists():
-            dest_path.unlink()
-        raise RuntimeError(f"模型下載失敗: {e}")
+        raise RuntimeError(f"模型下載發生錯誤: {e}")
 
 def try_download_model_from_github(dest_dir: Path) -> Path | None:
     api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -62,7 +105,6 @@ def try_download_model_from_github(dest_dir: Path) -> Path | None:
             data = json.loads(response.read().decode('utf-8'))
             assets = data.get('assets', [])
             
-            # Try to find .onnx first, then .pt
             target_asset = None
             for asset in assets:
                 if asset.get('name') == DEFAULT_MODEL_NAME:
@@ -81,7 +123,7 @@ def try_download_model_from_github(dest_dir: Path) -> Path | None:
                 download_file_with_progress(download_url, dest_path)
                 return dest_path
             else:
-                print("[ModelManager] 在最新的 Release 中找不到模型檔案 (yolo_v8_ft.onnx 或 .pt)")
+                print(f"[ModelManager] 在最新的 Release 中找不到模型檔案 ({DEFAULT_MODEL_NAME} 或 {DEFAULT_PT_NAME})")
                 return None
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -90,32 +132,6 @@ def try_download_model_from_github(dest_dir: Path) -> Path | None:
             print(f"[ModelManager] GitHub API 查詢失敗: HTTP {e.code}")
     except Exception as e:
         print(f"[ModelManager] 查詢更新時發生異常: {e}")
-    return None
-
-def export_pt_to_onnx(pt_path: Path) -> Path | None:
-    print(f"[ModelManager] 偵測到 PyTorch 模型 ({pt_path.name})，準備自動導出為 ONNX 格式...")
-    try:
-        from ultralytics import YOLO
-        model = YOLO(str(pt_path))
-        print("[ModelManager] 正在轉換，這可能需要幾分鐘...")
-        # export to ONNX
-        success_path = model.export(format="onnx", dynamic=True, imgsz=1888)
-        
-        if success_path and Path(success_path).exists():
-            print(f"[ModelManager] ONNX 轉換成功: {success_path}")
-            return Path(success_path)
-        else:
-            # Fallback path if ultralytics didn't return the path but generated it
-            expected_onnx = pt_path.with_suffix('.onnx')
-            if expected_onnx.exists():
-                print(f"[ModelManager] ONNX 轉換成功 (於預期路徑): {expected_onnx}")
-                return expected_onnx
-            print("[ModelManager] 轉換完成但找不到輸出的 ONNX 檔案。")
-            return None
-    except ImportError:
-        print("[ModelManager] 系統未安裝 ultralytics，無法自動將 .pt 轉換為 .onnx。將嘗試直接使用 PyTorch 推論。")
-    except Exception as e:
-        print(f"[ModelManager] 轉換過程中發生錯誤: {e}")
     return None
 
 def ensure_model_ready() -> dict:
@@ -133,21 +149,9 @@ def ensure_model_ready() -> dict:
         
     pt_path = _get_exact_model_path(DEFAULT_PT_NAME)
     if pt_path:
-        # We have .pt but no .onnx. Try to export.
-        onnx_exported = export_pt_to_onnx(pt_path)
-        if onnx_exported:
-            # Move the exported ONNX to models_dir if it's not already there
-            if onnx_exported.parent != PATHS.models_dir and onnx_exported.parent != pt_path.parent:
-                 try:
-                     target_path = PATHS.models_dir / onnx_exported.name
-                     shutil.move(str(onnx_exported), str(target_path))
-                     return {"status": "ready", "path": target_path, "engine": "onnx"}
-                 except Exception:
-                     return {"status": "ready", "path": onnx_exported, "engine": "onnx"}
-            return {"status": "ready", "path": onnx_exported, "engine": "onnx"}
-        else:
-            print("[Model Check] 無法取得 ONNX 模型，將以 PyTorch (.pt) 模式 Fallback 執行。")
-            return {"status": "fallback", "path": pt_path, "engine": "pt"}
+        print(f"[Model Check] 找到 PyTorch 模型: {pt_path}")
+        print("[Model Check] 將以 PyTorch (.pt) 模式 Fallback 執行。")
+        return {"status": "fallback", "path": pt_path, "engine": "pt"}
             
     # Model is completely missing. Try to download.
     print("[Model Check] 本機無任何公式檢測模型，開始自動下載...")
@@ -156,14 +160,11 @@ def ensure_model_ready() -> dict:
         if downloaded_path.suffix == ".onnx":
             return {"status": "ready", "path": downloaded_path, "engine": "onnx"}
         elif downloaded_path.suffix == ".pt":
-            onnx_exported = export_pt_to_onnx(downloaded_path)
-            if onnx_exported:
-                return {"status": "ready", "path": onnx_exported, "engine": "onnx"}
             return {"status": "fallback", "path": downloaded_path, "engine": "pt"}
             
     print("=========================================")
     print("[ERROR] 模型載入失敗！")
-    print("無法從 GitHub 自動下載模型，請手動將 yolo_v8_ft.onnx 或 yolo_v8_ft.pt")
+    print(f"無法從 GitHub 自動下載模型，請手動將 {DEFAULT_MODEL_NAME} 或 {DEFAULT_PT_NAME}")
     print(f"放置於目錄: {PATHS.models_dir}")
     print("=========================================")
     return {"status": "missing", "path": None, "engine": "none"}

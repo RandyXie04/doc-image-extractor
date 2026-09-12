@@ -98,7 +98,7 @@ async def upload_template(file: UploadFile = File(...)):
     if not file.filename.endswith('.docx'):
         raise HTTPException(status_code=400, detail="僅支援上傳 .docx 格式的範本檔案")
     
-    template_dir = Path("data/database_text/custom_templates")
+    template_dir = PATHS.data_dir / "database_text" / "custom_templates"
     template_dir.mkdir(parents=True, exist_ok=True)
     
     file_path = template_dir / "user_template.docx"
@@ -109,8 +109,8 @@ async def upload_template(file: UploadFile = File(...)):
 
 @app.get("/api/get_current_template")
 async def get_current_template():
-    template_path = Path("data/database_text/custom_templates/user_template.docx")
-    default_template_path = Path("data/database_text/template.docx")
+    template_path = PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx"
+    default_template_path = PATHS.data_dir / "database_text" / "template.docx"
     
     if template_path.exists():
         # Ideally we might want to store the original filename in a metadata file, 
@@ -126,9 +126,9 @@ async def get_template_styles():
     import zipfile
     import xml.etree.ElementTree as ET
     
-    template_path = Path("data/database_text/custom_templates/user_template.docx")
+    template_path = PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx"
     if not template_path.exists():
-        template_path = Path("data/database_text/template.docx")
+        template_path = PATHS.data_dir / "database_text" / "template.docx"
         if not template_path.exists():
             return {"status": "error", "message": "無可用範本"}
             
