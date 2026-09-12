@@ -4,10 +4,10 @@
 PDF 智慧轉換與 AI 公式萃取全功能工作站 (PDFConversionAgent Pipeline & GUI)
 =============================================================================
 整合功能說明：
-1. 【任務一：動態裁切與轉檔 Word】
+1. 【任務一:動態裁切與轉檔 Word】
    透過 PyMuPDF 動態分析頁首與頁尾邊界、自動裁切掉頁眉頁碼雜訊，並轉換為排版乾淨的 Word (.docx) 文件。
 
-2. 【任務二：AI 深度學習數學公式萃取】
+2. 【任務二:AI 深度學習數學公式萃取】
    利用 Pix2Text 開源之 MathFormulaDetector (MFD) 深度學習模型，針對原始未裁切 PDF 以 300 DPI 高解析度渲染，
    自動偵測獨立公式，具備「夾縫中文字檢查 (防誤合併)」與「全形/半形括號編號右界自適應擴展 (防雜圖)」雙重防呆機制，
    最後裁切為高畫質 PNG 公式截圖並自動封裝為 ZIP 壓縮檔。
@@ -30,23 +30,23 @@ from pathlib import Path
 # 集中設定中心：路徑由 pathlib 動態計算，API 金鑰/設定值由 .env 載入
 from config import PATHS, AI, CFG
 
+import warnings
+warnings.filterwarnings("ignore", message=".*The `fitz` API is deprecated.*")
+
+import pymupdf as fitz  # type: ignore
+import cv2
+import numpy as np
+from tqdm import tqdm
+
 # Windows 終端 UTF-8 輸出相容性設定
 if sys.platform == 'win32':
     try:
         if isinstance(sys.stdout, io.TextIOWrapper) and sys.stdout.encoding.lower() != 'utf-8':
-            sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+            sys.stdout.reconfigure(encoding='utf-8', errors='replace')  # type: ignore
         if isinstance(sys.stderr, io.TextIOWrapper) and sys.stderr.encoding.lower() != 'utf-8':
-            sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+            sys.stderr.reconfigure(encoding='utf-8', errors='replace')  # type: ignore
     except Exception:
         pass
-
-
-import warnings
-warnings.filterwarnings("ignore", message=".*The `fitz` API is deprecated.*")
-import pymupdf as fitz  # PyMuPDF
-import cv2
-import numpy as np
-from tqdm import tqdm
 
 # 全域修補 (Monkey Patch) 解決 PyMuPDF 遇到 CMYK/非RGB 圖片時寫入 PNG 崩潰的重大瑕疵 (code=4: pixmap must be grayscale or rgb to write as png)
 _orig_pixmap_tobytes = fitz.Pixmap.tobytes
@@ -88,11 +88,12 @@ def _safe_pixmap_save(self, filename, output=None, *args, **kwargs):
                 pass
     return _orig_pixmap_save(self, filename, output=output, *args, **kwargs)
 
-fitz.Pixmap.tobytes = _safe_pixmap_tobytes
-fitz.Pixmap.save = _safe_pixmap_save
+fitz.Pixmap.tobytes = _safe_pixmap_tobytes  # type: ignore
+fitz.Pixmap.save = _safe_pixmap_save  # type: ignore
 
 # pdf2docx 延遲/防呆載入
 try:
+    # pyrefly: ignore [missing-import]
     from pdf2docx import Converter
     HAS_PDF2DOCX = True
 except ImportError:
@@ -123,6 +124,7 @@ def _init_mfd_worker(use_gpu=False):
             model_path = model_info.get("path")
             
             if _engine_type == "onnx" and model_path:
+                # pyrefly: ignore [missing-import]
                 import onnxruntime as ort
                 options = ort.SessionOptions()
                 options.intra_op_num_threads = 2
@@ -139,10 +141,6 @@ def _init_mfd_worker(use_gpu=False):
             print(f"[Model Loader Error] {e}")
             _onnx_session = "MOCK"
             _engine_type = "none"
-
-def _mock_detect(img):
-    # 用於在尚未準備好模型時，測試 Multiprocessing 流程不會崩潰
-    return []
 
 def _process_single_page(args):
     import traceback
@@ -247,7 +245,7 @@ def _process_single_page(args):
                             'box': np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
                         })
             else:
-                detections = _mock_detect(img)
+                raise RuntimeError("模型尚未準備完成或載入失敗，無法進行 AI 公式偵測")
         except Exception as e:
             return {"status": "error", "files": generated_files, "error": str(e), "bboxes": []}
 
