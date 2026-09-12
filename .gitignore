@@ -1,5 +1,13 @@
-# API env
+# API and Environment variables
 .env
+.env*.local
+!.env.example
+
+# Python virtual environments
+.venv/
+venv/
+env/
+ENV/
 
 # Python cache
 __pycache__/
