@@ -1,4 +1,4 @@
-# 書籍 PDF 轉檔數位化工具箱 (Book PDF Digitalization Toolbox)
+﻿# 書籍 PDF 轉檔數位化工具箱 (Book PDF Digitalization Toolbox)
 
 本專案是一個深度整合 **AI 數學公式識別 (YOLOv8)**、**文件圖片無損提取**、**方正書版亂碼修復** 以及 **智慧雙引擎 OCR 與 Markdown/Word 排版** 的現代化自動化桌面工具箱。專為出版社編輯與工程師打造，主要用於將大量技術書籍、學術 PDF、排版損壞的舊文件完美轉化為現代可編輯的 Word 格式。
 
