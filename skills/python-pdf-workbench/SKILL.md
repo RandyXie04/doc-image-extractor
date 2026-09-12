@@ -1,4 +1,4 @@
----
+﻿---
 name: python-pdf-workbench
 description: 專門用於 Python PDF 轉檔、Pix2Text 深度學習公式萃取、FastAPI 非同步工作站與 Web 視覺化裁切預覽的架構與開發指引。
 ---

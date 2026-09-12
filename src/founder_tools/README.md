@@ -1,4 +1,4 @@
-# 自動化校註系統 (Auto Footnote System) v2.0
+﻿# 自動化校註系統 (Auto Footnote System) v2.0
 
 這是一個專為古籍與學術排版設計的自動化校註注入工具。
 具備「Zero-Unexplained Error」的嚴格校驗標準，支援自動化處理 Word 與 PDF 稿件，並將其轉出為統一的 DOCX 格式。
