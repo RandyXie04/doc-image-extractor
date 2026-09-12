@@ -4,13 +4,29 @@ import sys
 import argparse
 sys.stdout.reconfigure(encoding='utf-8')
 from pathlib import Path
+# pyrefly: ignore [missing-import]
 import pypandoc
+
+# Configure pypandoc to use the bundled pandoc.exe if available
+if getattr(sys, 'frozen', False):
+    # Running in a PyInstaller bundle
+    bundle_dir = Path(sys._MEIPASS)
+else:
+    # Running in normal Python environment
+    bundle_dir = Path(__file__).parent.parent.parent.resolve()
+
+bundled_pandoc = bundle_dir / 'bin' / 'pandoc.exe'
+if bundled_pandoc.exists():
+    os.environ.setdefault('PYPANDOC_PANDOC', str(bundled_pandoc))
 
 try:
     pypandoc.get_pandoc_version()
 except OSError:
-    print("Downloading pandoc...")
-    pypandoc.download_pandoc()
+    print("Pandoc not found natively. Attempting to download pandoc (may fail if firewalled)...")
+    try:
+        pypandoc.download_pandoc()
+    except Exception as e:
+        print(f"Error downloading pandoc: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="Convert Markdown to Word Document.")

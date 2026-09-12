@@ -95,6 +95,31 @@ def download_file_with_progress(url: str, dest_path: Path):
     except Exception as e:
         raise RuntimeError(f"模型下載發生錯誤: {e}")
 
+def try_download_model_from_huggingface(dest_dir: Path) -> Path | None:
+    url = "https://huggingface.co/opendatalab/PDF-Extract-Kit-1.0/resolve/main/models/MFD/YOLO/yolo_v8_ft.pt"
+    dest_path = dest_dir / "yolo_v8_ft.pt"
+    print(f"[ModelManager] 嘗試從 Hugging Face 下載模型... ({url})")
+    try:
+        download_file_with_progress(url, dest_path)
+        return dest_path
+    except Exception as e:
+        print(f"[ModelManager] 從 Hugging Face 下載失敗: {e}")
+        return None
+
+def convert_pt_to_onnx(pt_path: Path) -> Path | None:
+    print(f"[ModelManager] 嘗試將 {pt_path.name} 轉換為 ONNX 格式...")
+    try:
+        from ultralytics import YOLO
+        model = YOLO(str(pt_path))
+        onnx_file = model.export(format='onnx')
+        if onnx_file:
+            return Path(onnx_file)
+    except ImportError:
+        print("[ModelManager] 缺少 ultralytics 套件，無法自動轉換為 ONNX，將保持 PyTorch 模式。")
+    except Exception as e:
+        print(f"[ModelManager] ONNX 轉換失敗: {e}")
+    return None
+
 def try_download_model_from_github(dest_dir: Path) -> Path | None:
     api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
     print(f"[ModelManager] 嘗試查詢 GitHub Releases 以獲取模型... ({api_url})")
@@ -150,17 +175,26 @@ def ensure_model_ready() -> dict:
     pt_path = _get_exact_model_path(DEFAULT_PT_NAME)
     if pt_path:
         print(f"[Model Check] 找到 PyTorch 模型: {pt_path}")
+        onnx_path = convert_pt_to_onnx(pt_path)
+        if onnx_path and onnx_path.exists():
+            return {"status": "ready", "path": onnx_path, "engine": "onnx"}
         print("[Model Check] 將以 PyTorch (.pt) 模式 Fallback 執行。")
         return {"status": "fallback", "path": pt_path, "engine": "pt"}
             
     # Model is completely missing. Try to download.
     print("[Model Check] 本機無任何公式檢測模型，開始自動下載...")
-    downloaded_path = try_download_model_from_github(PATHS.models_dir)
+    downloaded_path = try_download_model_from_huggingface(PATHS.models_dir)
+    if not downloaded_path:
+        downloaded_path = try_download_model_from_github(PATHS.models_dir)
+        
     if downloaded_path:
-        if downloaded_path.suffix == ".onnx":
-            return {"status": "ready", "path": downloaded_path, "engine": "onnx"}
-        elif downloaded_path.suffix == ".pt":
+        if downloaded_path.suffix == ".pt":
+            onnx_path = convert_pt_to_onnx(downloaded_path)
+            if onnx_path and onnx_path.exists():
+                return {"status": "ready", "path": onnx_path, "engine": "onnx"}
             return {"status": "fallback", "path": downloaded_path, "engine": "pt"}
+        elif downloaded_path.suffix == ".onnx":
+            return {"status": "ready", "path": downloaded_path, "engine": "onnx"}
             
     print("=========================================")
     print("[ERROR] 模型載入失敗！")

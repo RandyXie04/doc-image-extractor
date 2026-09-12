@@ -18,6 +18,10 @@ datas = [
 if os.path.exists('src/founder_tools/template.docx'):
     datas.append(('src/founder_tools/template.docx', 'src/founder_tools'))
 
+# Check bundled pandoc
+if os.path.exists('bin/pandoc.exe'):
+    datas.append(('bin/pandoc.exe', 'bin'))
+
 # Hidden imports for FastAPI, Uvicorn, WebView, PyMuPDF
 hidden_imports = [
     'uvicorn',
@@ -55,7 +59,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['matplotlib', 'scipy'],
+    excludes=['matplotlib', 'scipy', 'ultralytics', 'torch', 'torchvision', 'torchaudio', 'onnxruntime', 'onnx'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
