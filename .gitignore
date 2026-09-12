@@ -33,6 +33,7 @@ previews/
 # Data & PDF
 data/
 database_text/
+text_Doc/
 _archive/
 _originals/
 backup_originals/
