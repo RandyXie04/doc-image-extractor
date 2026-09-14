@@ -20,6 +20,13 @@ IMAGE_EXTENSIONS = {
     ".emf", ".wmf", ".svg", ".webp"
 }
 
+# ==================== 偏好設定 ====================
+# 情況 1 的背景處理模式：
+#   "WHITE_BG"   : 白底黑線（實體印刷、Word/InDesign 排版最穩定）
+#   "TRANSPARENT": 透明底黑線
+CASE1_OUTPUT_MODE = "WHITE_BG"
+# =================================================
+
 
 def extract_from_docx(docx_path: str, output_dir: str, to_grayscale: bool = False) -> int:
     """
@@ -80,61 +87,136 @@ def extract_from_docx(docx_path: str, output_dir: str, to_grayscale: bool = Fals
 
 def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False) -> int:
     """
-    從 PDF (.pdf) 文件中無損提取所有圖片，自動校正 DeviceN/CMYK 印刷墨水反相，統一輸出高品質 PNG。
+    從 PDF (.pdf) 文件中無損提取所有圖片，支援進階的遮罩(Mask)解析、去重複與透明度合成。
     """
     os.makedirs(output_dir, exist_ok=True)
     doc = fitz.open(pdf_path)
     count = 0
+    seen_xrefs = set()
+    MIN_WIDTH = 50
+    MIN_HEIGHT = 50
 
     try:
         for page_index in range(len(doc)):
             page = doc[page_index]
             image_list = page.get_images(full=True)
 
-            for img_index, img_info in enumerate(image_list):
+            for img_info in image_list:
                 xref = img_info[0]
-                cs_name = img_info[5]
-                alt_cs = img_info[6]
+
+                if xref in seen_xrefs:
+                    continue
+                seen_xrefs.add(xref)
 
                 try:
                     base_image = doc.extract_image(xref)
-                    if not base_image or not base_image.get("image"):
+                    if not base_image:
                         continue
 
-                    raw_bytes = base_image["image"]
                     width = base_image.get("width", 0)
                     height = base_image.get("height", 0)
 
-                    # 過濾無效極小裝飾線或微小噪點
-                    if width < 10 or height < 10:
+                    if width < MIN_WIDTH or height < MIN_HEIGHT:
                         continue
 
-                    img = Image.open(io.BytesIO(raw_bytes))
+                    smask_xref = base_image.get("smask", 0)
 
-                    # 印刷色空間反相校正
-                    if cs_name == "DeviceN" or alt_cs == "DeviceCMYK" or img.mode == "CMYK":
-                        if img.mode in ("L", "1"):
-                            img = ImageOps.invert(img.convert("L"))
-                        elif img.mode == "CMYK":
-                            img = ImageOps.invert(img.convert("RGB"))
+                    # 檢測是否為 ImageMask 或特殊解碼遮罩
+                    is_mask = False
+                    try:
+                        is_mask = doc.xref_get_key(xref, "ImageMask")[1] == "true"
+                    except Exception:
+                        pass
+
+                    decode = ""
+                    try:
+                        decode = doc.xref_get_key(xref, "Decode")[1]
+                    except Exception:
+                        pass
+                    is_inverted_decode = "[1 0]" in decode or "[ 1 0 ]" in decode
+
+                    pix = fitz.Pixmap(doc, xref)
+
+                    # =======================================================
+                    # 情況 1：ImageMask 或單色反白遮罩 ➔ 輸出 .tif (含 LZW 壓縮)
+                    # =======================================================
+                    if is_mask or pix.colorspace is None or is_inverted_decode:
+                        img_filename = f"page_{page_index+1:04d}_xref{xref}.tif"
+                        img_filepath = os.path.join(output_dir, img_filename)
+
+                        mask_img = Image.frombytes("L", [pix.width, pix.height], pix.samples)
+
+                        if CASE1_OUTPUT_MODE == "TRANSPARENT":
+                            black_layer = Image.new("RGBA", mask_img.size, (0, 0, 0, 255))
+                            transparent_bg = Image.new("RGBA", mask_img.size, (0, 0, 0, 0))
+                            final_img = Image.composite(black_layer, transparent_bg, mask_img)
                         else:
-                            img = ImageOps.invert(img.convert("L"))
-                    else:
-                        if img.mode in ("P", "PA", "LA", "RGBA"):
-                            img = img.convert("RGBA" if "A" in img.mode else "RGB")
-                        elif img.mode not in ("RGB", "L"):
-                            img = img.convert("RGB")
+                            # 反轉負片：0 變純白底，255 變純黑線
+                            final_img = ImageOps.invert(mask_img)
 
-                    if to_grayscale:
-                        img = img.convert("L")
+                        if to_grayscale and final_img.mode != "L":
+                            final_img = final_img.convert("L")
 
-                    filename = f"page{page_index + 1:04d}_img{img_index + 1:03d}.png"
-                    save_path = os.path.join(output_dir, filename)
-                    img.save(save_path, format="PNG")
-                    count += 1
+                        final_img.save(img_filepath, format="TIFF", compression="tiff_lzw")
+                        count += 1
+                        continue
+
+                    # =======================================================
+                    # 情況 2：含有獨立透明遮罩 (SMask) 的圖片 ➔ 輸出 .png
+                    # =======================================================
+                    if smask_xref > 0:
+                        seen_xrefs.add(smask_xref)
+                        img_filename = f"page_{page_index+1:04d}_xref{xref}.png"
+                        img_filepath = os.path.join(output_dir, img_filename)
+                        try:
+                            pix_mask = fitz.Pixmap(doc, smask_xref)
+                            # PNG 不支援 CMYK，若為 CMYK (n>=5) 需先轉 RGB 才能合成透明度
+                            if pix.n >= 5:
+                                pix = fitz.Pixmap(fitz.csRGB, pix)
+
+                            pix_combined = fitz.Pixmap(pix, pix_mask)
+                            
+                            if to_grayscale:
+                                img = Image.frombytes("RGBA", [pix_combined.width, pix_combined.height], pix_combined.samples)
+                                img = img.convert("LA")
+                                img.save(img_filepath, format="PNG")
+                            else:
+                                pix_combined.save(img_filepath)
+                            
+                            count += 1
+                            continue
+                        except Exception:
+                            pass
+
+                    # =======================================================
+                    # 情況 3：一般常規點陣圖（無遮罩） ➔ 輸出 .png
+                    # =======================================================
+                    img_filename = f"page_{page_index+1:04d}_xref{xref}.png"
+                    img_filepath = os.path.join(output_dir, img_filename)
+                    try:
+                        if pix.n >= 5:
+                            pix = fitz.Pixmap(fitz.csRGB, pix)
+                            
+                        if to_grayscale:
+                            mode = "RGBA" if pix.alpha else "RGB"
+                            img = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+                            img = img.convert("L")
+                            img.save(img_filepath, format="PNG")
+                        else:
+                            pix.save(img_filepath)
+                        count += 1
+                    except Exception:
+                        # 降級保護：若 Pixmap 轉換異常，使用原始二進位流寫入
+                        image_bytes = base_image.get("image")
+                        image_ext = base_image.get("ext", "bin")
+                        if image_bytes:
+                            fallback_path = os.path.join(output_dir, f"page_{page_index+1:04d}_xref{xref}.{image_ext}")
+                            with open(fallback_path, "wb") as f:
+                                f.write(image_bytes)
+                            count += 1
 
                 except Exception as e:
-                    print(f"[Warning] 提取第 {page_index + 1} 頁圖片 {img_index + 1} 失敗: {e}")
+                    print(f"[Warning] 提取第 {page_index + 1} 頁圖片 xref {xref} 失敗: {e}")
                     continue
     finally:
         doc.close()
