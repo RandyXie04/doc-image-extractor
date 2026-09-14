@@ -33,13 +33,30 @@ def main():
     parser.add_argument('--files', '--target', nargs='+', help="Specific markdown files to convert")
     args = parser.parse_args()
 
-    input_dir = os.path.join('data', '03_output')
-    template_path = os.path.join('data', 'database_text', 'template.docx')
-    pdf_dir = os.path.join('data', 'database_text')
-    
-    if not os.path.exists(template_path):
-        print(f"Error: Template not found at {template_path}")
-        return
+    # Resolve paths relative to the project root (two levels up from src/scripts/)
+    _script_dir = Path(__file__).parent.resolve()
+    _project_root = _script_dir.parent.parent  # doc-image-extractor/
+
+    input_dir  = str(_project_root / 'data' / '03_output')
+    pdf_dir    = str(_project_root / 'data' / 'database_text')
+
+    # Fallback chain for template.docx
+    _template_candidates = [
+        _project_root / 'data' / 'database_text' / 'template.docx',
+        _project_root / 'config' / 'template.docx',
+        _script_dir / 'template.docx',
+    ]
+    template_path = None
+    for _candidate in _template_candidates:
+        if _candidate.exists():
+            template_path = str(_candidate)
+            print(f"Using template: {template_path}")
+            break
+
+    if template_path is None:
+        _searched = ', '.join(str(c) for c in _template_candidates)
+        print(f"Warning: template.docx not found (searched: {_searched}). "
+              "Converting without reference doc — styles may differ.")
         
     md_files = []
     
@@ -108,7 +125,7 @@ def main():
                 'docx',
                 format='html',
                 outputfile=out_path,
-                extra_args=[f'--reference-doc={template_path}']
+                extra_args=([f'--reference-doc={template_path}'] if template_path else [])
             )
             print(f"Saved DOCX to {out_path}")
         except Exception as e:

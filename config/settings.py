@@ -124,6 +124,7 @@ class _AIKeys:
     openai_key:        str | None = field(default_factory=lambda: os.getenv("OPENAI_API_KEY"))
     gemini_key:        str | None = field(default_factory=lambda: os.getenv("GEMINI_API_KEY"))
     anthropic_key:     str | None = field(default_factory=lambda: os.getenv("ANTHROPIC_API_KEY"))
+    deepseek_key:      str | None = field(default_factory=lambda: os.getenv("DEEPSEEK_API_KEY"))
     custom_llm_url:    str | None = field(default_factory=lambda: os.getenv("CUSTOM_LLM_BASE_URL"))
     custom_llm_key:    str | None = field(default_factory=lambda: os.getenv("CUSTOM_LLM_API_KEY"))
     default_model:     str        = field(default_factory=lambda: os.getenv("DEFAULT_AI_MODEL", "gpt-4o"))
@@ -136,6 +137,9 @@ class _AIKeys:
 
     def is_anthropic_ready(self) -> bool:
         return bool(self.anthropic_key)
+        
+    def is_deepseek_ready(self) -> bool:
+        return bool(self.deepseek_key)
 
 
 # // Behavior and Guardrail Settings
@@ -150,6 +154,11 @@ class _Config:
     extract_inline: bool  = field(default_factory=lambda: os.getenv("EXTRACT_INLINE", "false").lower() == "true")
     embed_formulas_in_word: bool = field(default_factory=lambda: os.getenv("EMBED_FORMULAS_IN_WORD", "true").lower() == "true")
     easyocr_langs:  list  = field(default_factory=lambda: os.getenv("EASYOCR_LANGS", "ch_sim,en").split(","))
+    
+    # // AI Heading Classifier Settings
+    ai_heading_enabled:  bool = field(default_factory=lambda: os.getenv("AI_HEADING_ENABLED", "false").lower() == "true")
+    ai_heading_provider: str  = field(default_factory=lambda: os.getenv("AI_HEADING_PROVIDER", "deepseek"))
+    ai_heading_model:    str  = field(default_factory=lambda: os.getenv("AI_HEADING_MODEL", "deepseek-chat"))
     
     # // Operation Mode: 'editor' (default for publishing house) or 'dev' (for engineers)
     app_mode:       str   = field(default_factory=lambda: os.getenv("APP_MODE", "editor").lower())
@@ -200,6 +209,7 @@ if __name__ == "__main__":
     print(f"  OpenAI   : {'[READY]' if AI.is_openai_ready()    else '[NOT SET (OPENAI_API_KEY)]'}")
     print(f"  Gemini   : {'[READY]' if AI.is_gemini_ready()    else '[NOT SET (GEMINI_API_KEY)]'}")
     print(f"  Anthropic: {'[READY]' if AI.is_anthropic_ready() else '[NOT SET (ANTHROPIC_API_KEY)]'}")
+    print(f"  DeepSeek : {'[READY]' if AI.is_deepseek_ready()  else '[NOT SET (DEEPSEEK_API_KEY)]'}")
     print(f"  Default Model: {AI.default_model}")
 
     print()
