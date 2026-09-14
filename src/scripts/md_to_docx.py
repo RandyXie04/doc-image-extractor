@@ -103,6 +103,19 @@ def main():
             # Escape "1. " to "1\. " to prevent Word auto-numbering
             md_content = re.sub(r'(?m)^(\s*\d+)\.\s', r'\1\\. ', md_content)
             
+            # 移除 OCR 產生的全形/半形 Latex 數學符號包裝，還原為純文字
+            def clean_latex(m):
+                c = m.group(1)
+                c = c.replace(r'\circ', '°').replace(r'\sim', '~')
+                c = re.sub(r'(?<=\d)\s+(?=\d)', '', c) # 移除數字間的空格
+                c = re.sub(r'\s*°\s*', '°', c)       # 移除度數符號旁的空格
+                c = re.sub(r'[\{\}\\\^$]', '', c)      # 移除 Latex 語法符號
+                return re.sub(r'\s+', ' ', c).strip()
+            
+            md_content = re.sub(r'\\（（(.*?)）\\）', clean_latex, md_content)
+            md_content = re.sub(r'\\\((.*?)\\\)', clean_latex, md_content)
+
+            
             temp_md_path = os.path.join(tempfile.gettempdir(), f"temp_{uuid.uuid4().hex}.md")
             with open(temp_md_path, 'w', encoding='utf-8') as f:
                 f.write(md_content)
