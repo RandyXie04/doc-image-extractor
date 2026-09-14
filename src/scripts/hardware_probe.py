@@ -46,6 +46,10 @@ def get_ort_providers():
         return []
 
 def install_directml():
+    if getattr(sys, 'frozen', False):
+        print("[HardwareProbe] Running in PyInstaller bundle. Cannot dynamically install DirectML.")
+        return False
+        
     print("[HardwareProbe] RTX 30+ GPU detected. Installing DirectML accelerator...")
     try:
         # Uninstall both to be safe
