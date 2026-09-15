@@ -6,7 +6,17 @@ import socket
 import datetime
 from pathlib import Path
 
-CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
+try:
+    from src.utils.path_helper import get_config_dir
+except ImportError:
+    import sys
+    from pathlib import Path
+    _fallback_root = Path(__file__).parent.parent.parent.resolve()
+    if str(_fallback_root) not in sys.path:
+        sys.path.insert(0, str(_fallback_root))
+    from src.utils.path_helper import get_config_dir
+
+CONFIG_DIR = get_config_dir()
 PROFILE_PATH = CONFIG_DIR / ".hardware_profile.json"
 
 def is_online(timeout=1.5):

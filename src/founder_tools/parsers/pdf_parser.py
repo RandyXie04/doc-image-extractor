@@ -2,8 +2,17 @@ import sys
 import os
 from pathlib import Path
 
-# 將上層目錄加入 sys.path 以便 import 既有的修復腳本
-sys.path.insert(0, str(Path(__file__).parent.parent))
+# 將上層目錄加入 sys.path 以便 import 既有的修復腳本 (僅限非 frozen 環境，打包後交由 PyInstaller 處理)
+try:
+    from src.utils.path_helper import is_frozen
+except ImportError:
+    _fallback_root = Path(__file__).parent.parent.parent.parent.resolve()
+    if str(_fallback_root) not in sys.path:
+        sys.path.insert(0, str(_fallback_root))
+    from src.utils.path_helper import is_frozen
+
+if not is_frozen():
+    sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from fix_founder_fonts import clean_founder_text
 from core.document_model import UnifiedDocument, SectionNode, ParagraphNode, RunNode

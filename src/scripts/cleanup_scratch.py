@@ -6,8 +6,16 @@ from pathlib import Path
 # // 清理根目錄 scratch 資料夾內之暫存快取 (每月 1 號執行完全刪除)
 def cleanup_scratch(force: bool = False, log_fn=print) -> bool:
     today = datetime.date.today()
-    project_root = Path(__file__).parent.parent.resolve()
-    scratch_dir = project_root / "scratch"
+    try:
+        from src.utils.path_helper import get_data_dir
+    except ImportError:
+        import sys
+        from pathlib import Path
+        _fallback = Path(__file__).parent.parent.parent.resolve()
+        if str(_fallback) not in sys.path:
+            sys.path.insert(0, str(_fallback))
+        from src.utils.path_helper import get_data_dir
+    scratch_dir = get_data_dir() / "scratch"
     
     if not scratch_dir.exists():
         os.makedirs(scratch_dir, exist_ok=True)

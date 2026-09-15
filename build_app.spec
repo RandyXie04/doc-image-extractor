@@ -4,9 +4,12 @@
 import sys
 import os
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules, collect_all
 
 block_cipher = None
+
+# Collect onnxruntime required data files and DLLs (including DirectML.dll)
+ort_datas, ort_binaries, ort_hidden = collect_all('onnxruntime')
 
 # Datas collection
 datas = [
@@ -53,18 +56,22 @@ hidden_imports = [
 a = Analysis(
     ['app_window.py'],
     pathex=['.'],
-    binaries=[],
-    datas=datas,
-    hiddenimports=hidden_imports,
+    binaries=ort_binaries,
+    datas=datas + ort_datas,
+    hiddenimports=hidden_imports + ort_hidden,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['matplotlib', 'scipy', 'ultralytics', 'torch', 'torchvision', 'torchaudio', 'onnxruntime', 'onnx'],
+    excludes=['matplotlib', 'scipy', 'ultralytics', 'torch', 'torchvision', 'torchaudio', 'onnx'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
     noarchive=False,
 )
+
+# Filter out torch related files to prevent WinError 206 (Path too long)
+a.datas = [x for x in a.datas if not ('torch' in x[0].lower() or 'torch' in x[1].lower())]
+a.binaries = [x for x in a.binaries if not ('torch' in x[0].lower() or 'torch' in x[1].lower())]
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
@@ -78,7 +85,7 @@ exe = EXE(
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
-    console=True, # Set console=True for troubleshooting and log viewing
+    console=False, # Set to False to hide the black terminal window
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

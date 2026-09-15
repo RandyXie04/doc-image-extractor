@@ -8,14 +8,17 @@ from pathlib import Path
 import pypandoc
 
 # Configure pypandoc to use the bundled pandoc.exe if available
-if getattr(sys, 'frozen', False):
-    # Running in a PyInstaller bundle
-    bundle_dir = Path(sys._MEIPASS)
-else:
-    # Running in normal Python environment
-    bundle_dir = Path(__file__).parent.parent.parent.resolve()
+try:
+    from src.utils.path_helper import get_bundled_pandoc, get_data_dir, get_config_dir
+except ImportError:
+    import sys
+    from pathlib import Path
+    _fallback_root = Path(__file__).parent.parent.parent.resolve()
+    if str(_fallback_root) not in sys.path:
+        sys.path.insert(0, str(_fallback_root))
+    from src.utils.path_helper import get_bundled_pandoc, get_data_dir, get_config_dir
 
-bundled_pandoc = bundle_dir / 'bin' / 'pandoc.exe'
+bundled_pandoc = get_bundled_pandoc()
 if bundled_pandoc.exists():
     os.environ.setdefault('PYPANDOC_PANDOC', str(bundled_pandoc))
 
@@ -33,17 +36,18 @@ def main():
     parser.add_argument('--files', '--target', nargs='+', help="Specific markdown files to convert")
     args = parser.parse_args()
 
-    # Resolve paths relative to the project root (two levels up from src/scripts/)
+    # Resolve paths relative to the data directory
+    _data_dir = get_data_dir()
+    _config_dir = get_config_dir()
     _script_dir = Path(__file__).parent.resolve()
-    _project_root = _script_dir.parent.parent  # doc-image-extractor/
 
-    input_dir  = str(_project_root / 'data' / '03_output')
-    pdf_dir    = str(_project_root / 'data' / 'database_text')
+    input_dir  = str(_data_dir / '03_output')
+    pdf_dir    = str(_data_dir / 'database_text')
 
     # Fallback chain for template.docx
     _template_candidates = [
-        _project_root / 'data' / 'database_text' / 'template.docx',
-        _project_root / 'config' / 'template.docx',
+        _data_dir / 'database_text' / 'template.docx',
+        _config_dir / 'template.docx',
         _script_dir / 'template.docx',
     ]
     template_path = None

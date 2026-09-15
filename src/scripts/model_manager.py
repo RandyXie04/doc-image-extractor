@@ -7,7 +7,6 @@ import shutil
 from pathlib import Path
 
 # Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from config import PATHS
 
 GITHUB_REPO = 'RandyXie04/doc-image-extractor'
@@ -73,13 +72,15 @@ def download_file_with_progress(url: str, dest_path: Path):
             
             # Hash check if available in version.json
             from config import VERSION
-            if VERSION.model_hash:
+            if VERSION.model_hash and VERSION.model_hash != "sha256:default":
                 print("[ModelManager] 正在校驗檔案完整性 (SHA256)...")
                 sha256 = hashlib.sha256()
                 with open(dest_path, 'rb') as f:
                     for chunk in iter(lambda: f.read(4096), b""):
                         sha256.update(chunk)
-                if sha256.hexdigest() != VERSION.model_hash:
+                        
+                expected_hash = VERSION.model_hash.replace("sha256:", "").strip()
+                if sha256.hexdigest() != expected_hash:
                     dest_path.unlink()
                     raise RuntimeError("檔案 Hash 校驗失敗，模型檔案可能損壞。")
                 print("[ModelManager] 檔案校驗通過！")
@@ -95,16 +96,6 @@ def download_file_with_progress(url: str, dest_path: Path):
     except Exception as e:
         raise RuntimeError(f"模型下載發生錯誤: {e}")
 
-def try_download_model_from_huggingface(dest_dir: Path) -> Path | None:
-    url = "https://huggingface.co/opendatalab/PDF-Extract-Kit-1.0/resolve/main/models/MFD/YOLO/yolo_v8_ft.pt"
-    dest_path = dest_dir / "yolo_v8_ft.pt"
-    print(f"[ModelManager] 嘗試從 Hugging Face 下載模型... ({url})")
-    try:
-        download_file_with_progress(url, dest_path)
-        return dest_path
-    except Exception as e:
-        print(f"[ModelManager] 從 Hugging Face 下載失敗: {e}")
-        return None
 
 def convert_pt_to_onnx(pt_path: Path) -> Path | None:
     print(f"[ModelManager] 嘗試將 {pt_path.name} 轉換為 ONNX 格式...")
@@ -182,10 +173,8 @@ def ensure_model_ready() -> dict:
         return {"status": "fallback", "path": pt_path, "engine": "pt"}
             
     # Model is completely missing. Try to download.
-    print("[Model Check] 本機無任何公式檢測模型，開始自動下載...")
-    downloaded_path = try_download_model_from_huggingface(PATHS.models_dir)
-    if not downloaded_path:
-        downloaded_path = try_download_model_from_github(PATHS.models_dir)
+    print("[Model Check] 本機無任何公式檢測模型，開始自動從 GitHub 下載...")
+    downloaded_path = try_download_model_from_github(PATHS.models_dir)
         
     if downloaded_path:
         if downloaded_path.suffix == ".pt":

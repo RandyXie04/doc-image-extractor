@@ -5,11 +5,46 @@ import socket
 import time
 import sys
 from pathlib import Path
+import logging
+import datetime
+import threading
+from src.utils.path_helper import is_frozen, get_log_dir
 
-# // Append project root directory to sys.path
-root_dir = Path(__file__).parent.absolute()
-if str(root_dir) not in sys.path:
-    sys.path.insert(0, str(root_dir))
+# // Setup global exception logging for PyInstaller console=False environment
+log_dir = get_log_dir()
+log_dir.mkdir(parents=True, exist_ok=True)
+log_path = log_dir / "app_error.log"
+logging.basicConfig(
+    filename=str(log_path),
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+def _log_fatal_exception(exc_type, exc_value, exc_traceback, thread_name="MainThread"):
+    import traceback
+    tb_str = "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+    err_msg = (
+        f"\n{'='*60}\n"
+        f"[{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] [FATAL] Uncaught Exception\n"
+        f"Thread: {thread_name}\n"
+        f"Frozen: {is_frozen()}\n"
+        f"Executable: {sys.executable if is_frozen() else 'Local Python'}\n"
+        f"Traceback:\n{tb_str}"
+        f"{'='*60}\n"
+    )
+    logging.error(err_msg)
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    _log_fatal_exception(exc_type, exc_value, exc_traceback)
+
+def handle_thread_exception(args):
+    _log_fatal_exception(args.exc_type, args.exc_value, args.exc_traceback, thread_name=args.thread.name if args.thread else "UnknownThread")
+
+sys.excepthook = handle_exception
+threading.excepthook = handle_thread_exception
 
 from src.web.app import app
 
@@ -38,6 +73,15 @@ def wait_for_server(port, timeout=5.0):
 if __name__ == '__main__':
     import multiprocessing
     multiprocessing.freeze_support()
+    
+    import sys
+    # // 支援 PyInstaller 封裝下透過 sys.executable 執行其他 .py 腳本
+    if getattr(sys, 'frozen', False) and len(sys.argv) > 1 and sys.argv[1].endswith('.py'):
+        import runpy
+        script_path = sys.argv[1]
+        sys.argv = [sys.argv[0]] + sys.argv[2:]
+        runpy.run_path(script_path, run_name="__main__")
+        sys.exit(0)
     
     # // Run hardware probe & setup
     from src.scripts.hardware_probe import ensure_optimal_accelerator

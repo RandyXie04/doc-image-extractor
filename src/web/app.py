@@ -15,8 +15,6 @@ import numpy as np
 from PIL import Image, ImageDraw
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.core_agent import PDFConversionAgent
 from config import PATHS
 from src.scripts.cleanup_scratch import cleanup_scratch
@@ -39,6 +37,9 @@ def cleanup_old_files():
 
 @app.on_event("startup")
 async def on_startup():
+    # 確保所有需要的目錄已建立
+    PATHS.ensure_all()
+    
     # 首次啟動自動偵測並準備模型
     try:
         from src.scripts.model_manager import ensure_model_ready
@@ -367,15 +368,8 @@ async def set_app_mode(request: Request):
 
 
 # Mount static files
-static_dir = Path(__file__).parent / "static"
-if not static_dir.exists() and getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-    _candidate = Path(sys._MEIPASS) / "src" / "web" / "static"
-    if _candidate.exists():
-        static_dir = _candidate
-    else:
-        _candidate2 = Path(sys._MEIPASS) / "static"
-        if _candidate2.exists():
-            static_dir = _candidate2
+from src.utils.path_helper import get_static_dir
+static_dir = get_static_dir()
 
 os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")

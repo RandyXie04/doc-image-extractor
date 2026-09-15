@@ -7,9 +7,18 @@ from pathlib import Path
 import fitz
 
 # Anchor project root to sys.path
-root_dir = Path(__file__).parent.parent.parent.absolute()
-if str(root_dir) not in sys.path:
-    sys.path.insert(0, str(root_dir))
+try:
+    from src.utils.path_helper import is_frozen
+except ImportError:
+    _fallback_root = Path(__file__).parent.parent.parent.resolve()
+    if str(_fallback_root) not in sys.path:
+        sys.path.insert(0, str(_fallback_root))
+    from src.utils.path_helper import is_frozen
+
+if not is_frozen():
+    root_dir = Path(__file__).parent.parent.parent.resolve()
+    if str(root_dir) not in sys.path:
+        sys.path.insert(0, str(root_dir))
 
 def is_vector_pdf(pdf_path, text_threshold=100):
     """
@@ -93,30 +102,47 @@ def main():
     if engine_choice == "pymupdf":
         extract_with_pymupdf(args.file, args.output_dir, args.style_mapping, output_stem=args.output_stem)
     else:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        process_ocr_path = os.path.join(script_dir, "process_ocr.py")
-        
-        cmd = [
-            sys.executable, process_ocr_path, 
-            "--file", args.file, 
-            "--output_dir", args.output_dir, 
-            "--style_mapping", args.style_mapping
-        ]
-        
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
-        for line in proc.stdout:
-            line = line.strip()
-            if line:
-                if line.startswith("{") and "progress" in line:
-                    print(line)
-                else:
-                    progress_val = 50
-                    if "[INFO]" in line:
-                        print(json.dumps({"progress": progress_val, "message": line}))
-                    else:
-                        print(json.dumps({"progress": progress_val, "message": line}))
-                sys.stdout.flush()
-        proc.wait()
+        # v2.1 修正：避免使用 subprocess 啟動不存在於 _MEIPASS 的 process_ocr.py
+        try:
+            from src.scripts import process_ocr
+            # 優先嘗試透過 module import 執行
+            import argparse
+            ocr_args = argparse.Namespace(
+                file=args.file,
+                output_dir=args.output_dir,
+                style_mapping=args.style_mapping
+            )
+            if hasattr(process_ocr, "main"):
+                process_ocr.main(ocr_args)
+            else:
+                pass
+        except ImportError as e:
+            # 開發環境下，若仍需 subprocess，則作為 Fallback
+            from src.utils.path_helper import is_frozen, get_project_dir
+            if not is_frozen():
+                process_ocr_path = str(get_project_dir() / "src" / "scripts" / "process_ocr.py")
+                cmd = [
+                    sys.executable, process_ocr_path, 
+                    "--file", args.file, 
+                    "--output_dir", args.output_dir, 
+                    "--style_mapping", args.style_mapping
+                ]
+                import subprocess
+                proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
+                for line in proc.stdout:
+                    line = line.strip()
+                    if line:
+                        if line.startswith("{") and "progress" in line:
+                            print(line)
+                        else:
+                            progress_val = 50
+                            print(json.dumps({"progress": progress_val, "message": line}))
+                        sys.stdout.flush()
+                proc.wait()
+                if proc.returncode != 0:
+                    raise RuntimeError("process_ocr.py subprocess failed")
+            else:
+                raise RuntimeError("Frozen environment 中無法獨立啟動 process_ocr.py 子程序，請確認模組能被 import") from e
         
         # If output_stem is specified and RapidDoc produced a file based on args.file basename, rename if needed
         if args.output_stem:
