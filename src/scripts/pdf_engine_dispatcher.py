@@ -78,7 +78,7 @@ def main():
     parser.add_argument("--output_dir", type=str, default="data/03_output", help="Output directory")
     parser.add_argument("--output_stem", type=str, default=None, help="Stem name for output files")
     parser.add_argument("--style_mapping", type=str, default="{}", help="JSON string for heading style mapping")
-    parser.add_argument("--engine", type=str, default="auto", choices=["auto", "pymupdf", "rapiddoc"], help="Forced engine choice")
+    parser.add_argument("--engine", type=str, default="auto", choices=["auto", "pymupdf", "suryaocr"], help="Forced engine choice")
     parser.add_argument("--header_ratio", type=float, default=0.1)
     parser.add_argument("--footer_ratio", type=float, default=0.1)
     parser.add_argument("--left_ratio", type=float, default=0.0)
@@ -95,15 +95,14 @@ def main():
             print(json.dumps({"progress": 10, "message": "[INFO] 自動辨識為原生向量 PDF，切換至 PyMuPDF 高速引擎。"}))
             engine_choice = "pymupdf"
         else:
-            print(json.dumps({"progress": 10, "message": "[INFO] 自動辨識為掃描檔/圖片型 PDF，切換至 RapidDoc 深度 OCR 引擎。"}))
-            engine_choice = "rapiddoc"
+            print(json.dumps({"progress": 10, "message": "[INFO] 自動辨識為掃描檔/圖片型 PDF，切換至 Surya OCR 深度 OCR 引擎。"}))
+            engine_choice = "suryaocr"
     sys.stdout.flush()
 
     if engine_choice == "pymupdf":
         extract_with_pymupdf(args.file, args.output_dir, args.style_mapping, output_stem=args.output_stem)
     else:
         # v2.1 修正：避免使用 subprocess 啟動不存在於 _MEIPASS 的 process_ocr.py
-        proc = None
         try:
             from src.scripts import process_ocr
             # 優先嘗試透過 module import 執行
@@ -144,7 +143,7 @@ def main():
             else:
                 raise RuntimeError("Frozen environment 中無法獨立啟動 process_ocr.py 子程序，請確認模組能被 import") from e
         
-        # If output_stem is specified and RapidDoc produced a file based on args.file basename, rename if needed
+        # If output_stem is specified and Surya OCR produced a file based on args.file basename, rename if needed
         if args.output_stem:
             raw_base = os.path.basename(args.file).rsplit(".", 1)[0]
             raw_out = os.path.join(args.output_dir, f"{raw_base}.md")
@@ -153,8 +152,10 @@ def main():
                 import shutil
                 shutil.move(raw_out, target_out)
 
-        if proc is not None and proc.returncode != 0:
-            raise RuntimeError(f"RapidDoc execution failed with code {proc.returncode}")
+        if 'proc' in locals() and proc.returncode != 0:
+            raise RuntimeError(f"Surya OCR execution failed with code {proc.returncode}")
+        elif 'proc' not in locals() and not hasattr(process_ocr, "main"):
+            raise RuntimeError("process_ocr.py is missing or empty, cannot execute Surya OCR.")
 
 if __name__ == "__main__":
     main()

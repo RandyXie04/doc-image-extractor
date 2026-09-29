@@ -85,9 +85,10 @@ def extract_from_docx(docx_path: str, output_dir: str, to_grayscale: bool = Fals
     return count
 
 
-def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False) -> int:
+def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False, duplicate_policy: str = "every_occurrence") -> int:
     """
     從 PDF (.pdf) 文件中無損提取所有圖片，支援進階的遮罩(Mask)解析、去重複與透明度合成。
+    支援 duplicate_policy: "unique" | "every_occurrence"。
     """
     os.makedirs(output_dir, exist_ok=True)
     doc = fitz.open(pdf_path)
@@ -104,7 +105,7 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False)
             for img_info in image_list:
                 xref = img_info[0]
 
-                if xref in seen_xrefs:
+                if duplicate_policy == "unique" and xref in seen_xrefs:
                     continue
                 seen_xrefs.add(xref)
 
@@ -140,7 +141,7 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False)
                     # =======================================================
                     # 情況 1：ImageMask 或單色反白遮罩 ➔ 輸出 .tif (含 LZW 壓縮)
                     # =======================================================
-                    if is_mask or pix.colorspace is None or is_inverted_decode:
+                    if is_mask or pix.colorspace is None or (is_inverted_decode and pix.n <= 2):
                         img_filename = f"page_{page_index+1:04d}_xref{xref}.tif"
                         img_filepath = os.path.join(output_dir, img_filename)
 
@@ -170,8 +171,8 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False)
                         img_filepath = os.path.join(output_dir, img_filename)
                         try:
                             pix_mask = fitz.Pixmap(doc, smask_xref)
-                            # PNG 不支援 CMYK，若為 CMYK (n>=5) 需先轉 RGB 才能合成透明度
-                            if pix.n >= 5:
+                            # PNG 不支援 CMYK/DeviceN，若非 RGB/Gray 需先轉 RGB 才能合成透明度
+                            if not pix.colorspace or pix.colorspace.name not in ("DeviceRGB", "DeviceGray"):
                                 pix = fitz.Pixmap(fitz.csRGB, pix)
 
                             pix_combined = fitz.Pixmap(pix, pix_mask)
@@ -194,7 +195,8 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False)
                     img_filename = f"page_{page_index+1:04d}_xref{xref}.png"
                     img_filepath = os.path.join(output_dir, img_filename)
                     try:
-                        if pix.n >= 5:
+                        # PNG 格式不支援 CMYK/DeviceN，若非 RGB/Gray 需轉為 RGB
+                        if not pix.colorspace or pix.colorspace.name not in ("DeviceRGB", "DeviceGray"):
                             pix = fitz.Pixmap(fitz.csRGB, pix)
                             
                         if to_grayscale:
@@ -242,7 +244,8 @@ def process_document_images(
     file_path: str,
     output_zip_path: str,
     temp_dir: str,
-    to_grayscale: bool = False
+    to_grayscale: bool = False,
+    duplicate_policy: str = "every_occurrence"
 ) -> Tuple[int, str]:
     """
     整合處理函式：自動判斷副檔名執行提取並封裝成 ZIP。
@@ -254,7 +257,7 @@ def process_document_images(
     if ext == ".docx":
         count = extract_from_docx(file_path, temp_dir, to_grayscale=to_grayscale)
     elif ext == ".pdf":
-        count = extract_from_pdf(file_path, temp_dir, to_grayscale=to_grayscale)
+        count = extract_from_pdf(file_path, temp_dir, to_grayscale=to_grayscale, duplicate_policy=duplicate_policy)
     else:
         raise ValueError(f"不支援的檔案格式: {ext} (僅支援 .docx 與 .pdf)")
 

@@ -4,6 +4,7 @@ import urllib.request
 import json
 import urllib.error
 import shutil
+import threading
 from pathlib import Path
 
 # Add project root to path
@@ -12,6 +13,7 @@ from config import PATHS
 GITHUB_REPO = 'RandyXie04/doc-image-extractor'
 DEFAULT_MODEL_NAME = "yolo_v8_ft.onnx"
 DEFAULT_PT_NAME = "yolo_v8_ft.pt"
+_model_lock = threading.Lock()
 
 def _get_exact_model_path(model_name: str) -> Path | None:
     """Find the exact model file without fallback extensions."""
@@ -136,7 +138,10 @@ def try_download_model_from_github(dest_dir: Path) -> Path | None:
                 download_url = target_asset.get('browser_download_url')
                 file_name = target_asset.get('name')
                 dest_path = dest_dir / file_name
-                download_file_with_progress(download_url, dest_path)
+                temp_path = dest_dir / f"{file_name}.downloading"
+                download_file_with_progress(download_url, temp_path)
+                if temp_path.exists():
+                    temp_path.replace(dest_path)
                 return dest_path
             else:
                 print(f"[ModelManager] 在最新的 Release 中找不到模型檔案 ({DEFAULT_MODEL_NAME} 或 {DEFAULT_PT_NAME})")
@@ -156,7 +161,8 @@ def ensure_model_ready() -> dict:
     Returns:
         dict: {"status": "ready"|"fallback"|"missing", "path": Path_object_or_None, "engine": "onnx"|"pt"|"none"}
     """
-    PATHS.models_dir.mkdir(parents=True, exist_ok=True)
+    with _model_lock:
+        PATHS.models_dir.mkdir(parents=True, exist_ok=True)
     
     onnx_path = _get_exact_model_path(DEFAULT_MODEL_NAME)
     if onnx_path:

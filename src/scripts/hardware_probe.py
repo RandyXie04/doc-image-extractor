@@ -129,8 +129,11 @@ def ensure_optimal_accelerator():
         "last_probed": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     }
 
-    with open(PROFILE_PATH, 'w', encoding='utf-8') as f:
-        json.dump(profile, f, indent=4)
+    try:
+        with open(PROFILE_PATH, 'w', encoding='utf-8') as f:
+            json.dump(profile, f, indent=4)
+    except Exception as e:
+        print(f"[HardwareProbe] 無法寫入快取 (可能權限不足): {e}")
     
     return profile
 

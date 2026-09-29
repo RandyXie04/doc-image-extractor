@@ -59,12 +59,15 @@
                         <label for="h3Style">三級標題 (###): </label>
                         <select id="h3Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Heading 3)</option></select>
                     </div>
-                    <div style="margin-top: 0.5rem; width: 100%;">
-                        <label for="captionStyle" style="color: #ea580c; font-weight: bold;">圖說樣式設定: </label>
-                        <select id="captionStyle" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Caption)</option></select>
-                        
-                        <label for="kaitiStyle" style="color: #ea580c; font-weight: bold; margin-left: 1rem;">楷體樣式辨識: </label>
-                        <select id="kaitiStyle" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Kaiti)</option></select>
+                    <div style="border-top: 1px solid #e2e8f0; margin-top: 0.5rem; padding-top: 0.5rem; width: 100%; display: flex; gap: 0.8rem; flex-wrap: wrap;">
+                        <div>
+                            <label for="imageCaptionStyle">🖼️ 圖片標籤: </label>
+                            <select id="imageCaptionStyle" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(不套用自訂樣式)</option></select>
+                        </div>
+                        <div>
+                            <label for="kaitiStyle">📜 楷體/引言: </label>
+                            <select id="kaitiStyle" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(不套用自訂樣式)</option></select>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -214,15 +217,22 @@
                     const h1 = document.getElementById('h1Style');
                     const h2 = document.getElementById('h2Style');
                     const h3 = document.getElementById('h3Style');
+                    const imgCaption = document.getElementById('imageCaptionStyle');
+                    const kaiti = document.getElementById('kaitiStyle');
                     
                     h1.innerHTML = '<option value="">(預設 Heading 1)</option>';
                     h2.innerHTML = '<option value="">(預設 Heading 2)</option>';
                     h3.innerHTML = '<option value="">(預設 Heading 3)</option>';
+                    imgCaption.innerHTML = '<option value="">(不套用自訂樣式)</option>';
+                    kaiti.innerHTML = '<option value="">(不套用自訂樣式)</option>';
                     
                     data.styles.forEach(s => {
-                        h1.innerHTML += `<option value="${s}">${s}</option>`;
-                        h2.innerHTML += `<option value="${s}">${s}</option>`;
-                        h3.innerHTML += `<option value="${s}">${s}</option>`;
+                        const opt = `<option value="${s}">${s}</option>`;
+                        h1.innerHTML += opt;
+                        h2.innerHTML += opt;
+                        h3.innerHTML += opt;
+                        imgCaption.innerHTML += opt;
+                        kaiti.innerHTML += opt;
                     });
                     
                     document.getElementById('styleMappingSection').style.display = 'block';
@@ -375,14 +385,14 @@
             const h1Style = document.getElementById('h1Style')?.value;
             const h2Style = document.getElementById('h2Style')?.value;
             const h3Style = document.getElementById('h3Style')?.value;
-            const captionStyle = document.getElementById('captionStyle')?.value;
+            const imageCaptionStyle = document.getElementById('imageCaptionStyle')?.value;
             const kaitiStyle = document.getElementById('kaitiStyle')?.value;
-            if (h1Style || h2Style || h3Style || captionStyle || kaitiStyle) {
+            if (h1Style || h2Style || h3Style || imageCaptionStyle || kaitiStyle) {
                 formData.append('style_mapping', JSON.stringify({
                     h1: h1Style,
                     h2: h2Style,
                     h3: h3Style,
-                    caption: captionStyle,
+                    image_caption: imageCaptionStyle,
                     kaiti: kaitiStyle
                 }));
             }

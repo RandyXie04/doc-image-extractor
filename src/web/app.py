@@ -40,12 +40,13 @@ async def on_startup():
     # 確保所有需要的目錄已建立
     PATHS.ensure_all()
     
-    # 首次啟動自動偵測並準備模型
+    # 首次啟動在背景自動偵測並準備模型，避免阻塞伺服器啟動導致 WebView 載入超時
     try:
+        import threading
         from src.scripts.model_manager import ensure_model_ready
-        ensure_model_ready()
+        threading.Thread(target=ensure_model_ready, daemon=True, name="ModelInitThread").start()
     except Exception as e:
-        print(f"[Startup Warning] Model preparation failed: {e}")
+        print(f"[Startup Warning] Model background preparation failed: {e}")
 
     # 每月 1 號自動清空 scratch 暫存
     try:
@@ -112,12 +113,16 @@ async def upload_template(file: UploadFile = File(...)):
 async def get_current_template():
     template_path = PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx"
     default_template_path = PATHS.data_dir / "database_text" / "template.docx"
+    from src.utils.path_helper import get_template_path
+    bundled_template_path = get_template_path()
     
     if template_path.exists():
         # Ideally we might want to store the original filename in a metadata file, 
         # but for simplicity we just return a static name or checking existence.
         return {"has_custom": True, "name": "user_template.docx"}
     elif default_template_path.exists():
+        return {"has_custom": False, "name": "系統自訂範本"}
+    elif bundled_template_path.exists():
         return {"has_custom": False, "name": "系統預設範本"}
     else:
         return {"has_custom": False, "name": "無可用範本"}
@@ -126,12 +131,15 @@ async def get_current_template():
 async def get_template_styles():
     import zipfile
     import xml.etree.ElementTree as ET
+    from src.utils.path_helper import get_template_path
     
     template_path = PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx"
     if not template_path.exists():
         template_path = PATHS.data_dir / "database_text" / "template.docx"
         if not template_path.exists():
-            return {"status": "error", "message": "無可用範本"}
+            template_path = get_template_path()
+            if not template_path.exists():
+                return {"status": "error", "message": "無可用範本"}
             
     styles = []
     W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
