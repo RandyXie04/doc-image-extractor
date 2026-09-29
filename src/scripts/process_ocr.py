@@ -171,7 +171,7 @@ def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_re
         is_fn = orig_label in ["footnote", "vision_footnote"]
 
         # Criterion B: Heuristic fallback in lower 28% of page with footnote prefix
-        if not is_fn and y0 > (page_h * 0.72) and b_type not in [BlockType.TITLE, BlockType.TABLE]:
+        if not is_fn and y0 > (page_h * 0.72) and b_type not in ["Title", "Table", "Figure"]:
             blk_txt = extract_block_text(block)
             if re.search(r'^(?:[\u2460-\u2473]|\[\d+\]|[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|\u6ce8\s*\d+|\(?\d+\)\s*[\u4e00-\u9fff])', blk_txt):
                 is_fn = True
@@ -217,7 +217,7 @@ def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_re
         from src.founder_tools.core.heading_detector import HeadingDetector
         for item in rendered_initial:
             blk = item["block"]
-            if blk.get("type") == BlockType.TABLE:
+            if blk.get("type") == "Table":
                 continue
 
             level = HeadingDetector.detect_block_level(blk, page_width=600.0)
@@ -601,14 +601,7 @@ def main(args=None):
                         all_page_contents.append(page_str.strip())
 
                 final_md = "\n\n".join(all_page_contents)
-            else:
-                # Fallback to default markdown string
-                if hasattr(res, 'markdown'):
-                    final_md = res.markdown
-                elif isinstance(res, tuple) and len(res) >= 1:
-                    final_md = res[0].markdown if hasattr(res[0], 'markdown') else str(res[0])
-                else:
-                    final_md = str(res)
+
 
             # ── 辭典專用語意後處理：自動降級詞條標題與楷體區隔 ──
             try:
