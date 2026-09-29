@@ -354,11 +354,16 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                         else:
                             para_text += " " + line_txt
                 if current_para_is_kaiti:
-                    para_text = "> " + para_text
+                    kaiti_style = style_mapping.get("kaiti")
+                    if kaiti_style:
+                        para_text = f"::: {{custom-style=\"{kaiti_style}\"}}\n{para_text}\n:::"
+                    else:
+                        para_text = "> " + para_text
                 page_paragraphs.append(para_text)
                 current_para_lines = []
                 current_para_is_kaiti = False
         
+        last_x0 = None
         for bb in body_blocks:
             lines = bb.get("lines", [])
             if not lines:
@@ -440,11 +445,22 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
 
             # Check indentation to determine whether this block starts a new paragraph
-            is_indented = (bbox[0] - base_x0) >= 12.0
+            is_indented = False
+            if last_x0 is not None:
+                # Indented relative to previous line (e.g. first line of quote)
+                if bbox[0] - last_x0 >= 12.0:
+                    is_indented = True
+                # Indented relative to base margin, BUT not aligned with previous line
+                elif bbox[0] - base_x0 >= 12.0 and abs(bbox[0] - last_x0) > 6.0:
+                    is_indented = True
+            else:
+                is_indented = (bbox[0] - base_x0) >= 12.0
             
             # If this block has an indent, flush the previous paragraph
             if is_indented:
                 flush_current_para()
+                
+            last_x0 = bbox[0]
                 
             if is_block_kaiti:
                 current_para_is_kaiti = True

@@ -199,7 +199,13 @@ def main():
                     print(f"[Warning] 寫入 suspicious_founder_chars 失敗: {e}")
 
 
-            
+            # Fix scrambled table header from OCR (e.g. text01 page_0636 with diagonal splits)
+            md_content = re.sub(
+                r'\|\s*名 出现 称 次数 文书 标题(\[[^\]]+\])?\s*\|',
+                r'| 文书标题 / 名称 / 出现次数\1 |',
+                md_content
+            )
+
             # Escape "1. " to "1\. " to prevent Word auto-numbering
             md_content = re.sub(r'(?m)^(\s*\d+)\.\s', r'\1\\. ', md_content)
             
