@@ -59,6 +59,13 @@
                         <label for="h3Style">三級標題 (###): </label>
                         <select id="h3Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Heading 3)</option></select>
                     </div>
+                    <div style="margin-top: 0.5rem; width: 100%;">
+                        <label for="captionStyle" style="color: #ea580c; font-weight: bold;">圖說樣式設定: </label>
+                        <select id="captionStyle" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Caption)</option></select>
+                        
+                        <label for="kaitiStyle" style="color: #ea580c; font-weight: bold; margin-left: 1rem;">楷體樣式辨識: </label>
+                        <select id="kaitiStyle" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Kaiti)</option></select>
+                    </div>
                 </div>
             </div>
         </div>
@@ -368,11 +375,15 @@
             const h1Style = document.getElementById('h1Style')?.value;
             const h2Style = document.getElementById('h2Style')?.value;
             const h3Style = document.getElementById('h3Style')?.value;
-            if (h1Style || h2Style || h3Style) {
+            const captionStyle = document.getElementById('captionStyle')?.value;
+            const kaitiStyle = document.getElementById('kaitiStyle')?.value;
+            if (h1Style || h2Style || h3Style || captionStyle || kaitiStyle) {
                 formData.append('style_mapping', JSON.stringify({
                     h1: h1Style,
                     h2: h2Style,
-                    h3: h3Style
+                    h3: h3Style,
+                    caption: captionStyle,
+                    kaiti: kaitiStyle
                 }));
             }
 
