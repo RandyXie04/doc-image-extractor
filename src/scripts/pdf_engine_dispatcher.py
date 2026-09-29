@@ -103,10 +103,10 @@ def main():
         extract_with_pymupdf(args.file, args.output_dir, args.style_mapping, output_stem=args.output_stem)
     else:
         # v2.1 修正：避免使用 subprocess 啟動不存在於 _MEIPASS 的 process_ocr.py
+        proc = None
         try:
             from src.scripts import process_ocr
             # 優先嘗試透過 module import 執行
-            import argparse
             ocr_args = argparse.Namespace(
                 file=args.file,
                 output_dir=args.output_dir,
@@ -153,7 +153,7 @@ def main():
                 import shutil
                 shutil.move(raw_out, target_out)
 
-        if proc.returncode != 0:
+        if proc is not None and proc.returncode != 0:
             raise RuntimeError(f"RapidDoc execution failed with code {proc.returncode}")
 
 if __name__ == "__main__":
