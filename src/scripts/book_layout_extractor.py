@@ -335,10 +335,11 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
         page_paragraphs = []
         current_para_lines = []
         current_para_is_kaiti = False
+        current_para_x0 = 0.0
         last_heading_text = ""
 
         def flush_current_para():
-            nonlocal current_para_lines, current_para_is_kaiti
+            nonlocal current_para_lines, current_para_is_kaiti, current_para_x0
             if current_para_lines:
                 # Splice lines smoothly
                 para_text = ""
@@ -358,6 +359,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 page_paragraphs.append(para_text)
                 current_para_lines = []
                 current_para_is_kaiti = False
+                current_para_x0 = 0.0
         
         for bb in body_blocks:
             lines = bb.get("lines", [])
@@ -442,12 +444,21 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             # Check indentation to determine whether this block starts a new paragraph
             is_indented = (bbox[0] - base_x0) >= 12.0
             
-            # If this block has an indent, flush the previous paragraph
-            if is_indented:
-                flush_current_para()
-                
-            if is_block_kaiti:
-                current_para_is_kaiti = True
+            if current_para_lines:
+                should_flush = False
+                if is_block_kaiti != current_para_is_kaiti:
+                    should_flush = True
+                elif is_indented and abs(bbox[0] - current_para_x0) >= 5.0:
+                    should_flush = True
+                elif not is_indented and (current_para_x0 - base_x0) >= 12.0:
+                    should_flush = True
+                    
+                if should_flush:
+                    flush_current_para()
+            
+            if not current_para_lines:
+                current_para_x0 = bbox[0]
+                current_para_is_kaiti = is_block_kaiti
                 
             # Process lines in this block, replacing footnote anchors
             for line in lines:

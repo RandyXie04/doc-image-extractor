@@ -68,4 +68,3 @@ models/
 build/
 dist/
 *.exe
-docs/
