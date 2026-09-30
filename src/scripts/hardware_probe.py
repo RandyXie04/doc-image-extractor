@@ -51,8 +51,10 @@ def get_ort_providers():
         import onnxruntime as ort
         import importlib
         importlib.reload(ort)
-        return ort.get_available_providers()
-    except ImportError:
+        if hasattr(ort, 'get_available_providers'):
+            return ort.get_available_providers()
+        return []
+    except Exception:
         return []
 
 def install_directml():
