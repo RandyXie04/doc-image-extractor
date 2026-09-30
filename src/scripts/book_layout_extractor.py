@@ -22,6 +22,11 @@ try:
 except ImportError:
     HeadingDetector = None
 
+try:
+    from src.founder_tools.core.ai_kaiti_classifier import AIKaitiClassifier
+except ImportError:
+    AIKaitiClassifier = None
+
 CIRCLED_MAP = {
     '①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5,
     '⑥': 6, '⑦': 7, '⑧': 8, '⑨': 9, '⑩': 10,
@@ -170,6 +175,23 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
     stem = output_stem or os.path.basename(pdf_path).rsplit(".", 1)[0]
     
     os.makedirs(output_dir, exist_ok=True)
+
+    # ── AI Kaiti Classifier 初始化（若啟用且可用）──
+    ai_kaiti_classifier = None
+    try:
+        from config import CFG, AI
+        if CFG.ai_kaiti_enabled and AIKaitiClassifier is not None:
+            ai_kaiti_classifier = AIKaitiClassifier(
+                api_key=AI.gemini_key,
+                model=CFG.ai_kaiti_model,
+            )
+            if ai_kaiti_classifier.is_available:
+                print("[AI-Kaiti] Gemini Vision 楷體辨識已啟用")
+            else:
+                print("[AI-Kaiti] Gemini API Key 未設定，楷體 AI 辨識已停用")
+                ai_kaiti_classifier = None
+    except ImportError:
+        pass
     out_md_path = os.path.join(output_dir, f"{stem}.md")
     
     audit_data = {
@@ -426,19 +448,37 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 last_heading_text = ""
                 
             # Regular Body Text
-            # Check font for KaiTi
+            # Check font for KaiTi (Rule-based + AI Vision fallback)
             total_chars = 0
             kaiti_chars = 0
+            block_font_names = set()  # 收集此 block 的所有 font name
             for line in lines:
                 for span in line.get("spans", []):
                     span_text = span.get("text", "").strip()
                     if not span_text: continue
                     total_chars += len(span_text)
                     font_name = span.get("font", "").lower()
+                    if font_name:
+                        block_font_names.add(font_name)
                     if "kai" in font_name or "楷" in font_name or "kaiti" in font_name:
                         kaiti_chars += len(span_text)
             
             is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
+            
+            # AI Vision fallback: 若規則型判定失敗且 AI 可用，
+            # 觸發 Gemini Vision 從 PDF 截圖辨識字型。
+            # 適用於所有 font name 無法用關鍵字匹配的情境：
+            #   方正(FZKTK)、Adobe CID、嵌入子集、WPS、任何私有字型...
+            # font_names 啟用「字型名稱學習快取」——
+            # 一旦 Vision 辨識過某 font name，後續同名 block 全部免呼叫 API
+            if not is_block_kaiti and ai_kaiti_classifier is not None:
+                try:
+                    is_block_kaiti = ai_kaiti_classifier.is_block_kaiti(
+                        page=page, block_bbox=bbox, block_text=bb_text,
+                        font_names=list(block_font_names),
+                    )
+                except Exception:
+                    pass  # AI 失敗時靜默降級，使用規則型結果
 
             # Check indentation to determine whether this block starts a new paragraph
             is_indented = (bbox[0] - base_x0) >= 12.0
@@ -547,5 +587,13 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
     
     with open(out_md_path, "w", encoding="utf-8") as f:
         f.write(full_markdown)
+    
+    # ── AI Kaiti 統計輸出 ──
+    if ai_kaiti_classifier is not None:
+        stats_summary = ai_kaiti_classifier.get_stats_summary()
+        print(f"[AI-Kaiti] {stats_summary}")
+        audit_data["ai_kaiti_stats"] = ai_kaiti_classifier.stats
+        if progress_callback:
+            progress_callback(90, f"[AI-Kaiti] {stats_summary}")
         
     return out_md_path, audit_data

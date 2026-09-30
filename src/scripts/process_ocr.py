@@ -30,6 +30,8 @@ try:
     from surya.model.recognition.model import load_model as load_rec_model
     from surya.model.recognition.processor import load_processor as load_rec_processor
     from surya.model.detection.model import load_model as load_det_model, load_processor as load_det_processor
+    from surya.model.layout.model import load_model as load_layout_model
+    from surya.model.layout.processor import load_processor as load_layout_processor
     from surya.settings import settings
     from PIL import Image
     import fitz
@@ -457,8 +459,8 @@ def main(args=None):
 
     rec_model = load_rec_model()
     rec_processor = load_rec_processor()
-    layout_model = load_det_model(checkpoint=settings.LAYOUT_MODEL_CHECKPOINT)
-    layout_processor = load_det_processor(checkpoint=settings.LAYOUT_MODEL_CHECKPOINT)
+    layout_model = load_layout_model(checkpoint=settings.LAYOUT_MODEL_CHECKPOINT)
+    layout_processor = load_layout_processor()
 
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
