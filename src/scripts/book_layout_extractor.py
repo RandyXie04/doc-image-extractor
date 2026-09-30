@@ -35,8 +35,9 @@ CIRCLED_MAP = {
     '⑯': 16, '⑰': 17, '⑱': 18, '⑲': 19, '⑳': 20,
 }
 
-# Regex pattern matching any recognised footnote marker (circled / bracketed / numbered-dot)
-FN_MARKER_PATTERN = r'([\u2460-\u2473]|\[\d+\]|\(\d+\)|\d+\.)'
+# Regex pattern matching any recognised footnote marker (circled / bracketed / numbered-dot / bare number with space)
+# Added expanded unicode ranges for circled numbers > 10 and dingbats.
+FN_MARKER_PATTERN = r'([\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|\[\d+\]|\(\d+\)|\d+\.)'
 
 
 def _circled_to_int(marker_str: str) -> int:
@@ -180,7 +181,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
     ai_kaiti_classifier = None
     try:
         from config import CFG, AI
-        if CFG.ai_kaiti_enabled and AIKaitiClassifier is not None:
+        if False and CFG.ai_kaiti_enabled and AIKaitiClassifier is not None:
             ai_kaiti_classifier = AIKaitiClassifier(
                 api_key=AI.gemini_key,
                 model=CFG.ai_kaiti_model,
@@ -285,10 +286,10 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 r'^\s*(' + FN_MARKER_PATTERN + r')\s*', block_text
             ))
 
-            if bbox[1] >= page_h * 0.72 and avg_size <= 9.5:
+            if bbox[1] >= page_h * 0.65:
                 if starts_with_fn_marker:
                     is_fn = True
-                elif footnote_blocks:
+                elif footnote_blocks and avg_size <= 10.0:
                     # Immediate subsequent block below a footnote block with small font
                     is_fn = True
 
@@ -377,7 +378,8 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                         else:
                             para_text += " " + line_txt
                 if current_para_is_kaiti:
-                    para_text = "> " + para_text
+                    # Apply custom Word style instead of basic blockquote
+                    para_text = '::: {custom-style="楷體2"}\n' + para_text + '\n:::'
                 page_paragraphs.append(para_text)
                 current_para_lines = []
                 current_para_is_kaiti = False
@@ -460,7 +462,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                     font_name = span.get("font", "").lower()
                     if font_name:
                         block_font_names.add(font_name)
-                    if "kai" in font_name or "楷" in font_name or "kaiti" in font_name:
+                    if "kai" in font_name or "楷" in font_name or "kt" in font_name:
                         kaiti_chars += len(span_text)
             
             is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
@@ -487,7 +489,9 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 should_flush = False
                 if is_block_kaiti != current_para_is_kaiti:
                     should_flush = True
-                elif is_indented and abs(bbox[0] - last_block_x0) >= 5.0:
+                # A new paragraph is indicated by an increase in indentation (e.g. from 2 chars to 4 chars)
+                # or a large jump in indent. We use > 5.0 instead of abs() to avoid breaking on hanging indents
+                elif is_indented and (bbox[0] - last_block_x0) >= 5.0:
                     should_flush = True
                     
                 if should_flush:
