@@ -514,8 +514,15 @@ def main(args=None):
                 if len(images) >= 200: break                
             print(json.dumps({"progress": 20, "message": f"[INFO] Extracted {len(images)} pages. Running layout..."}))
             sys.stdout.flush()
-            layout_results = batch_layout_detection(images, layout_model, layout_processor)
+            sys.stdout.flush()
             
+            chunk_size = 10
+            layout_results = []
+            for i in range(0, len(images), chunk_size):
+                chunk = images[i:i+chunk_size]
+                chunk_res = batch_layout_detection(chunk, layout_model, layout_processor)
+                layout_results.extend(chunk_res)
+                
             print(json.dumps({"progress": 30, "message": f"[INFO] Running OCR..."}))
             sys.stdout.flush()
             # Construct bboxes for block-level OCR
@@ -535,7 +542,13 @@ def main(args=None):
                 page_bboxes.append(bboxes)
                 box_mappings.append(mapping)
                 
-            ocr_results = run_recognition(images, [["zh"]] * len(images), rec_model, rec_processor, bboxes=page_bboxes)
+            ocr_results = []
+            for i in range(0, len(images), chunk_size):
+                chunk_imgs = images[i:i+chunk_size]
+                chunk_langs = [["zh"]] * len(chunk_imgs)
+                chunk_bboxes = page_bboxes[i:i+chunk_size]
+                chunk_ocr = run_recognition(chunk_imgs, chunk_langs, rec_model, rec_processor, bboxes=chunk_bboxes)
+                ocr_results.extend(chunk_ocr)
 
             pdf_info_list = []
             for page_idx, (img, layout, ocr, mapping) in enumerate(zip(images, layout_results, ocr_results, box_mappings)):
