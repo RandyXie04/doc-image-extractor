@@ -6,195 +6,169 @@
     <title>書籍轉檔與文檔數位化工具箱</title>
     <style>
         :root {
-            --primary: #6366f1;
-            --primary-hover: #4f46e5;
-            --bg: transparent;
-            --card-bg: rgba(255, 255, 255, 0.7);
-            --text-main: #1e293b;
-            --text-muted: #64748b;
-            --border: rgba(255, 255, 255, 0.5);
+            --primary: #18181b;
+            --text-main: #18181b;
+            --text-muted: #71717a;
+            --border: #e4e4e7;
+            --card-bg: #ffffff;
         }
 
         body {
             /* Handled globally by sidebar.css */
-            font-family: 'Inter', system-ui, sans-serif;
         }
 
         .container {
-            max-width: 1100px;
+            max-width: 960px;
             width: 100%;
         }
 
-        .hero {
-            background: linear-gradient(135deg, #1e1b4b 0%, #312e81 40%, #4f46e5 100%);
-            border-radius: 24px;
-            padding: 3rem 4rem;
-            color: white;
-            box-shadow: 0 20px 40px rgba(49, 46, 129, 0.2), inset 0 1px 0 rgba(255,255,255,0.2);
+        .header {
             margin-bottom: 3rem;
-            text-align: center;
-            position: relative;
-            overflow: hidden;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header h1 { 
+            margin: 0 0 0.5rem; 
+            font-size: 2rem; 
+            letter-spacing: -0.02em; 
+            font-weight: 600; 
+            color: var(--text-main);
         }
         
-        .hero::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            left: -50%;
-            width: 200%;
-            height: 200%;
-            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 60%);
-            animation: rotate 20s linear infinite;
+        .header p { 
+            margin: 0; 
+            font-size: 1.125rem; 
+            color: var(--text-muted);
+            max-width: 600px;
         }
 
-        @keyframes rotate {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        .guide-box {
+            background: #f4f4f5;
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 3rem;
+            border: 1px solid var(--border);
         }
 
-        .hero h1 { margin: 0 0 1rem; font-size: 2.8rem; letter-spacing: -0.03em; font-weight: 700; position: relative; z-index: 1; }
-        .hero p { opacity: 0.9; margin: 0; font-size: 1.2rem; line-height: 1.6; max-width: 800px; margin: 0 auto; position: relative; z-index: 1; font-weight: 300; }
+        .guide-box h2 {
+            font-size: 1rem;
+            margin: 0 0 0.5rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .guide-box p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin: 0;
+            line-height: 1.5;
+        }
+
+        .section-title {
+            margin-bottom: 1.5rem;
+            font-weight: 600;
+            color: var(--text-main);
+            font-size: 1.125rem;
+            letter-spacing: -0.01em;
+        }
 
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 2rem;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
         }
 
         .card {
             background: var(--card-bg);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
             border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 2rem;
+            border-radius: 8px;
+            padding: 1.5rem;
             display: flex;
             flex-direction: column;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            box-shadow: 0 8px 32px rgba(0,0,0,0.05);
             text-decoration: none;
             color: inherit;
-            position: relative;
-            overflow: hidden;
-        }
-        
-        .card::after {
-            content: '';
-            position: absolute;
-            top: 0; left: 0; width: 100%; height: 100%;
-            background: linear-gradient(135deg, rgba(255,255,255,0.4) 0%, transparent 100%);
-            opacity: 0;
-            transition: opacity 0.3s ease;
         }
 
         .card:hover {
-            transform: translateY(-8px) scale(1.02);
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            border-color: var(--primary);
+            border-color: #a1a1aa;
+        }
+
+        .card-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.75rem;
+        }
+
+        .card h3 { 
+            margin: 0 0 0.5rem; 
+            font-size: 1.125rem; 
+            font-weight: 600; 
+            color: var(--text-main); 
         }
         
-        .card:hover::after {
-            opacity: 1;
+        .card p { 
+            color: var(--text-muted); 
+            line-height: 1.5; 
+            margin: 0 0 1.5rem; 
+            font-size: 0.95rem;
+            flex-grow: 1; 
         }
-
-        .badge {
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 8px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            margin-bottom: 1.2rem;
-            width: max-content;
-            letter-spacing: 0.02em;
-            position: relative;
-            z-index: 1;
-        }
-
-        .badge.purple { background: #eef2ff; color: #4f46e5; border: 1px solid #c7d2fe; }
-        .badge.blue { background: #e0f2fe; color: #0284c7; border: 1px solid #bae6fd; }
-        .badge.green { background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; }
-        .badge.orange { background: #fff7ed; color: #ea580c; border: 1px solid #fed7aa; }
-
-        .card h3 { margin: 0 0 1rem; font-size: 1.4rem; font-weight: 700; color: #0f172a; position: relative; z-index: 1; }
-        .card p { color: var(--text-muted); line-height: 1.6; margin-bottom: 1.5rem; flex-grow: 1; position: relative; z-index: 1; font-weight: 400; }
 
         .action-text {
-            color: var(--primary);
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-            position: relative;
-            z-index: 1;
-            font-size: 1.05rem;
-        }
-
-        .action-text span { transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
-        .card:hover .action-text span { transform: translateX(6px); }
-        
-        .section-header {
-            margin-bottom: 1.5rem;
-            font-weight: 700;
-            color: #1e1b4b;
-            border-bottom: 2px solid rgba(99, 102, 241, 0.2);
-            padding-bottom: 0.5rem;
-            font-size: 1.2rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            color: var(--text-main);
+            font-weight: 500;
+            font-size: 0.875rem;
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="hero">
-            <h1>📚 書籍轉檔與文檔數位化工具箱</h1>
-            <p>全方位整合「AI 公式萃取」、「文件圖片無損提取」、「方正排版 CMap 標點修復」與「自動化校註」的一站式桌面處理中心。</p>
+        <div class="header">
+            <h1>書籍轉檔與文檔數位化工具箱</h1>
+            <p>整合公式萃取、圖片提取、編碼修復與自動化校註的處理中心。</p>
         </div>
 
-        <div style="margin-bottom: 2.5rem; background: rgba(255,255,255,0.6); backdrop-filter: blur(10px); padding: 1.5rem 2rem; border-radius: 16px; border: 1px solid rgba(255,255,255,0.8); box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
-            <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: #0f172a; font-weight: 700; display: flex; align-items: center; gap: 8px;">
-                <span>✨</span> 新手指南：建議處理流程
-            </h2>
-            <p style="color: #475569; line-height: 1.6; font-size: 1.05rem; margin: 0;">若是處理古老電子書或學術論文，建議依循以下步驟進行數位化。您可以隨時點選左側面板快速切換工具。</p>
+        <div class="guide-box">
+            <h2>處理流程建議</h2>
+            <p>處理古老電子書或學術論文時，請先進行編碼修復與圖片提取，確認無誤後再使用主轉換引擎進行 OCR 與格式重構。</p>
         </div>
 
-        <div class="section-header">
-            <span>⚙️</span> 階段一：修復與前置準備
-        </div>
-        <div class="grid" style="margin-bottom: 3rem;">
-            <a href="/static/founder_repair.html" class="card" style="border-left: 5px solid #16a34a;">
-                <span class="badge green">第一步：編碼修復</span>
-                <h3>🛠️ 方正書版亂碼修復</h3>
-                <p>若來源是早期方正系統出版的 PDF，請先經過此工具修復 CMap 編碼缺陷與亂碼，再進入後續處理。</p>
-                <div class="action-text">開啟工具 <span>→</span></div>
+        <div class="section-title">階段一：修復與前置準備</div>
+        <div class="grid">
+            <a href="/static/founder_repair.html" class="card">
+                <div class="card-label">編碼修復</div>
+                <h3>方正書版亂碼修復</h3>
+                <p>修復早期方正系統出版 PDF 的 CMap 編碼缺陷與亂碼問題。</p>
+                <div class="action-text">開啟工具</div>
             </a>
             
-            <a href="/static/extract_images.html" class="card" style="border-left: 5px solid #0284c7;">
-                <span class="badge blue">可選：資源擷取</span>
-                <h3>🖼️ 文件圖片無損提取</h3>
-                <p>在轉換格式前，若需保留原版插圖，可使用此工具一鍵打包 PDF 內所有高畫質原始圖片。</p>
-                <div class="action-text">開啟工具 <span>→</span></div>
+            <a href="/static/extract_images.html" class="card">
+                <div class="card-label">資源擷取</div>
+                <h3>文件圖片無損提取</h3>
+                <p>一鍵打包 PDF 內所有高畫質原始圖片，保留原版插圖。</p>
+                <div class="action-text">開啟工具</div>
             </a>
         </div>
 
-        <div class="section-header">
-            <span>🚀</span> 階段二：主轉換引擎
-        </div>
+        <div class="section-title">階段二：主轉換引擎</div>
         <div class="grid">
-            <a href="/static/formula.html" class="card" style="border-left: 5px solid #4f46e5;">
-                <span class="badge purple">理科文獻專用</span>
-                <h3>🔍 PDF 數學公式提取</h3>
-                <p>適合包含大量數學公式的理工論文。使用 YOLOv8 模型定位獨立公式，精準轉換為 Word 格式並保留公式圖片。</p>
-                <div class="action-text">開啟工具 <span>→</span></div>
+            <a href="/static/formula.html" class="card">
+                <div class="card-label">理科文獻專用</div>
+                <h3>PDF 數學公式提取</h3>
+                <p>使用 YOLOv8 模型定位獨立公式，轉換為 Word 格式並保留公式圖片。</p>
+                <div class="action-text">開啟工具</div>
             </a>
 
-            <a href="/static/ocr_pipeline.html" class="card" style="border-left: 5px solid #ea580c;">
-                <span class="badge orange">純文字與表格專用</span>
-                <h3>📄 全自動 OCR 與排版</h3>
-                <p>適合圖文混排、大量表格或掃描檔的純文字書籍。使用 RapidDoc 自動版面分析並重建層級排版。</p>
-                <div class="action-text">啟動管線 <span>→</span></div>
+            <a href="/static/ocr_pipeline.html" class="card">
+                <div class="card-label">純文字與表格專用</div>
+                <h3>全自動 OCR 與排版</h3>
+                <p>使用 RapidDoc 自動版面分析，重建層級排版，適合圖文混排文件。</p>
+                <div class="action-text">啟動管線</div>
             </a>
         </div>
     </div>
