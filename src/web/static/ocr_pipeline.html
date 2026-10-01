@@ -190,10 +190,10 @@
         </div>
         
         <!-- Outline Editor Modal/Section -->
-        <div id="outlineEditorSection" style="display: none; margin-top: 2rem; background: #f8fafc; padding: 1.5rem; border-radius: 12px; border: 1px solid #cbd5e1;">
+        <div id="outlineEditorSection" style="display: none; margin-top: 2rem; background: rgba(255, 255, 255, 0.02); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border);">
             <h3 style="margin-top: 0;">🌳 大綱微調 (Outline Editor)</h3>
-            <p style="color: #64748b; font-size: 0.9rem;">系統擷取出的標題如下，您可以手動修正階層，完成後點擊重新產生 DOCX。</p>
-            <div id="outlineList" style="max-height: 400px; overflow-y: auto; background: white; padding: 1rem; border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 1rem;">
+            <p style="color: var(--text-muted); font-size: 0.9rem;">系統擷取出的標題如下，您可以手動修正階層，完成後點擊重新產生 DOCX。</p>
+            <div id="outlineList" style="max-height: 400px; overflow-y: auto; background: rgba(0, 0, 0, 0.2); padding: 1rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem;">
                 載入中...
             </div>
             <button id="saveOutlineBtn" class="btn" style="background: #16a34a; width: 100%;">儲存並重新產生 Word 文件</button>
@@ -536,9 +536,9 @@
                 }
 
             } catch (err) {
-                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background:#fef2f2; border:1px solid #f87171; border-radius:8px; color:#dc2626;">
+                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background: rgba(220, 38, 38, 0.1); border:1px solid rgba(220, 38, 38, 0.3); border-radius:8px; color:#ef4444;">
                     ❌ <b>執行失敗：</b>${err.message} <br>
-                    <button type="button" onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: white; border: 1px solid #f87171; border-radius: 6px;">🔄 重新嘗試上傳</button>
+                    <button type="button" onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px;">🔄 重新嘗試上傳</button>
                 </div>`;
                 submitBtn.disabled = false;
             }

@@ -191,7 +191,7 @@ def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_re
         # Criterion B: Heuristic fallback in lower 28% of page with footnote prefix
         if not is_fn and y0 > (page_h * 0.72) and b_type not in ["Title", "Table", "Figure"]:
             blk_txt = extract_block_text(block)
-            if re.search(r'^\s*(?:[\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|\[\d+\]|[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|\u6ce8\s*\d+|\(?\d+\)\s*[\u4e00-\u9fff]|\d+[.、\s])', blk_txt):
+            if re.search(r'^\s*(?:[\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|\[\d+\]|[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|\u6ce8\s*\d+|\(?\d+\)\s*[\u4e00-\u9fff])', blk_txt):
                 is_fn = True
 
         indexed_blocks.append({
@@ -280,9 +280,14 @@ def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_re
             fn_ref_tag = f"[^p{page_num}_{fn_id}]"
 
             matched = False
+            
+            # Determine if the marker is 'weak' (just digits, punctuation, or spaces).
+            # Strong markers like ① or [1] are safe for naive string replacement.
+            is_weak_marker = bool(not marker_str or re.fullmatch(r'[\d.、\s()]+', marker_str))
+            
             # Check in body markdown
             for p_item in rendered_initial:
-                if marker_str and marker_str in p_item["md"]:
+                if not is_weak_marker and marker_str and marker_str in p_item["md"]:
                     p_item["md"] = p_item["md"].replace(marker_str, fn_ref_tag, 1)
                     matched = True
                     break

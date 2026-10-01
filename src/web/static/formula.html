@@ -25,6 +25,7 @@
         :root[data-theme="light"] .upload-area { background-color: rgba(255, 255, 255, 0.6); }
         :root[data-theme="light"] .option-card { background: rgba(255, 255, 255, 0.6); }
         :root[data-theme="light"] .input-group input[type="number"] { background: rgba(255, 255, 255, 0.6); }
+        :root[data-theme="light"] #previewContainer { background: rgba(255, 255, 255, 0.6); }
 
         * {
             box-sizing: border-box;
@@ -283,7 +284,7 @@
         }
         
         #previewContainer {
-            background: white;
+            background: rgba(255, 255, 255, 0.02);
             padding: 1.5rem;
             border-radius: 16px;
             border: 1px solid var(--border-color);
@@ -351,7 +352,7 @@
                 </label>
             </div>
 
-            <div class="options-group" style="margin-top: 0.8rem; background: #f8fafc; padding: 0.8rem; border-radius: 8px; border: 1px solid var(--border-color);">
+            <div class="options-group" style="margin-top: 0.8rem; background: rgba(255, 255, 255, 0.02); padding: 0.8rem; border-radius: 8px; border: 1px solid var(--border-color);">
                 <label class="option-card" style="margin: 0; background: transparent; border: none; padding: 0.3rem;">
                     <input type="checkbox" name="extract_inline"> 
                     <span style="font-size: 0.9rem;">包含顯著行內公式 (Inline Math)</span>
@@ -500,9 +501,9 @@
                     updatePreview();
                 }
             } catch (e) {
-                fileNameDisplay.innerHTML = `<div style="padding:1rem; background:#fef2f2; border:1px solid #f87171; border-radius:8px; color:#dc2626;">
+                fileNameDisplay.innerHTML = `<div style="padding:1rem; background: rgba(220, 38, 38, 0.1); border:1px solid rgba(220, 38, 38, 0.3); border-radius:8px; color:#ef4444;">
                     ❌ <b>上傳失敗：</b>${e.message || e} <br>
-                    <button onclick="fileInput.click()" style="margin-top:10px; padding: 5px 10px; cursor:pointer; background: white; border: 1px solid #f87171; border-radius: 6px;">🔄 重新選擇檔案</button>
+                    <button onclick="fileInput.click()" style="margin-top:10px; padding: 5px 10px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px;">🔄 重新選擇檔案</button>
                 </div>`;
             }
         }
@@ -691,15 +692,15 @@
                                                 savedInfo.id = 'savedPathDisplay';
                                                 savedInfo.style.marginTop = '0.8rem';
                                                 savedInfo.style.padding = '0.8rem';
-                                                savedInfo.style.background = '#f0fdf4';
-                                                savedInfo.style.border = '1px solid #bbf7d0';
+                                                savedInfo.style.background = 'rgba(22, 163, 74, 0.1)';
+                                                savedInfo.style.border = '1px solid rgba(22, 163, 74, 0.3)';
                                                 savedInfo.style.borderRadius = '8px';
-                                                savedInfo.style.color = '#166534';
+                                                savedInfo.style.color = '#4ade80';
                                                 savedInfo.style.fontSize = '0.9rem';
                                                 downloadActionGroup.appendChild(savedInfo);
                                             }
                                             savedInfo.innerHTML = `<div><b>Word 文件已成功儲存至：</b></div>
-                                            <div style="margin:4px 0; word-break:break-all; font-family:monospace; background:#fff; padding:6px; border-radius:4px; border:1px solid #dcfce7;">${saveResult.saved_path}</div>
+                                            <div style="margin:4px 0; word-break:break-all; font-family:monospace; background:rgba(0,0,0,0.2); padding:6px; border-radius:4px; border:1px solid rgba(22, 163, 74, 0.2);">${saveResult.saved_path}</div>
                                             <button id="openSavedDirBtn" type="button" style="margin-top:6px; padding:6px 12px; background:#15803d; color:white; border:none; border-radius:6px; cursor:pointer; font-size:0.85rem;">📂 在 Windows 檔案總管中開啟</button>`;
 
                                             document.getElementById('openSavedDirBtn').onclick = () => {

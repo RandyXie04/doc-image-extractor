@@ -172,9 +172,9 @@
                     statusDiv.textContent = '⚠️ 此文件中未偵測到任何內嵌圖片。';
                 }
             } catch (err) {
-                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background:#fef2f2; border:1px solid #f87171; border-radius:8px; color:#dc2626;">
+                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background: rgba(220, 38, 38, 0.1); border:1px solid rgba(220, 38, 38, 0.3); border-radius:8px; color:#ef4444;">
                     ❌ <b>發生錯誤：</b>${err.message} <br>
-                    <button onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: white; border: 1px solid #f87171; border-radius: 6px;">🔄 重新嘗試</button>
+                    <button onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px;">🔄 重新嘗試</button>
                 </div>`;
             } finally {
                 submitBtn.disabled = false;

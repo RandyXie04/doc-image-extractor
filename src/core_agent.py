@@ -646,8 +646,8 @@ class PDFConversionAgent:
             import torch
             use_gpu = CFG.use_gpu and torch.cuda.is_available()
             # For GPU, 2-4 workers give max throughput without VRAM contention on 6GB VRAM.
-            # For CPU, 4-8 workers avoid overwhelming RAM.
-            num_workers = min(3, multiprocessing.cpu_count()) if use_gpu else min(8, multiprocessing.cpu_count())
+            # For CPU, limit to 1 worker to avoid instant RAM exhaustion and PyTorch thread thrashing.
+            num_workers = min(3, multiprocessing.cpu_count()) if use_gpu else 1
             device_str = f"GPU: {torch.cuda.get_device_name(0)}" if use_gpu else "CPU"
             log_fn(f"[SYS] 啟動 Multiprocessing Pool (Workers: {num_workers}, 運算裝置: {device_str}) 進行平行公式萃取...")
 
