@@ -138,10 +138,19 @@
             <div id="previewContainer" class="card-section" style="display: none; text-align: center;">
                 <h4 style="margin-top: 0; color: var(--text-main); font-size: 1rem;">🖼️ 裁切邊界預覽 (紅色=頂部, 藍色=底部, 綠色=左右)</h4>
                 
-                <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin: 0.8rem 0;">
-                    <button type="button" id="prevPageBtn" class="page-ctrl-btn">◀ 上一頁</button>
-                    <span style="font-size: 0.9rem; color: #475569;">預覽頁碼: <span id="previewPageDisplay" style="font-weight: bold; color: #ea580c;">1</span> / <span id="totalPagesDisplay">?</span></span>
-                    <button type="button" id="nextPageBtn" class="page-ctrl-btn">下一頁 ▶</button>
+                <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin: 0.8rem 0; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 0.5rem;">
+                        <button type="button" id="prevPageBtn" class="page-ctrl-btn">◀ 上一頁</button>
+                        <span style="font-size: 0.9rem; color: #475569;">預覽頁碼: <span id="previewPageDisplay" style="font-weight: bold; color: #ea580c;">1</span> / <span id="totalPagesDisplay">?</span></span>
+                        <button type="button" id="nextPageBtn" class="page-ctrl-btn">下一頁 ▶</button>
+                    </div>
+                    <div style="border-left: 1px solid var(--border); padding-left: 1rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+                        <label for="startPageInput" style="font-weight: 600;">轉檔範圍:</label>
+                        <input type="number" id="startPageInput" min="1" placeholder="首頁" style="width: 60px; padding: 4px; border: 1px solid var(--border); border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text-main);">
+                        <span>~</span>
+                        <input type="number" id="endPageInput" min="1" placeholder="末頁" style="width: 60px; padding: 4px; border: 1px solid var(--border); border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text-main);">
+                        <span style="color: var(--text-muted); font-size: 0.8rem;">(留空代表全部)</span>
+                    </div>
                 </div>
 
                 <div class="slider-grid">
@@ -445,6 +454,8 @@
             formData.append('footer_ratio', footerSlider.value);
             formData.append('left_ratio', leftSlider.value);
             formData.append('right_ratio', rightSlider.value);
+            formData.append('start_page', document.getElementById('startPageInput')?.value || 0);
+            formData.append('end_page', document.getElementById('endPageInput')?.value || 0);
 
             statusDiv.innerHTML = `
                 <div style="margin-top:20px; padding:20px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; text-align: left;">

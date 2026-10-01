@@ -721,7 +721,9 @@ async def upload_and_run_ocr(
     header_ratio: float = Form(0.1),
     footer_ratio: float = Form(0.1),
     left_ratio: float = Form(0.0),
-    right_ratio: float = Form(0.0)
+    right_ratio: float = Form(0.0),
+    start_page: int = Form(0),
+    end_page: int = Form(0)
 ):
     import sys
     import shutil
@@ -747,25 +749,34 @@ async def upload_and_run_ocr(
     else:
         raise HTTPException(status_code=400, detail="請提供 PDF 檔案或檔案代碼")
 
-    # WYSIWYG pre-crop using fitz
+    # WYSIWYG pre-crop and page range selection using fitz
     input_pdf_path = raw_pdf_path
-    if header_ratio > 0 or footer_ratio > 0 or left_ratio > 0 or right_ratio > 0:
+    if header_ratio > 0 or footer_ratio > 0 or left_ratio > 0 or right_ratio > 0 or start_page > 0 or end_page > 0:
         cropped_pdf_path = pdf_dir / f"cropped_{filename_stem}.pdf"
         try:
             with fitz.open(raw_pdf_path) as doc:
+                total_pages = len(doc)
+                s_page = max(1, start_page) if start_page > 0 else 1
+                e_page = min(total_pages, end_page) if end_page > 0 else total_pages
+                
+                # Filter pages by only keeping the selected range
+                if s_page > 1 or e_page < total_pages:
+                    doc.select(range(s_page - 1, e_page))
+                
                 for page in doc:
-                    rect = page.rect
-                    y_top = rect.height * max(0.0, min(header_ratio, 0.49))
-                    f_r = footer_ratio if footer_ratio < 0.5 else (1.0 - footer_ratio)
-                    y_bottom = rect.height * (1.0 - max(0.0, min(f_r, 0.49)))
-                    x_left = rect.width * max(0.0, min(left_ratio, 0.49))
-                    r_r = right_ratio if right_ratio < 0.5 else (1.0 - right_ratio)
-                    x_right = rect.width * (1.0 - max(0.0, min(r_r, 0.49)))
-                    page.set_cropbox(fitz.Rect(x_left, y_top, x_right, y_bottom))
+                    if header_ratio > 0 or footer_ratio > 0 or left_ratio > 0 or right_ratio > 0:
+                        rect = page.rect
+                        y_top = rect.height * max(0.0, min(header_ratio, 0.49))
+                        f_r = footer_ratio if footer_ratio < 0.5 else (1.0 - footer_ratio)
+                        y_bottom = rect.height * (1.0 - max(0.0, min(f_r, 0.49)))
+                        x_left = rect.width * max(0.0, min(left_ratio, 0.49))
+                        r_r = right_ratio if right_ratio < 0.5 else (1.0 - right_ratio)
+                        x_right = rect.width * (1.0 - max(0.0, min(r_r, 0.49)))
+                        page.set_cropbox(fitz.Rect(x_left, y_top, x_right, y_bottom))
                 doc.save(cropped_pdf_path)
             input_pdf_path = cropped_pdf_path
         except Exception as crop_err:
-            print(f"[Warning] PDF pre-crop failed: {crop_err}")
+            print(f"[Warning] PDF pre-crop/page-range failed: {crop_err}")
             input_pdf_path = raw_pdf_path
 
     ocr_progress_dict[filename_stem] = {"progress": 0, "message": "正在初始化任務...", "status": "processing"}
