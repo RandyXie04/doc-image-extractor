@@ -3,13 +3,32 @@
 :root {
     --primary: #2563eb;
     --primary-hover: #1d4ed8;
-    --bg-color: #fafafa;
-    --sidebar-bg: #18181b;
-    --sidebar-border: #27272a;
-    --text-main: #18181b;
-    --text-muted: #71717a;
-    --card-bg: #ffffff;
-    --border: #e4e4e7;
+    --bg-color: #111111;
+    --sidebar-bg: #0d0d0d;
+    --sidebar-border: rgba(255, 255, 255, 0.08);
+    --text-main: #f4f4f5;
+    --text-muted: #a1a1aa;
+    --card-bg: rgba(255, 255, 255, 0.03);
+    --border: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="light"] {
+    --bg-color: #f1f5f9;
+    --sidebar-bg: rgba(255, 255, 255, 0.85);
+    --sidebar-border: rgba(148, 163, 184, 0.3);
+    --text-main: #0f172a;
+    --text-muted: #475569;
+    --card-bg: rgba(255, 255, 255, 0.7);
+    --border: rgba(148, 163, 184, 0.3);
+}
+
+:root[data-theme="light"] #sidebar a.nav-link { color: #475569; }
+:root[data-theme="light"] #sidebar a.nav-link:hover { background: rgba(0, 0, 0, 0.05); color: #0f172a; }
+:root[data-theme="light"] #sidebar a.nav-link.active { background: rgba(0, 0, 0, 0.08); color: #0f172a; border-color: rgba(0,0,0,0.1); }
+:root[data-theme="light"] #sidebar .brand { color: #0f172a; }
+
+* {
+    box-sizing: border-box;
 }
 
 body {
@@ -33,6 +52,7 @@ body {
     max-width: 260px !important;
     flex-shrink: 0 !important;
     background: var(--sidebar-bg);
+    backdrop-filter: blur(8px);
     color: #f4f4f5;
     display: flex;
     flex-direction: column;
@@ -84,13 +104,14 @@ body {
 }
 
 #sidebar a.nav-link:hover {
-    background: #27272a;
+    background: rgba(255, 255, 255, 0.05);
     color: #f4f4f5;
 }
 
 #sidebar a.nav-link.active {
-    background: #27272a;
+    background: rgba(255, 255, 255, 0.1);
     color: #ffffff;
+    border: 1px solid rgba(255, 255, 255, 0.05);
 }
 
 #sidebar .nav-icon {
@@ -142,4 +163,28 @@ button, .btn {
 }
 ::-webkit-scrollbar-thumb:hover {
     background: #a1a1aa;
+}
+
+@media (max-width: 768px) {
+    #main-content {
+        padding: 1.5rem !important;
+    }
+    .container {
+        padding: 1.5rem !important;
+    }
+    #sidebar {
+        width: 220px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    #main-content {
+        padding: 1rem !important;
+    }
+    .container {
+        padding: 1.2rem !important;
+    }
+    #sidebar {
+        width: 180px !important;
+    }
 }

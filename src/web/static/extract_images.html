@@ -9,9 +9,20 @@
             --primary: #6366f1;
             --primary-hover: #4f46e5;
             --bg: transparent;
-            --card: rgba(255, 255, 255, 0.85);
-            --text-main: #0f172a;
+            --card: rgba(255, 255, 255, 0.03);
+            --border: rgba(255, 255, 255, 0.08);
+            --text-main: #f4f4f5;
+            --text-muted: #a1a1aa;
         }
+        
+        :root[data-theme="light"] {
+            --bg: transparent;
+            --card: rgba(255, 255, 255, 0.7);
+            --border: rgba(148, 163, 184, 0.3);
+            --text-main: #0f172a;
+            --text-muted: #475569;
+        }
+        :root[data-theme="light"] .upload-area { background-color: rgba(255, 255, 255, 0.6); }
         body { font-family: 'Inter', system-ui, sans-serif; display: flex; justify-content: center; padding: 3rem; color: var(--text-main); }
         .container { 
             background: var(--card); 
@@ -31,8 +42,11 @@
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
         .header a { text-decoration: none; color: var(--primary); font-weight: 600; background: rgba(99, 102, 241, 0.1); padding: 6px 12px; border-radius: 6px; transition: 0.2s; }
         .header a:hover { background: rgba(99, 102, 241, 0.2); }
-        .upload-area { border: 2px dashed #94a3b8; padding: 3.5rem; text-align: center; border-radius: 16px; cursor: pointer; margin-bottom: 1.5rem; background: rgba(248, 250, 252, 0.6); transition: all 0.3s; }
-        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background: rgba(238, 242, 255, 0.8); transform: scale(1.01); }
+        .upload-area { border: 2px dashed var(--border); border-radius: 16px; padding: 3.5rem 2rem; text-align: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); margin-bottom: 2rem; background-color: rgba(255, 255, 255, 0.02); position: relative; overflow: hidden; }
+        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background-color: rgba(255, 255, 255, 0.05); transform: scale(1.01); }
+        .upload-area svg { width: 56px; height: 56px; color: var(--primary); margin-bottom: 1.2rem; transition: transform 0.3s; }
+        .upload-area:hover svg { transform: translateY(-5px); }
+        .upload-area input[type="file"] { display: none; }
         .btn { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; width: 100%; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); transition: all 0.3s; letter-spacing: 0.02em; }
         .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4); }
         .btn:disabled { background: #cbd5e1; cursor: not-allowed; box-shadow: none; transform: none; }
@@ -52,7 +66,10 @@
 
         <form id="uploadForm">
             <div class="upload-area" id="dropZone">
-                <p>點擊選擇，或將 PDF / DOCX 拖曳至此</p>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <h3 id="fileNameDisplay" style="margin: 0; font-size: 1.1rem; color: var(--text-muted); font-weight: 500;">點擊選擇，或將 PDF / DOCX 拖曳至此</h3>
                 <input type="file" id="fileInput" accept=".pdf,.docx">
             </div>
             

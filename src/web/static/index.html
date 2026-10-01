@@ -5,13 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>書籍轉檔與文檔數位化工具箱</title>
     <style>
-        :root {
-            --primary: #18181b;
-            --text-main: #18181b;
-            --text-muted: #71717a;
-            --border: #e4e4e7;
-            --card-bg: #ffffff;
-        }
+:root {
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --bg-color: #111111;
+    --surface: rgba(255,255,255,0.03);
+    --text-main: #f4f4f5;
+    --text-muted: #a1a1aa;
+    --border: rgba(255,255,255,0.08);
+    --card-bg: var(--surface);
+}
+
+:root[data-theme="light"] {
+    --bg-color: #f1f5f9;
+    --surface: rgba(255,255,255,0.7);
+    --text-main: #0f172a;
+    --text-muted: #475569;
+    --border: rgba(148, 163, 184, 0.3);
+    --card-bg: var(--surface);
+}
 
         body {
             /* Handled globally by sidebar.css */
@@ -44,7 +56,7 @@
         }
 
         .guide-box {
-            background: #f4f4f5;
+            background: var(--surface);
             padding: 1.5rem;
             border-radius: 8px;
             margin-bottom: 3rem;
@@ -92,7 +104,7 @@
         }
 
         .card:hover {
-            border-color: #a1a1aa;
+            border-color: var(--border);
         }
 
         .card-label {
@@ -167,7 +179,7 @@
             <a href="/static/ocr_pipeline.html" class="card">
                 <div class="card-label">純文字與表格專用</div>
                 <h3>全自動 OCR 與排版</h3>
-                <p>使用 RapidDoc 自動版面分析，重建層級排版，適合圖文混排文件。</p>
+                <p>使用 Surya OCR 自動版面分析，重建層級排版，適合圖文混排文件。</p>
                 <div class="action-text">啟動管線</div>
             </a>
         </div>

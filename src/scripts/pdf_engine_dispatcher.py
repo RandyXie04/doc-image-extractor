@@ -78,14 +78,14 @@ def main():
     parser.add_argument("--output_dir", type=str, default="data/03_output", help="Output directory")
     parser.add_argument("--output_stem", type=str, default=None, help="Stem name for output files")
     parser.add_argument("--style_mapping", type=str, default="{}", help="JSON string for heading style mapping")
-    parser.add_argument("--engine", type=str, default="auto", choices=["auto", "pymupdf", "suryaocr"], help="Forced engine choice")
+    parser.add_argument("--engine", type=str, default="auto", choices=["auto", "pymupdf", "suryaocr", "rapiddoc"], help="Forced engine choice")
     parser.add_argument("--header_ratio", type=float, default=0.1)
     parser.add_argument("--footer_ratio", type=float, default=0.1)
     parser.add_argument("--left_ratio", type=float, default=0.0)
     parser.add_argument("--right_ratio", type=float, default=0.0)
     args = parser.parse_args()
 
-    engine_choice = args.engine
+    engine_choice = "suryaocr" if args.engine == "rapiddoc" else args.engine
     
     print(json.dumps({"progress": 5, "message": "[INFO] 正在分析文件類型與文字密度..."}))
     sys.stdout.flush()

@@ -11,7 +11,7 @@
 1. **[🔍 PDF 數學公式提取與核心流程](src/README_MathFormula.md)**
    包含高精度 YOLOv8 模型定位、智慧右界中文說明判定與互動式邊界調整畫布的說明。
 2. **[⚡ 智慧雙引擎 PDF 轉檔與 OCR 管線](src/scripts/README_OCR.md)**
-   包含 PyMuPDF 向量解析、RapidDoc 深度排版 OCR、即時進度條與幾何/語意標題偵測等詳細說明。
+   包含 PyMuPDF 向量解析、Surya OCR 深度排版 OCR、即時進度條與幾何/語意標題偵測等詳細說明。
 3. **[🖼️ 文件圖片無損提取](src/scripts/README_ImageExtractor.md)**
    包含批次拖曳 PDF/Word 檔案進行無損原始高畫質圖片提取的操作說明。
 4. **[🛠️ 方正書版亂碼修復](src/founder_tools/README_Founder.md)**
@@ -31,9 +31,9 @@
  │   ├── core_agent.py       # 公式提取、Word 轉檔與右界中文覆核引擎
  │   ├── founder_tools/      # 樣式範本、標記偵測與啟發式標題偵測 (HeadingDetector)
  │   ├── scripts/            # 核心腳本工具集
- │   │   ├── pdf_engine_dispatcher.py  # ⚡ 智慧雙引擎排程器 (PyMuPDF vs RapidDoc)
+ │   │   ├── pdf_engine_dispatcher.py  # ⚡ 智慧雙引擎排程器 (PyMuPDF vs Surya OCR)
  │   │   ├── native_dialog.py          # 📁 Windows 原生另存新檔對話框子程序
- │   │   ├── process_ocr.py            # 📄 RapidDoc 深度 OCR 版面分析
+ │   │   ├── process_ocr.py            # 📄 Surya OCR 深度版面分析與文字識別
  │   │   ├── md_to_docx.py             # 📝 Markdown 轉換至 Word 格式
  │   │   ├── extract_images.py         # 🖼️ 文件圖片無損批次提取
  │   │   ├── hardware_probe.py         # 💻 GPU 硬體探測與 DirectML 自動配置
@@ -78,7 +78,7 @@ python -m pip install -r requirements.txt
 ### 3. 下載 AI 模型 (本地執行必備)
 本工具箱在完全離線的本地端運行，首次使用或手動部署時請確認以下模型：
 *   **YOLOv8 權重**：請將訓練好的 ONNX 模型放置於專案要求之路徑 (用於公式提取)。
-*   **RapidDoc 權重**：系統在首次執行深度 OCR 管線時，`rapid-doc` 套件會自動從 HuggingFace / ModelScope 下載輕量化 ONNX 模型至本機快取資料夾中，請確保初次執行時有網路連線。若使用原生向量 PDF，則直接透過 PyMuPDF 解析，無需下載此模型。
+*   **Surya OCR 權重**：系統在首次執行深度 OCR 管線時，`surya-ocr` 會自動從 HuggingFace 下載版面分析 (Layout) 與文字識別 (Recognition) 模型權重至快取資料夾中，請確保初次執行時有網路連線。若使用原生向量 PDF，則直接透過 PyMuPDF 解析，無需下載此模型。
 
 ### 4. 啟動桌面應用程式 (WebView2)
 **Windows 使用者**：

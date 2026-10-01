@@ -9,11 +9,22 @@
             --primary-color: #6366f1;
             --primary-hover: #4f46e5;
             --bg-color: transparent;
-            --card-bg: rgba(255, 255, 255, 0.85);
-            --text-main: #0f172a;
-            --text-muted: #64748b;
-            --border-color: rgba(226, 232, 240, 0.8);
+            --card-bg: rgba(255, 255, 255, 0.03);
+            --text-main: #f4f4f5;
+            --text-muted: #a1a1aa;
+            --border-color: rgba(255, 255, 255, 0.08);
         }
+        
+        :root[data-theme="light"] {
+            --bg-color: transparent;
+            --card-bg: rgba(255, 255, 255, 0.7);
+            --text-main: #0f172a;
+            --text-muted: #475569;
+            --border-color: rgba(148, 163, 184, 0.3);
+        }
+        :root[data-theme="light"] .upload-area { background-color: rgba(255, 255, 255, 0.6); }
+        :root[data-theme="light"] .option-card { background: rgba(255, 255, 255, 0.6); }
+        :root[data-theme="light"] .input-group input[type="number"] { background: rgba(255, 255, 255, 0.6); }
 
         * {
             box-sizing: border-box;
@@ -53,7 +64,7 @@
         h1 {
             text-align: center;
             margin-bottom: 0.5rem;
-            color: #1e1b4b;
+            color: var(--text-main);
             font-weight: 700;
             letter-spacing: -0.03em;
         }
@@ -66,21 +77,21 @@
         }
 
         .upload-area {
-            border: 2px dashed #94a3b8;
+            border: 2px dashed var(--border-color);
             border-radius: 16px;
             padding: 3.5rem 2rem;
             text-align: center;
             cursor: pointer;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             margin-bottom: 2rem;
-            background-color: rgba(248, 250, 252, 0.6);
+            background-color: rgba(255, 255, 255, 0.02);
             position: relative;
             overflow: hidden;
         }
 
         .upload-area:hover, .upload-area.dragover {
             border-color: var(--primary-color);
-            background-color: rgba(238, 242, 255, 0.8);
+            background-color: rgba(255, 255, 255, 0.05);
             transform: scale(1.01);
         }
 
@@ -102,14 +113,14 @@
 
         .options-group {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 1.2rem;
             margin-bottom: 1.5rem;
         }
 
         .option-card {
             border: 1px solid var(--border-color);
-            background: white;
+            background: rgba(255, 255, 255, 0.02);
             padding: 1.2rem;
             border-radius: 12px;
             display: flex;
@@ -135,11 +146,13 @@
         .input-group {
             margin-bottom: 2rem;
             display: flex;
+            flex-wrap: wrap;
             gap: 1.2rem;
         }
 
         .input-group div {
             flex: 1;
+            min-width: 200px;
         }
         
         .input-group label {
@@ -147,7 +160,7 @@
             margin-bottom: 0.6rem;
             font-size: 0.9rem;
             font-weight: 600;
-            color: #334155;
+            color: var(--text-main);
         }
 
         .input-group input[type="number"] {
@@ -158,7 +171,8 @@
             outline: none;
             transition: all 0.2s;
             font-size: 1rem;
-            background: white;
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-main);
         }
 
         .input-group input[type="number"]:focus {
