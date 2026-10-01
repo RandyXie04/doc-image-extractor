@@ -481,19 +481,34 @@ async def api_extract_images(
             to_grayscale=to_grayscale
         )
 
+        # 雙重驗證：檢查實際在資料夾中產生的檔案數量
+        actual_files = 0
+        if extracted_folder.exists():
+            actual_files = len([f for f in extracted_folder.iterdir() if f.is_file()])
+        
+        if actual_files == 0:
+            count = 0
+            
+        if count == 0:
+            return {
+                "success": False,
+                "count": 0,
+                "message": "未在此文件中偵測到任何內嵌圖片，或提取過程未產出任何圖檔。"
+            }
+
         extracted_image_tasks[task_id] = {
             "zip_path": str(zip_path),
             "filename": output_zip_name,
-            "count": count
+            "count": actual_files
         }
 
         return {
             "success": True,
-            "count": count,
+            "count": actual_files,
             "download_url": f"/api/download_extracted_images/{task_id}",
             "filename": output_zip_name,
             "source_path": f"data/03_output/{output_zip_name}",
-            "message": f"成功提取 {count} 張圖片！" if count > 0 else "未在此文件中偵測到任何內嵌圖片。"
+            "message": f"成功提取 {actual_files} 張圖片！"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"圖片提取失敗: {str(e)}")

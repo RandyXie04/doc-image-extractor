@@ -5,23 +5,47 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>書籍 PDF 全自動 OCR 與排版</title>
     <style>
-        :root { --primary: #ea580c; --primary-hover: #c2410c; --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 2.5rem 1rem; }
-        .container { background: var(--card); padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 680px; width: 100%; }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .header a { text-decoration: none; color: var(--primary); font-weight: bold; font-size: 0.95rem; }
-        .upload-area { border: 2px dashed #cbd5e1; padding: 2.5rem 1.5rem; text-align: center; border-radius: 12px; cursor: pointer; margin-bottom: 1.5rem; transition: all 0.2s; background: #f8fafc; }
-        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background: #fff7ed; }
-        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.05rem; transition: background 0.2s; }
-        .btn:hover { background: var(--primary-hover); }
-        .btn:disabled { background: #9ca3af; cursor: not-allowed; }
-        #status { margin-top: 1rem; text-align: center; font-weight: 500; color: #475569; }
-        .card-section { background: #f8fafc; padding: 1.25rem; border-radius: 12px; margin-bottom: 1.5rem; border: 1px solid var(--border); }
-        .slider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; text-align: left; }
-        .slider-item { display: flex; flex-direction: column; gap: 4px; }
-        .slider-label { font-size: 0.88rem; font-weight: bold; color: #475569; display: flex; justify-content: space-between; }
-        .page-ctrl-btn { background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 6px; padding: 4px 12px; cursor: pointer; font-size: 0.85rem; font-weight: 600; color: #334155; }
-        .page-ctrl-btn:hover { background: #cbd5e1; }
+        :root {
+            --primary: #ea580c;
+            --primary-hover: #c2410c;
+            --bg: transparent;
+            --card: rgba(255, 255, 255, 0.85);
+            --border: rgba(226, 232, 240, 0.8);
+            --text-main: #0f172a;
+        }
+        body { font-family: 'Inter', system-ui, sans-serif; display: flex; justify-content: center; padding: 3rem 1rem; color: var(--text-main); }
+        .container { 
+            background: var(--card); 
+            backdrop-filter: blur(20px); 
+            -webkit-backdrop-filter: blur(20px);
+            padding: 3rem; 
+            border-radius: 24px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.5); 
+            max-width: 720px; width: 100%; 
+            border: 1px solid rgba(255,255,255,0.6);
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .header a { text-decoration: none; color: var(--primary); font-weight: 600; background: rgba(234, 88, 12, 0.1); padding: 6px 12px; border-radius: 6px; transition: 0.2s; }
+        .header a:hover { background: rgba(234, 88, 12, 0.2); }
+        .upload-area { border: 2px dashed #94a3b8; padding: 3rem 1.5rem; text-align: center; border-radius: 16px; cursor: pointer; margin-bottom: 1.5rem; background: rgba(248, 250, 252, 0.6); transition: all 0.3s; }
+        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background: rgba(255, 247, 237, 0.8); transform: scale(1.01); }
+        .btn { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; width: 100%; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3); transition: all 0.3s; letter-spacing: 0.02em; }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(234, 88, 12, 0.4); }
+        .btn:disabled { background: #cbd5e1; cursor: not-allowed; box-shadow: none; transform: none; }
+        #status { margin-top: 1.5rem; text-align: center; font-weight: 500; color: #475569; }
+        .card-section { background: rgba(255, 255, 255, 0.6); padding: 1.5rem; border-radius: 16px; margin-bottom: 1.5rem; border: 1px solid rgba(226, 232, 240, 0.8); box-shadow: 0 4px 12px rgba(0,0,0,0.02); }
+        .slider-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2rem; text-align: left; }
+        .slider-item { display: flex; flex-direction: column; gap: 6px; }
+        .slider-label { font-size: 0.9rem; font-weight: 600; color: #334155; display: flex; justify-content: space-between; }
+        .page-ctrl-btn { background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 0.9rem; font-weight: 600; color: #334155; transition: 0.2s; }
+        .page-ctrl-btn:hover { background: #e2e8f0; border-color: #94a3b8; }
+        select { padding: 8px 12px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 0.95rem; outline: none; transition: 0.2s; }
+        select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15); }
     </style>
 </head>
 <body>

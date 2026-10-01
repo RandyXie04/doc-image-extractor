@@ -5,17 +5,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>方正排版標點修復</title>
     <style>
-        :root { --primary: #16a34a; --primary-hover: #15803d; --bg: #f8fafc; --card: #ffffff; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 3rem; }
-        .container { background: var(--card); padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 600px; width: 100%; }
+        :root {
+            --primary: #16a34a;
+            --primary-hover: #15803d;
+            --bg: transparent;
+            --card: rgba(255, 255, 255, 0.85);
+            --text-main: #0f172a;
+        }
+        body { font-family: 'Inter', system-ui, sans-serif; display: flex; justify-content: center; padding: 3rem; color: var(--text-main); }
+        .container { 
+            background: var(--card); 
+            backdrop-filter: blur(20px); 
+            -webkit-backdrop-filter: blur(20px);
+            padding: 3rem; 
+            border-radius: 24px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.5); 
+            max-width: 600px; width: 100%; 
+            border: 1px solid rgba(255,255,255,0.6);
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .header a { text-decoration: none; color: var(--primary); font-weight: bold; }
-        .upload-area { border: 2px dashed #cbd5e1; padding: 3rem; text-align: center; border-radius: 12px; cursor: pointer; margin-bottom: 1.5rem; }
-        .upload-area.dragover { border-color: var(--primary); background: #f0fdf4; }
-        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1rem; }
-        .btn:disabled { background: #9ca3af; cursor: not-allowed; }
-        #status { margin-top: 1rem; text-align: center; font-weight: 500; color: #475569; }
-        #downloadBtn { display: none; background: #0284c7; margin-top: 1rem; text-align: center; text-decoration: none; }
+        .header a { text-decoration: none; color: var(--primary); font-weight: 600; background: rgba(22, 163, 74, 0.1); padding: 6px 12px; border-radius: 6px; transition: 0.2s; }
+        .header a:hover { background: rgba(22, 163, 74, 0.2); }
+        .upload-area { border: 2px dashed #94a3b8; padding: 3.5rem; text-align: center; border-radius: 16px; cursor: pointer; margin-bottom: 1.5rem; background: rgba(248, 250, 252, 0.6); transition: all 0.3s; }
+        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background: rgba(240, 253, 244, 0.8); transform: scale(1.01); }
+        .btn { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; width: 100%; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3); transition: all 0.3s; letter-spacing: 0.02em; }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(22, 163, 74, 0.4); }
+        .btn:disabled { background: #cbd5e1; cursor: not-allowed; box-shadow: none; transform: none; }
+        #status { margin-top: 1.5rem; text-align: center; font-weight: 500; color: #475569; }
+        #downloadBtn { display: none; margin-top: 1rem; text-align: center; text-decoration: none; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3); }
+        #downloadBtn:hover { box-shadow: 0 8px 20px rgba(14, 165, 233, 0.4); }
     </style>
 </head>
 <body>
