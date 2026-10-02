@@ -242,6 +242,18 @@ def main():
                     return f"![{alt_text}]({abs_img.replace(os.sep, '/')})"
                 return m.group(0)
             md_content = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', _resolve_img_path, md_content)
+            
+            # 確保圖片 Markdown 語法獨立成行（前後各加空行）
+            md_content = re.sub(
+                r'([^\n])(!\[[^\]]*\]\([^)]*\))',
+                r'\1\n\n\2',
+                md_content
+            )
+            md_content = re.sub(
+                r'(!\[[^\]]*\]\([^)]*\))([^\n])',
+                r'\1\n\n\2',
+                md_content
+            )
 
             temp_md_path = os.path.join(tempfile.gettempdir(), f"temp_{uuid.uuid4().hex}.md")
             with open(temp_md_path, 'w', encoding='utf-8') as f:

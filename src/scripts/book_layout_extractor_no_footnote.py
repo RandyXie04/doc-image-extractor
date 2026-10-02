@@ -208,6 +208,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
     }
     
     final_md_pages = []
+    all_image_blocks = []
     
     for page_idx in range(total_pages):
         page_num = page_idx + 1
@@ -247,9 +248,17 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
         # Step 1: Collect valid text blocks, separate header/footer/footnote
         body_blocks = []
         footnote_blocks = []
+        figure_blocks = []
 
         for b in blocks:
-            if b.get("type") != 0:
+            block_type = b.get("type")
+            
+            if block_type == 1:
+                if not is_page_header(b, page_h, page_w) and not is_page_footer(b, page_h):
+                    figure_blocks.append(b)
+                continue
+                
+            if block_type != 0:
                 continue
 
             # Clean duplicate spans within lines
@@ -504,6 +513,18 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
         # Flush any remaining body text
         flush_current_para()
 
+        # ── Step 3c: Insert figure placeholders (sorted by document order ideally) ──────
+        for block_idx, fig_b in enumerate(figure_blocks):
+            fig_bbox = fig_b.get("bbox", [0, 0, 0, 0])
+            all_image_blocks.append({
+                "page_num": page_num,
+                "block_idx": block_idx,
+                "bbox": fig_bbox,
+                "page_w": page_w,
+                "page_h": page_h,
+            })
+            page_paragraphs.append(f"![__IMG_PLACEHOLDER_{page_num}_{block_idx}__]()")
+
         # ── Step 3b: Render detected tables (inserted in document order) ──────
         # Tables are inserted *after* the body paragraphs gathered so far;
         # a future improvement can sort by y-position across body+table elements.
@@ -546,6 +567,37 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             
     # Write final Markdown file
     full_markdown = "\n\n".join(final_md_pages)
+    
+    # ── Phase 2: Image Extraction for PyMuPDF ──
+    images_dir = os.path.join(output_dir, "images")
+    image_path_map = {}
+    if all_image_blocks:
+        try:
+            from src.scripts.pdf_image_extractor import extract_pdf_images
+            image_path_map = extract_pdf_images(
+                pdf_path=pdf_path,
+                image_blocks=all_image_blocks,
+                output_dir=images_dir
+            )
+            if progress_callback:
+                progress_callback(85, f"[INFO] 成功提取 {len(image_path_map)} 張圖片。")
+        except Exception as img_err:
+            if progress_callback:
+                progress_callback(85, f"[WARN] 圖片提取失敗: {img_err}")
+                
+    # ── Replace image placeholders with actual paths ──
+    import re
+    def _repl_placeholder(match):
+        p_num = int(match.group(1))
+        b_idx = int(match.group(2))
+        saved_path = image_path_map.get((p_num, b_idx))
+        if saved_path:
+            img_rel = os.path.relpath(saved_path, output_dir).replace("\\", "/")
+            img_name = os.path.basename(saved_path)
+            return f"![{img_name}]({img_rel})"
+        return "" # Remove placeholder if not found
+
+    full_markdown = re.sub(r'!\[__IMG_PLACEHOLDER_(\d+)_(\d+)__\]\(\)', _repl_placeholder, full_markdown)
     
     # ── 生僻字後處理：靜態字典校正 + 方正亂碼修復 + 可疑字元偵測 ──
     try:

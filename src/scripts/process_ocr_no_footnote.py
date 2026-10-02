@@ -635,8 +635,10 @@ def main(args=None):
                         if saved:
                             img_rel = os.path.relpath(saved, output_dir).replace("\\", "/")
                             img_name = os.path.basename(saved)
+                            updated_body.append("")
                             updated_body.append(f"![{img_name}]({img_rel})")
-                        else:
+                            updated_body.append("")
+                        elif md_item.strip():
                             updated_body.append(md_item)
                     page_str = "\n\n".join(updated_body)
                     if p["footnotes"]:
