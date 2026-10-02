@@ -41,7 +41,7 @@ def is_vector_pdf(pdf_path, text_threshold=100):
         print(f"Error checking PDF type: {e}")
         return False
 
-def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None):
+def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None, no_footnote=False):
     """
     High-precision extraction using book_layout_extractor:
     - Header & footer removal
@@ -49,7 +49,10 @@ def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None):
     - Heading style detection (H1, H2, H3)
     - Paragraph line-wrap reflow
     """
-    from src.scripts.book_layout_extractor import process_book_vector_pdf
+    if no_footnote:
+        from src.scripts.book_layout_extractor_no_footnote import process_book_vector_pdf
+    else:
+        from src.scripts.book_layout_extractor import process_book_vector_pdf
     
     def on_progress(percent, msg):
         print(json.dumps({"progress": percent, "message": msg}))
@@ -83,6 +86,7 @@ def main():
     parser.add_argument("--footer_ratio", type=float, default=0.1)
     parser.add_argument("--left_ratio", type=float, default=0.0)
     parser.add_argument("--right_ratio", type=float, default=0.0)
+    parser.add_argument("--no_footnote", action="store_true", help="Disable footnote extraction and matching")
     args = parser.parse_args()
 
     engine_choice = "suryaocr" if args.engine == "rapiddoc" else args.engine
@@ -100,11 +104,14 @@ def main():
     sys.stdout.flush()
 
     if engine_choice == "pymupdf":
-        extract_with_pymupdf(args.file, args.output_dir, args.style_mapping, output_stem=args.output_stem)
+        extract_with_pymupdf(args.file, args.output_dir, args.style_mapping, output_stem=args.output_stem, no_footnote=args.no_footnote)
     else:
         # v2.1 修正：避免使用 subprocess 啟動不存在於 _MEIPASS 的 process_ocr.py
         try:
-            from src.scripts import process_ocr
+            if args.no_footnote:
+                from src.scripts import process_ocr_no_footnote as process_ocr
+            else:
+                from src.scripts import process_ocr
             # 優先嘗試透過 module import 執行
             ocr_args = argparse.Namespace(
                 file=args.file,
@@ -119,7 +126,8 @@ def main():
             # 開發環境下，若仍需 subprocess，則作為 Fallback
             from src.utils.path_helper import is_frozen, get_project_dir
             if not is_frozen():
-                process_ocr_path = str(get_project_dir() / "src" / "scripts" / "process_ocr.py")
+                script_name = "process_ocr_no_footnote.py" if args.no_footnote else "process_ocr.py"
+                process_ocr_path = str(get_project_dir() / "src" / "scripts" / script_name)
                 cmd = [
                     sys.executable, process_ocr_path, 
                     "--file", args.file, 

@@ -723,7 +723,8 @@ async def upload_and_run_ocr(
     left_ratio: float = Form(0.0),
     right_ratio: float = Form(0.0),
     start_page: int = Form(0),
-    end_page: int = Form(0)
+    end_page: int = Form(0),
+    no_footnote: bool = Form(False)
 ):
     import sys
     import shutil
@@ -781,7 +782,7 @@ async def upload_and_run_ocr(
 
     ocr_progress_dict[filename_stem] = {"progress": 0, "message": "正在初始化任務...", "status": "processing"}
 
-    async def run_scripts_async(pdf_path_str, stem, style_map_json, eng):
+    async def run_scripts_async(pdf_path_str, stem, style_map_json, eng, skip_footnotes):
         import asyncio
         import json as _json
         try:
@@ -806,6 +807,8 @@ async def upload_and_run_ocr(
                 "--output_stem", stem,
                 "--engine", eng
             ]
+            if skip_footnotes:
+                cmd.append("--no_footnote")
             if style_map_json:
                 cmd.extend(["--style_mapping", style_map_json])
                 
@@ -861,7 +864,7 @@ async def upload_and_run_ocr(
             ocr_progress_dict[stem]["message"] = f"處理過程異常: {str(err)}"
 
     import asyncio
-    asyncio.ensure_future(run_scripts_async(str(input_pdf_path), filename_stem, style_mapping, engine))
+    asyncio.ensure_future(run_scripts_async(str(input_pdf_path), filename_stem, style_mapping, engine, no_footnote))
     return {"message": "OCR 管道已成功啟動", "filename_stem": filename_stem}
 
 

@@ -124,6 +124,15 @@
                     <option value="suryaocr">深度識別 (Surya OCR) - 適用掃描書、圖片轉曲 PDF，支援中文 OCR 與複雜版面</option>
                 </select>
             </div>
+            
+            <!-- 無腳注模式 -->
+            <div class="card-section" style="margin-top: 1rem;">
+                <label style="display:flex; align-items:center; cursor:pointer;">
+                    <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true" style="width:18px; height:18px; margin-right:8px; cursor:pointer;">
+                    <span style="font-weight:bold; font-size: 0.95rem; color: var(--text-main);">🚫 無腳注模式 (純粹內文，無任何腳注標記)</span>
+                </label>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 4px 0 0 26px;">開啟後，將載入專屬的無腳注腳本處理，避免內文圓圈數字被誤判為腳注。</p>
+            </div>
 
             <!-- PDF 上傳區 -->
             <div class="upload-area" id="dropZone">
@@ -456,6 +465,8 @@
             formData.append('right_ratio', rightSlider.value);
             formData.append('start_page', document.getElementById('startPageInput')?.value || 0);
             formData.append('end_page', document.getElementById('endPageInput')?.value || 0);
+            formData.append('no_footnote', document.getElementById('noFootnoteToggle')?.checked || false);
+
 
             statusDiv.innerHTML = `
                 <div style="margin-top:20px; padding:20px; border:1px solid #cbd5e1; border-radius:8px; background:#f8fafc; text-align: left;">
