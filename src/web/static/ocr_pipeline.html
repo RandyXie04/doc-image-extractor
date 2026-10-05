@@ -63,6 +63,135 @@
         select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; outline: none; transition: 0.2s; background: rgba(255, 255, 255, 0.02); color: var(--text-main); }
         select option { background-color: #18181b; color: #f4f4f5; }
         select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15); }
+
+        /* ── 字體審閱 Modal ── */
+        .font-modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.65);
+            backdrop-filter: blur(4px);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+        }
+        .font-modal-overlay.open { display: flex; }
+        .font-modal {
+            background: #1c1c24;
+            border: 1px solid rgba(255,255,255,0.12);
+            border-radius: 20px;
+            padding: 2rem;
+            width: min(92vw, 780px);
+            max-height: 85vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+            animation: slideUp 0.25s ease-out;
+        }
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .font-modal h3 {
+            margin: 0 0 1rem 0;
+            font-size: 1.1rem;
+            color: #f4f4f5;
+        }
+        .font-modal-body {
+            overflow-y: auto;
+            flex: 1;
+            margin-bottom: 1rem;
+        }
+        .font-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.85rem;
+        }
+        .font-table th {
+            background: rgba(255,255,255,0.06);
+            padding: 8px 10px;
+            text-align: left;
+            color: #94a3b8;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        .font-table td {
+            padding: 8px 10px;
+            border-bottom: 1px solid rgba(255,255,255,0.06);
+            vertical-align: top;
+            color: #e2e8f0;
+        }
+        .font-table tr:hover td { background: rgba(255,255,255,0.03); }
+        .font-table .sample-text {
+            font-size: 0.78rem;
+            color: #94a3b8;
+            max-width: 260px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        .font-modal-footer {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+        }
+        .btn-analyze {
+            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            color: white;
+            border: none;
+            padding: 9px 18px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
+        }
+        .btn-analyze:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(124,58,237,0.4); }
+        .btn-analyze:disabled { background: #475569; cursor: not-allowed; box-shadow: none; transform: none; }
+        .btn-confirm {
+            background: linear-gradient(135deg, #16a34a, #15803d);
+            color: white;
+            border: none;
+            padding: 9px 18px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        .btn-confirm:hover { transform: translateY(-2px); }
+        .btn-cancel-modal {
+            background: rgba(255,255,255,0.08);
+            color: #e2e8f0;
+            border: 1px solid rgba(255,255,255,0.12);
+            padding: 9px 18px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.2s;
+        }
+        .btn-cancel-modal:hover { background: rgba(255,255,255,0.14); }
+        .font-role-select {
+            background: rgba(255,255,255,0.06);
+            color: #f4f4f5;
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 6px;
+            padding: 4px 6px;
+            font-size: 0.82rem;
+            min-width: 120px;
+        }
+        .font-role-select:focus { border-color: #7c3aed; outline: none; }
+        .font-size-badge {
+            display: inline-block;
+            background: rgba(234,88,12,0.15);
+            color: #ea580c;
+            border-radius: 4px;
+            padding: 1px 6px;
+            font-size: 0.78rem;
+            font-weight: 600;
+        }
     </style>
 </head>
 <body>
@@ -199,7 +328,13 @@
             </div>
 
             <div id="fileInfo" style="text-align: center; margin-bottom: 1rem; font-weight: bold;"></div>
-            <button type="submit" class="btn" id="submitBtn" disabled>開始執行 OCR / 轉檔</button>
+            <div style="display: flex; gap: 10px; margin-top: 0;">
+                <button type="button" class="btn-analyze" id="analyzeFontsBtn" disabled
+                    title="先上傳 PDF，再點此分析字體並手動指定各字體的樣式角色（H1/H2/H3/圖說/楷體等）">
+                    🔤 分析字體
+                </button>
+                <button type="submit" class="btn" id="submitBtn" disabled style="flex: 1;">開始執行 OCR / 轉檔</button>
+            </div>
         </form>
 
         <div id="status"></div>
@@ -217,6 +352,41 @@
             <button id="saveOutlineBtn" class="btn" style="background: #16a34a; width: 100%;">儲存並重新產生 Word 文件</button>
             <div id="outlineSaveStatus" style="margin-top: 1rem; text-align: center; font-weight: bold;"></div>
         </div>
+
+    <!-- ══════════════════════════════════════════════════════
+         字體 → 樣式 審閱 Modal
+         ══════════════════════════════════════════════════════ -->
+    <div class="font-modal-overlay" id="fontModalOverlay" role="dialog" aria-modal="true" aria-labelledby="fontModalTitle">
+        <div class="font-modal">
+            <h3 id="fontModalTitle">🔤 字體 → 樣式 人工對應審閱</h3>
+            <p style="color:#94a3b8; font-size:0.82rem; margin: 0 0 1rem 0;">
+                以下為本 PDF 中偵測到的字體，請為每種字體選擇對應的 Word 樣式角色。<br>
+                設定後點擊「確認套用」儲存至 fonts.json，下次執行 OCR 將自動使用。
+            </p>
+            <div class="font-modal-body">
+                <table class="font-table" id="fontTable">
+                    <thead>
+                        <tr>
+                            <th>字體名稱</th>
+                            <th>字級</th>
+                            <th>範例文字</th>
+                            <th>對應樣式</th>
+                        </tr>
+                    </thead>
+                    <tbody id="fontTableBody">
+                        <tr><td colspan="4" style="text-align:center; color:#94a3b8; padding: 2rem;">
+                            正在分析字體，請稍候...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div style="font-size:0.78rem; color:#64748b; margin-bottom:0.8rem;" id="fontMappingSaveStatus"></div>
+            <div class="font-modal-footer">
+                <button class="btn-cancel-modal" id="fontModalCancelBtn">取消</button>
+                <button class="btn-confirm" id="fontModalConfirmBtn">✅ 確認套用</button>
+            </div>
+        </div>
+    </div>
+
     </div>
 
     <script>
@@ -357,6 +527,7 @@
             
             fileNameDisplay.innerHTML = `已選擇: <b>${file.name}</b> (${sizeMB} MB)`;
             submitBtn.disabled = true;
+                analyzeFontsBtn.disabled = true;
             submitBtn.textContent = '正在上傳並產生預覽...';
             statusDiv.textContent = '';
             outlineEditorBtnGroup.style.display = 'none';
@@ -380,10 +551,12 @@
                 updatePreview();
 
                 submitBtn.disabled = false;
+                analyzeFontsBtn.disabled = false;
                 submitBtn.textContent = '開始執行 OCR / 轉檔';
             } catch (err) {
                 alert('無法載入 PDF 預覽: ' + err.message);
                 submitBtn.disabled = false;
+                analyzeFontsBtn.disabled = false;
                 submitBtn.textContent = '開始執行 OCR / 轉檔';
             }
         }
@@ -433,6 +606,7 @@
             if (!currentFile && !currentFileId) return;
 
             submitBtn.disabled = true;
+                analyzeFontsBtn.disabled = true;
             outlineEditorBtnGroup.style.display = 'none';
 
             const formData = new FormData();
@@ -555,6 +729,7 @@
                     outlineEditorBtnGroup.style.display = 'block';
                     outlineEditorBtn.dataset.stem = filename_stem;
                     submitBtn.disabled = false;
+                analyzeFontsBtn.disabled = false;
                 }
 
             } catch (err) {
@@ -563,6 +738,7 @@
                     <button type="button" onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px;">🔄 重新嘗試上傳</button>
                 </div>`;
                 submitBtn.disabled = false;
+                analyzeFontsBtn.disabled = false;
             }
         };
         
@@ -743,6 +919,170 @@
             this.disabled = false;
         };
     </script>
-<script src="/static/sidebar.js"></script>
+<script src="/static/sidebar.js">
+        // ════════════════════════════════════════════════════════
+        // 字體分析 Modal 邏輯
+        // ════════════════════════════════════════════════════════
+        const fontModalOverlay = document.getElementById('fontModalOverlay');
+        const fontTableBody    = document.getElementById('fontTableBody');
+        const fontModalConfirmBtn = document.getElementById('fontModalConfirmBtn');
+        const fontModalCancelBtn  = document.getElementById('fontModalCancelBtn');
+        const fontMappingSaveStatus = document.getElementById('fontMappingSaveStatus');
+        const analyzeFontsBtn  = document.getElementById('analyzeFontsBtn');
+
+        let _docxStyleList = [];
+        let _defaultRoles  = ['H1','H2','H3','圖說','楷體','正文','忽略'];
+        let _fontData      = [];
+
+        analyzeFontsBtn.addEventListener('click', async () => {
+            if (!uploadedFileId) {
+                alert('請先上傳 PDF 檔案');
+                return;
+            }
+            fontTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:2rem;">⏳ 正在掃描字體，請稍候...</td></tr>';
+            fontModalOverlay.classList.add('open');
+            fontMappingSaveStatus.textContent = '';
+
+            try {
+                const resp = await fetch('/api/scan_fonts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        file_id: uploadedFileId,
+                        filename_orig: uploadedOrigName ? uploadedOrigName + '.pdf' : ''
+                    })
+                });
+                if (!resp.ok) {
+                    const err = await resp.json();
+                    throw new Error(err.detail || resp.statusText);
+                }
+                const data = await resp.json();
+                _fontData     = data.fonts      || [];
+                _docxStyleList = data.docx_styles || [];
+                _defaultRoles  = data.default_roles || _defaultRoles;
+                renderFontTable(_fontData, _docxStyleList, _defaultRoles);
+            } catch (e) {
+                fontTableBody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#ef4444;padding:2rem;">⚠️ 錯誤：${e.message}</td></tr>`;
+            }
+        });
+
+        function buildStyleOptions(styleList, roles, currentRole, currentDocxStyle) {
+            const allOptions = [];
+            // First option: no assignment
+            allOptions.push('<option value="">— 不指定 —</option>');
+
+            // Role group (fixed roles like H1/H2/H3)
+            if (roles.length) {
+                allOptions.push('<optgroup label="版面角色">');
+                for (const r of roles) {
+                    const sel = (currentRole === r) ? ' selected' : '';
+                    allOptions.push(`<option value="role::${r}"${sel}>${r}</option>`);
+                }
+                allOptions.push('</optgroup>');
+            }
+
+            // Docx styles group
+            if (styleList.length) {
+                allOptions.push('<optgroup label="Word 樣式">');
+                for (const s of styleList) {
+                    const sel = (currentDocxStyle === s) ? ' selected' : '';
+                    allOptions.push(`<option value="style::${s}"${sel}>${s}</option>`);
+                }
+                allOptions.push('</optgroup>');
+            }
+
+            return allOptions.join('');
+        }
+
+        function renderFontTable(fonts, styles, roles) {
+            if (!fonts.length) {
+                fontTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:2rem;">未偵測到任何字體資訊</td></tr>';
+                return;
+            }
+            const rows = fonts.map((f, idx) => {
+                const samples = (f.sample_texts || []).slice(0, 2).join(' / ');
+                const opts = buildStyleOptions(styles, roles, f.current_role, f.current_docx_style);
+                return `<tr>
+                    <td style="font-family:monospace; font-size:0.8rem; max-width:160px; word-break:break-all;">${escHtml(f.name)}</td>
+                    <td><span class="font-size-badge">${f.size_pt}pt</span></td>
+                    <td class="sample-text">${escHtml(samples)}</td>
+                    <td>
+                        <select class="font-role-select" data-font-name="${escHtml(f.name)}" data-idx="${idx}">
+                            ${opts}
+                        </select>
+                    </td>
+                </tr>`;
+            });
+            fontTableBody.innerHTML = rows.join('');
+        }
+
+        function escHtml(str) {
+            return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        fontModalCancelBtn.addEventListener('click', () => {
+            fontModalOverlay.classList.remove('open');
+        });
+
+        fontModalOverlay.addEventListener('click', (e) => {
+            if (e.target === fontModalOverlay) fontModalOverlay.classList.remove('open');
+        });
+
+        fontModalConfirmBtn.addEventListener('click', async () => {
+            const selects = fontTableBody.querySelectorAll('.font-role-select');
+            const mapping = {};
+
+            selects.forEach(sel => {
+                const fontName = sel.dataset.fontName;
+                const val = sel.value;  // e.g. "role::H2" or "style::標題 2" or ""
+                if (!val) return;
+                if (val.startsWith('role::')) {
+                    mapping[fontName] = { role: val.slice(6), docx_style: null };
+                } else if (val.startsWith('style::')) {
+                    // Try to map Word style name to a role heuristically
+                    const docxStyle = val.slice(7);
+                    let role = null;
+                    if (/標題\s*1|heading\s*1/i.test(docxStyle)) role = 'H1';
+                    else if (/標題\s*2|heading\s*2/i.test(docxStyle)) role = 'H2';
+                    else if (/標題\s*3|heading\s*3/i.test(docxStyle)) role = 'H3';
+                    else if (/圖說|caption/i.test(docxStyle)) role = '圖說';
+                    else if (/楷/i.test(docxStyle)) role = '楷體';
+                    mapping[fontName] = { role, docx_style: docxStyle };
+                }
+            });
+
+            if (!Object.keys(mapping).length) {
+                fontMappingSaveStatus.textContent = '⚠️ 未設定任何對應，請至少選擇一種字體的樣式。';
+                fontMappingSaveStatus.style.color = '#f59e0b';
+                return;
+            }
+
+            fontModalConfirmBtn.disabled = true;
+            fontMappingSaveStatus.textContent = '正在儲存...';
+            fontMappingSaveStatus.style.color = '#94a3b8';
+
+            try {
+                const resp = await fetch('/api/save_font_mapping', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ mapping })
+                });
+                const result = await resp.json();
+                if (resp.ok) {
+                    fontMappingSaveStatus.textContent = `✅ ${result.message}，OCR 時將自動套用。`;
+                    fontMappingSaveStatus.style.color = '#16a34a';
+                    setTimeout(() => fontModalOverlay.classList.remove('open'), 1500);
+                } else {
+                    throw new Error(result.detail || '儲存失敗');
+                }
+            } catch (e) {
+                fontMappingSaveStatus.textContent = `❌ 錯誤：${e.message}`;
+                fontMappingSaveStatus.style.color = '#ef4444';
+            } finally {
+                fontModalConfirmBtn.disabled = false;
+            }
+        });
+
+    </script>
 </body>
 </html>

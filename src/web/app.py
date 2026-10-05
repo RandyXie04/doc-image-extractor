@@ -705,10 +705,104 @@ async def report_issue(request: Request):
 
 
 
+# =========================================================================
+# 字體分析與樣式對應 API
+# =========================================================================
+
+@app.post("/api/scan_fonts")
+async def api_scan_fonts(request: Request):
+    """
+    掃描指定 PDF 的字體清單及 template.docx 中的段落樣式。
+    前端在「字體審閱」Modal 開啟前呼叫此路由。
+    Body JSON: { "file_id": "...", "filename_orig": "..." }
+    """
+    import asyncio
+    from src.scripts.pdf_font_analyzer import analyze_pdf_for_ui
+    from src.utils.path_helper import get_template_path
+
+    data = await request.json()
+    file_id: str = data.get("file_id", "")
+    filename_orig: str = data.get("filename_orig", "")
+
+    # 解析 PDF 路徑（支援 input_dir 的上傳快取，或 database_text 的已存 PDF）
+    pdf_path = None
+    if file_id:
+        candidate = PATHS.input_dir / file_id
+        if candidate.exists():
+            pdf_path = str(candidate)
+
+    # 若 input_dir 找不到，嘗試 database_text
+    if not pdf_path and filename_orig:
+        candidate2 = PATHS.root / "data" / "database_text" / filename_orig
+        if Path(candidate2).exists():
+            pdf_path = str(candidate2)
+
+    if not pdf_path:
+        raise HTTPException(status_code=404, detail="找不到對應的 PDF 檔案，請先上傳 PDF。")
+
+    # 解析 template.docx 路徑（按優先順序尋找）
+    template_candidates = [
+        PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx",
+        PATHS.data_dir / "database_text" / "template.docx",
+        get_template_path(),
+    ]
+    template_path = None
+    for tc in template_candidates:
+        if Path(str(tc)).exists():
+            template_path = str(tc)
+            break
+
+    fonts_json_path = str(PATHS.root / "fonts.json")
+
+    try:
+        result = await asyncio.to_thread(
+            analyze_pdf_for_ui,
+            pdf_path,
+            template_path,
+            fonts_json_path,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"字體分析失敗: {str(e)}")
+
+
+@app.post("/api/save_font_mapping")
+async def api_save_font_mapping(request: Request):
+    """
+    儲存人工審閱後的字體 → 樣式對應表至 fonts.json。
+    Body JSON: { "mapping": { "FontName": {"role": "H2", "docx_style": "標題 2"}, ... } }
+    """
+    from src.scripts.pdf_font_analyzer import save_fonts_json
+
+    data = await request.json()
+    mapping_raw: dict = data.get("mapping", {})
+
+    if not mapping_raw:
+        raise HTTPException(status_code=400, detail="mapping 不可為空")
+
+    # 標記每筆為人工設定
+    mapping = {}
+    for font_name, info in mapping_raw.items():
+        mapping[font_name] = {
+            "role": info.get("role"),
+            "docx_style": info.get("docx_style"),
+            "mapped_by": "user",
+        }
+
+    fonts_json_path = str(PATHS.root / "fonts.json")
+    try:
+        save_fonts_json(fonts_json_path, mapping)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"儲存 fonts.json 失敗: {str(e)}")
+
+    return {"status": "success", "saved": len(mapping), "message": f"已儲存 {len(mapping)} 筆字體對應"}
+
+
 @app.get("/api/ocr_progress/{filename_stem}")
 async def get_ocr_progress(filename_stem: str):
     progress = ocr_progress_dict.get(filename_stem, {"progress": 0, "message": "Waiting...", "status": "processing"})
     return progress
+
 
 @app.post("/api/upload_and_run_ocr")
 async def upload_and_run_ocr(
