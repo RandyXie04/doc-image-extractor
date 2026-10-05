@@ -70,12 +70,14 @@ def scan_pdf_fonts(pdf_path: str, max_samples: int = 3, max_sample_len: int = 60
         else:
             size_mode = 0.0
 
-        # 取前 max_samples 句，截斷長度
         samples = []
-        for t in data["texts"]:
-            if len(samples) >= max_samples:
-                break
-            samples.append(t[:max_sample_len])
+        texts = data["texts"]
+        if texts:
+            step = max(1, len(texts) // max_samples)
+            for i in range(0, len(texts), step):
+                if len(samples) >= max_samples:
+                    break
+                samples.append(texts[i][:max_sample_len])
 
         result.append({
             "name": clean_name,

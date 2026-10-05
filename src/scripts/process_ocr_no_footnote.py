@@ -124,9 +124,22 @@ def parse_footnote_entries(text):
         r'(?:^|\n)\s*([①-⑩\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|\[\d+\]|[⁰¹²³⁴⁵⁶⁷⁸⁹]+|注\s*\d+[:：.]?|\(?\d+\)[.、]?|\d+[.、\s])\s*'
     )
 
-    matches = list(pattern.finditer(text))
-    if not matches:
+    all_matches = list(pattern.finditer(text))
+    if not all_matches:
         return [{"id": 1, "raw_marker": "", "content": text.strip()}]
+
+    def get_marker_type(m_str):
+        if not m_str: return "empty"
+        m_str = m_str.strip()
+        if re.match(r'^[①-⑩\u2460-\u24ff\u2780-\u2793\u3251-\u325f]', m_str): return "circled"
+        if m_str.startswith('['): return "bracket"
+        if re.match(r'^[⁰¹²³⁴⁵⁶⁷⁸⁹]', m_str): return "superscript"
+        if m_str.startswith('注'): return "zhu"
+        if m_str.startswith('(') or m_str.startswith('（'): return "paren"
+        return "dot"
+
+    first_type = get_marker_type(all_matches[0].group(1))
+    matches = [m for m in all_matches if get_marker_type(m.group(1)) == first_type]
 
     entries = []
     for i, m in enumerate(matches):

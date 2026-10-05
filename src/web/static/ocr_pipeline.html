@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -13,7 +14,7 @@
             --border: rgba(255, 255, 255, 0.08);
             --text-main: #f4f4f5;
         }
-        
+
         :root[data-theme="light"] {
             --bg: transparent;
             --card: rgba(255, 255, 255, 0.7);
@@ -21,94 +22,282 @@
             --text-main: #0f172a;
             --text-muted: #475569;
         }
-        :root[data-theme="light"] .upload-area { background-color: rgba(255, 255, 255, 0.6); }
-        :root[data-theme="light"] .card-section { background-color: rgba(255, 255, 255, 0.6); }
-        :root[data-theme="light"] select { background-color: rgba(255, 255, 255, 0.6); color: #0f172a; }
-        :root[data-theme="light"] select option { background-color: #ffffff; color: #0f172a; }
-        :root[data-theme="light"] .page-ctrl-btn { background: rgba(0, 0, 0, 0.05); }
-        body { font-family: 'Inter', system-ui, sans-serif; display: flex; justify-content: center; padding: 3rem 1rem; color: var(--text-main); }
-        .container { 
-            background: var(--card); 
-            backdrop-filter: blur(20px); 
+
+        :root[data-theme="light"] .upload-area {
+            background-color: rgba(255, 255, 255, 0.6);
+        }
+
+        :root[data-theme="light"] .card-section {
+            background-color: rgba(255, 255, 255, 0.6);
+        }
+
+        :root[data-theme="light"] select {
+            background-color: rgba(255, 255, 255, 0.6);
+            color: #0f172a;
+        }
+
+        :root[data-theme="light"] select option {
+            background-color: #ffffff;
+            color: #0f172a;
+        }
+
+        :root[data-theme="light"] .page-ctrl-btn {
+            background: rgba(0, 0, 0, 0.05);
+        }
+
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            display: flex;
+            justify-content: center;
+            padding: 3rem 1rem;
+            color: var(--text-main);
+        }
+
+        .container {
+            background: var(--card);
+            backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            padding: 3rem; 
-            border-radius: 24px; 
-            box-shadow: 0 20px 40px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.5); 
-            max-width: 720px; width: 100%; 
-            border: 1px solid rgba(255,255,255,0.6);
+            padding: 3rem;
+            border-radius: 24px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+            max-width: 720px;
+            width: 100%;
+            border: 1px solid rgba(255, 255, 255, 0.6);
             animation: fadeIn 0.5s ease-out forwards;
         }
+
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
-        .header a { text-decoration: none; color: var(--primary); font-weight: 600; background: rgba(234, 88, 12, 0.1); padding: 6px 12px; border-radius: 6px; transition: 0.2s; }
-        .header a:hover { background: rgba(234, 88, 12, 0.2); }
-        .upload-area { border: 2px dashed var(--border); border-radius: 16px; padding: 3.5rem 2rem; text-align: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); margin-bottom: 2rem; background-color: rgba(255, 255, 255, 0.02); position: relative; overflow: hidden; }
-        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background-color: rgba(255, 255, 255, 0.05); transform: scale(1.01); }
-        .upload-area svg { width: 56px; height: 56px; color: var(--primary); margin-bottom: 1.2rem; transition: transform 0.3s; }
-        .upload-area:hover svg { transform: translateY(-5px); }
-        .upload-area input[type="file"] { display: none; }
-        .btn { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; width: 100%; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3); transition: all 0.3s; letter-spacing: 0.02em; }
-        .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(234, 88, 12, 0.4); }
-        .btn:disabled { background: #cbd5e1; cursor: not-allowed; box-shadow: none; transform: none; }
-        #status { margin-top: 1.5rem; text-align: center; font-weight: 500; color: var(--text-muted); }
-        .card-section { background: rgba(255, 255, 255, 0.02); padding: 1.5rem; border-radius: 16px; margin-bottom: 1.5rem; border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.02); }
-        .slider-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1.2rem; text-align: left; }
-        .slider-item { display: flex; flex-direction: column; gap: 6px; }
-        .slider-label { font-size: 0.9rem; font-weight: 600; color: var(--text-main); display: flex; justify-content: space-between; }
-        .page-ctrl-btn { background: rgba(255, 255, 255, 0.05); border: 1px solid var(--border); border-radius: 8px; padding: 6px 14px; cursor: pointer; font-size: 0.9rem; font-weight: 600; color: var(--text-main); transition: 0.2s; }
-        .page-ctrl-btn:hover { background: rgba(255, 255, 255, 0.1); border-color: var(--primary); }
-        select { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; outline: none; transition: 0.2s; background: rgba(255, 255, 255, 0.02); color: var(--text-main); }
-        select option { background-color: #18181b; color: #f4f4f5; }
-        select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15); }
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+        }
+
+        .header a {
+            text-decoration: none;
+            color: var(--primary);
+            font-weight: 600;
+            background: rgba(234, 88, 12, 0.1);
+            padding: 6px 12px;
+            border-radius: 6px;
+            transition: 0.2s;
+        }
+
+        .header a:hover {
+            background: rgba(234, 88, 12, 0.2);
+        }
+
+        .upload-area {
+            border: 2px dashed var(--border);
+            border-radius: 16px;
+            padding: 3.5rem 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            margin-bottom: 2rem;
+            background-color: rgba(255, 255, 255, 0.02);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .upload-area:hover,
+        .upload-area.dragover {
+            border-color: var(--primary);
+            background-color: rgba(255, 255, 255, 0.05);
+            transform: scale(1.01);
+        }
+
+        .upload-area svg {
+            width: 56px;
+            height: 56px;
+            color: var(--primary);
+            margin-bottom: 1.2rem;
+            transition: transform 0.3s;
+        }
+
+        .upload-area:hover svg {
+            transform: translateY(-5px);
+        }
+
+        .upload-area input[type="file"] {
+            display: none;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            width: 100%;
+            font-size: 1.1rem;
+            box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3);
+            transition: all 0.3s;
+            letter-spacing: 0.02em;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(234, 88, 12, 0.4);
+        }
+
+        .btn:disabled {
+            background: #cbd5e1;
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+
+        #status {
+            margin-top: 1.5rem;
+            text-align: center;
+            font-weight: 500;
+            color: var(--text-muted);
+        }
+
+        .card-section {
+            background: rgba(255, 255, 255, 0.02);
+            padding: 1.5rem;
+            border-radius: 16px;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--border);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+        }
+
+        .slider-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.2rem;
+            text-align: left;
+        }
+
+        .slider-item {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .slider-label {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-main);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .page-ctrl-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 6px 14px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-main);
+            transition: 0.2s;
+        }
+
+        .page-ctrl-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: var(--primary);
+        }
+
+        select {
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 0.95rem;
+            outline: none;
+            transition: 0.2s;
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-main);
+        }
+
+        select option {
+            background-color: #18181b;
+            color: #f4f4f5;
+        }
+
+        select:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15);
+        }
 
         /* ── 字體審閱 Modal ── */
         .font-modal-overlay {
             display: none;
             position: fixed;
             inset: 0;
-            background: rgba(0,0,0,0.65);
+            background: rgba(0, 0, 0, 0.65);
             backdrop-filter: blur(4px);
             z-index: 9999;
             align-items: center;
             justify-content: center;
         }
-        .font-modal-overlay.open { display: flex; }
+
+        .font-modal-overlay.open {
+            display: flex;
+        }
+
         .font-modal {
             background: #1c1c24;
-            border: 1px solid rgba(255,255,255,0.12);
-            border-radius: 20px;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 12px;
             padding: 2rem;
             width: min(92vw, 780px);
             max-height: 85vh;
             display: flex;
             flex-direction: column;
-            box-shadow: 0 24px 64px rgba(0,0,0,0.5);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
             animation: slideUp 0.25s ease-out;
         }
+
         @keyframes slideUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to   { opacity: 1; transform: translateY(0); }
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
+
         .font-modal h3 {
             margin: 0 0 1rem 0;
             font-size: 1.1rem;
             color: #f4f4f5;
         }
+
         .font-modal-body {
             overflow-y: auto;
             flex: 1;
             margin-bottom: 1rem;
         }
+
         .font-table {
             width: 100%;
             border-collapse: collapse;
             font-size: 0.85rem;
         }
+
         .font-table th {
-            background: rgba(255,255,255,0.06);
+            background: rgba(255, 255, 255, 0.06);
             padding: 8px 10px;
             text-align: left;
             color: #94a3b8;
@@ -116,13 +305,18 @@
             position: sticky;
             top: 0;
         }
+
         .font-table td {
             padding: 8px 10px;
-            border-bottom: 1px solid rgba(255,255,255,0.06);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
             vertical-align: top;
             color: #e2e8f0;
         }
-        .font-table tr:hover td { background: rgba(255,255,255,0.03); }
+
+        .font-table tr:hover td {
+            background: rgba(255, 255, 255, 0.03);
+        }
+
         .font-table .sample-text {
             font-size: 0.78rem;
             color: #94a3b8;
@@ -130,41 +324,57 @@
             white-space: pre-wrap;
             word-break: break-all;
         }
+
         .font-modal-footer {
             display: flex;
             gap: 10px;
             justify-content: flex-end;
         }
+
         .btn-analyze {
-            background: linear-gradient(135deg, #7c3aed, #6d28d9);
+            background: #7c3aed;
             color: white;
             border: none;
             padding: 9px 18px;
-            border-radius: 10px;
+            border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
             font-size: 0.9rem;
             transition: all 0.2s;
-            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.3);
         }
-        .btn-analyze:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(124,58,237,0.4); }
-        .btn-analyze:disabled { background: #475569; cursor: not-allowed; box-shadow: none; transform: none; }
+
+        .btn-analyze:hover:not(:disabled) {
+            transform: translateY(-2px);
+            background: #6d28d9;
+        }
+
+        .btn-analyze:disabled {
+            background: #475569;
+            cursor: not-allowed;
+            transform: none;
+        }
+
         .btn-confirm {
-            background: linear-gradient(135deg, #16a34a, #15803d);
+            background: #16a34a;
             color: white;
             border: none;
             padding: 9px 18px;
-            border-radius: 10px;
+            border-radius: 8px;
             font-weight: 600;
             cursor: pointer;
             font-size: 0.9rem;
             transition: all 0.2s;
         }
-        .btn-confirm:hover { transform: translateY(-2px); }
+
+        .btn-confirm:hover {
+            transform: translateY(-2px);
+            background: #15803d;
+        }
+
         .btn-cancel-modal {
-            background: rgba(255,255,255,0.08);
+            background: rgba(255, 255, 255, 0.08);
             color: #e2e8f0;
-            border: 1px solid rgba(255,255,255,0.12);
+            border: 1px solid rgba(255, 255, 255, 0.12);
             padding: 9px 18px;
             border-radius: 10px;
             font-weight: 600;
@@ -172,20 +382,29 @@
             font-size: 0.9rem;
             transition: all 0.2s;
         }
-        .btn-cancel-modal:hover { background: rgba(255,255,255,0.14); }
+
+        .btn-cancel-modal:hover {
+            background: rgba(255, 255, 255, 0.14);
+        }
+
         .font-role-select {
-            background: rgba(255,255,255,0.06);
+            background: rgba(255, 255, 255, 0.06);
             color: #f4f4f5;
-            border: 1px solid rgba(255,255,255,0.15);
+            border: 1px solid rgba(255, 255, 255, 0.15);
             border-radius: 6px;
             padding: 4px 6px;
             font-size: 0.82rem;
             min-width: 120px;
         }
-        .font-role-select:focus { border-color: #7c3aed; outline: none; }
+
+        .font-role-select:focus {
+            border-color: #7c3aed;
+            outline: none;
+        }
+
         .font-size-badge {
             display: inline-block;
-            background: rgba(234,88,12,0.15);
+            background: rgba(234, 88, 12, 0.15);
             color: #ea580c;
             border-radius: 4px;
             padding: 1px 6px;
@@ -194,6 +413,7 @@
         }
     </style>
 </head>
+
 <body>
     <div class="container">
         <div class="header">
@@ -201,7 +421,7 @@
             <h2 style="margin: 0; font-size: 1.4rem;">📄 全自動 OCR 與排版管線</h2>
             <div style="width: 80px;"></div>
         </div>
-        
+
         <!-- 樣式範本設定 -->
         <div class="card-section">
             <h3 style="margin-top: 0; color: var(--text-main); font-size: 1.05rem;">📚 樣式範本設定</h3>
@@ -210,33 +430,49 @@
             </p>
             <div style="display: flex; gap: 10px;">
                 <input type="file" id="templateInput" accept=".docx" style="display: none;">
-                <button type="button" class="btn" style="background: #475569; width: auto; font-size: 0.9rem; padding: 6px 14px;" onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
-                <span id="templateUploadStatus" style="align-self: center; color: #16a34a; font-weight: bold; font-size: 0.85rem;"></span>
+                <button type="button" class="btn"
+                    style="background: #475569; width: auto; font-size: 0.9rem; padding: 6px 14px;"
+                    onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
+                <span id="templateUploadStatus"
+                    style="align-self: center; color: #16a34a; font-weight: bold; font-size: 0.85rem;"></span>
             </div>
-            
+
             <div id="styleMappingSection" style="margin-top: 0.8rem; display: none;">
                 <h4 style="margin: 0 0 0.5rem 0; color: var(--text-muted); font-size: 0.9rem;">自訂階層樣式對應 (可選)</h4>
                 <div style="display: flex; gap: 0.8rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap;">
                     <div>
                         <label for="h1Style">一級標題 (#): </label>
-                        <select id="h1Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Heading 1)</option></select>
+                        <select id="h1Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;">
+                            <option value="">(預設 Heading 1)</option>
+                        </select>
                     </div>
                     <div>
                         <label for="h2Style">二級標題 (##): </label>
-                        <select id="h2Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Heading 2)</option></select>
+                        <select id="h2Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;">
+                            <option value="">(預設 Heading 2)</option>
+                        </select>
                     </div>
                     <div>
                         <label for="h3Style">三級標題 (###): </label>
-                        <select id="h3Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(預設 Heading 3)</option></select>
+                        <select id="h3Style" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;">
+                            <option value="">(預設 Heading 3)</option>
+                        </select>
                     </div>
-                    <div style="border-top: 1px solid #e2e8f0; margin-top: 0.5rem; padding-top: 0.5rem; width: 100%; display: flex; gap: 0.8rem; flex-wrap: wrap;">
+                    <div
+                        style="border-top: 1px solid #e2e8f0; margin-top: 0.5rem; padding-top: 0.5rem; width: 100%; display: flex; gap: 0.8rem; flex-wrap: wrap;">
                         <div>
                             <label for="imageCaptionStyle">🖼️ 圖片標籤: </label>
-                            <select id="imageCaptionStyle" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(不套用自訂樣式)</option></select>
+                            <select id="imageCaptionStyle"
+                                style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;">
+                                <option value="">(不套用自訂樣式)</option>
+                            </select>
                         </div>
                         <div>
                             <label for="kaitiStyle">📜 楷體/引言: </label>
-                            <select id="kaitiStyle" style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;"><option value="">(不套用自訂樣式)</option></select>
+                            <select id="kaitiStyle"
+                                style="padding: 4px; border-radius: 4px; border: 1px solid #cbd5e1;">
+                                <option value="">(不套用自訂樣式)</option>
+                            </select>
                         </div>
                     </div>
                 </div>
@@ -246,47 +482,63 @@
         <form id="uploadForm">
             <!-- 引擎選擇 -->
             <div class="card-section">
-                <label style="display:block; margin-bottom: 6px; font-weight:bold; font-size: 0.95rem; color: var(--text-main);">⚙️ PDF 處理引擎選擇</label>
-                <select name="engine" id="engineSelect" style="padding: 8px 12px; width: 100%; border: 1px solid var(--border); border-radius: 6px; font-size: 0.92rem; background: rgba(255,255,255,0.02); color: var(--text-main);">
+                <label
+                    style="display:block; margin-bottom: 6px; font-weight:bold; font-size: 0.95rem; color: var(--text-main);">⚙️
+                    PDF 處理引擎選擇</label>
+                <select name="engine" id="engineSelect"
+                    style="padding: 8px 12px; width: 100%; border: 1px solid var(--border); border-radius: 6px; font-size: 0.92rem; background: rgba(255,255,255,0.02); color: var(--text-main);">
                     <option value="auto">自動偵測 (推薦) - 向量 PDF 啟用 PyMuPDF 高速解析；掃描 PDF 啟用 Surya OCR 深度辨識</option>
                     <option value="pymupdf">高速提取 (PyMuPDF) - 適用原生向量 PDF，秒級解析且記憶體輕量</option>
                     <option value="suryaocr">深度識別 (Surya OCR) - 適用掃描書、圖片轉曲 PDF，支援中文 OCR 與複雜版面</option>
                 </select>
             </div>
-            
+
             <!-- 無腳注模式 -->
             <div class="card-section" style="margin-top: 1rem;">
                 <label style="display:flex; align-items:center; cursor:pointer;">
-                    <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true" style="width:18px; height:18px; margin-right:8px; cursor:pointer;">
-                    <span style="font-weight:bold; font-size: 0.95rem; color: var(--text-main);">🚫 無腳注模式 (純粹內文，無任何腳注標記)</span>
+                    <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true"
+                        style="width:18px; height:18px; margin-right:8px; cursor:pointer;">
+                    <span style="font-weight:bold; font-size: 0.95rem; color: var(--text-main);">🚫 無腳注模式
+                        (純粹內文，無任何腳注標記)</span>
                 </label>
-                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 4px 0 0 26px;">開啟後，將載入專屬的無腳注腳本處理，避免內文圓圈數字被誤判為腳注。</p>
+                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 4px 0 0 26px;">
+                    開啟後，將載入專屬的無腳注腳本處理，避免內文圓圈數字被誤判為腳注。</p>
             </div>
 
             <!-- PDF 上傳區 -->
             <div class="upload-area" id="dropZone">
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                <h3 id="fileNameDisplay" style="margin: 0; font-size: 1.1rem; color: var(--text-muted); font-weight: 500;">點擊選擇，或將 PDF 拖曳至此</h3>
+                <h3 id="fileNameDisplay"
+                    style="margin: 0; font-size: 1.1rem; color: var(--text-muted); font-weight: 500;">點擊選擇，或將 PDF 拖曳至此
+                </h3>
                 <input type="file" id="fileInput" accept=".pdf">
             </div>
 
             <!-- 裁切邊界預覽圖與四向滑桿 (與公式提取站一致) -->
             <div id="previewContainer" class="card-section" style="display: none; text-align: center;">
-                <h4 style="margin-top: 0; color: var(--text-main); font-size: 1rem;">🖼️ 裁切邊界預覽 (紅色=頂部, 藍色=底部, 綠色=左右)</h4>
-                
-                <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin: 0.8rem 0; flex-wrap: wrap;">
+                <h4 style="margin-top: 0; color: var(--text-main); font-size: 1rem;">🖼️ 裁切邊界預覽 (紅色=頂部, 藍色=底部, 綠色=左右)
+                </h4>
+
+                <div
+                    style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin: 0.8rem 0; flex-wrap: wrap;">
                     <div style="display: flex; align-items: center; gap: 0.5rem;">
                         <button type="button" id="prevPageBtn" class="page-ctrl-btn">◀ 上一頁</button>
-                        <span style="font-size: 0.9rem; color: #475569;">預覽頁碼: <span id="previewPageDisplay" style="font-weight: bold; color: #ea580c;">1</span> / <span id="totalPagesDisplay">?</span></span>
+                        <span style="font-size: 0.9rem; color: #475569;">預覽頁碼: <span id="previewPageDisplay"
+                                style="font-weight: bold; color: #ea580c;">1</span> / <span
+                                id="totalPagesDisplay">?</span></span>
                         <button type="button" id="nextPageBtn" class="page-ctrl-btn">下一頁 ▶</button>
                     </div>
-                    <div style="border-left: 1px solid var(--border); padding-left: 1rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
+                    <div
+                        style="border-left: 1px solid var(--border); padding-left: 1rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
                         <label for="startPageInput" style="font-weight: 600;">轉檔範圍:</label>
-                        <input type="number" id="startPageInput" min="1" placeholder="首頁" style="width: 60px; padding: 4px; border: 1px solid var(--border); border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text-main);">
+                        <input type="number" id="startPageInput" min="1" placeholder="首頁"
+                            style="width: 60px; padding: 4px; border: 1px solid var(--border); border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text-main);">
                         <span>~</span>
-                        <input type="number" id="endPageInput" min="1" placeholder="末頁" style="width: 60px; padding: 4px; border: 1px solid var(--border); border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text-main);">
+                        <input type="number" id="endPageInput" min="1" placeholder="末頁"
+                            style="width: 60px; padding: 4px; border: 1px solid var(--border); border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text-main);">
                         <span style="color: var(--text-muted); font-size: 0.8rem;">(留空代表全部)</span>
                     </div>
                 </div>
@@ -297,33 +549,39 @@
                             <span>頂部裁切 (紅線):</span>
                             <span id="headerVal" style="color: #dc2626;">0.10</span>
                         </div>
-                        <input type="range" id="headerSlider" min="0" max="0.5" step="0.01" value="0.10" style="width: 100%;">
+                        <input type="range" id="headerSlider" min="0" max="0.5" step="0.01" value="0.10"
+                            style="width: 100%;">
                     </div>
                     <div class="slider-item">
                         <div class="slider-label">
                             <span>底部裁切 (藍線):</span>
                             <span id="footerVal" style="color: #2563eb;">0.10</span>
                         </div>
-                        <input type="range" id="footerSlider" min="0" max="0.5" step="0.01" value="0.10" style="width: 100%;">
+                        <input type="range" id="footerSlider" min="0" max="0.5" step="0.01" value="0.10"
+                            style="width: 100%;">
                     </div>
                     <div class="slider-item">
                         <div class="slider-label">
                             <span>左側邊距 (綠線):</span>
                             <span id="leftVal" style="color: #16a34a;">0.00</span>
                         </div>
-                        <input type="range" id="leftSlider" min="0" max="0.3" step="0.01" value="0.00" style="width: 100%;">
+                        <input type="range" id="leftSlider" min="0" max="0.3" step="0.01" value="0.00"
+                            style="width: 100%;">
                     </div>
                     <div class="slider-item">
                         <div class="slider-label">
                             <span>右側邊距 (綠線):</span>
                             <span id="rightVal" style="color: #16a34a;">0.00</span>
                         </div>
-                        <input type="range" id="rightSlider" min="0" max="0.3" step="0.01" value="0.00" style="width: 100%;">
+                        <input type="range" id="rightSlider" min="0" max="0.3" step="0.01" value="0.00"
+                            style="width: 100%;">
                     </div>
                 </div>
 
-                <div style="margin-top: 1rem; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; background: #fff;">
-                    <img id="previewImage" src="" alt="預覽載入中..." style="max-width: 100%; height: auto; max-height: 420px; display: block; margin: 0 auto;">
+                <div
+                    style="margin-top: 1rem; border: 1px solid #cbd5e1; border-radius: 8px; overflow: hidden; background: #fff;">
+                    <img id="previewImage" src="" alt="預覽載入中..."
+                        style="max-width: 100%; height: auto; max-height: 420px; display: block; margin: 0 auto;">
                 </div>
             </div>
 
@@ -339,53 +597,60 @@
 
         <div id="status"></div>
         <div id="outlineEditorBtnGroup" style="margin-top: 1rem; display: none;">
-            <a id="outlineEditorBtn" href="javascript:void(0)" class="btn" style="background: #8b5cf6; text-decoration: none; display: block; text-align: center;">✏️ 檢視與微調大綱 (Outline Editor)</a>
+            <a id="outlineEditorBtn" href="javascript:void(0)" class="btn"
+                style="background: #8b5cf6; text-decoration: none; display: block; text-align: center;">✏️ 檢視與微調大綱
+                (Outline Editor)</a>
         </div>
-        
+
         <!-- Outline Editor Modal/Section -->
-        <div id="outlineEditorSection" style="display: none; margin-top: 2rem; background: rgba(255, 255, 255, 0.02); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border);">
+        <div id="outlineEditorSection"
+            style="display: none; margin-top: 2rem; background: rgba(255, 255, 255, 0.02); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border);">
             <h3 style="margin-top: 0;">🌳 大綱微調 (Outline Editor)</h3>
             <p style="color: var(--text-muted); font-size: 0.9rem;">系統擷取出的標題如下，您可以手動修正階層，完成後點擊重新產生 DOCX。</p>
-            <div id="outlineList" style="max-height: 400px; overflow-y: auto; background: rgba(0, 0, 0, 0.2); padding: 1rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem;">
+            <div id="outlineList"
+                style="max-height: 400px; overflow-y: auto; background: rgba(0, 0, 0, 0.2); padding: 1rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem;">
                 載入中...
             </div>
             <button id="saveOutlineBtn" class="btn" style="background: #16a34a; width: 100%;">儲存並重新產生 Word 文件</button>
             <div id="outlineSaveStatus" style="margin-top: 1rem; text-align: center; font-weight: bold;"></div>
         </div>
 
-    <!-- ══════════════════════════════════════════════════════
+        <!-- ══════════════════════════════════════════════════════
          字體 → 樣式 審閱 Modal
          ══════════════════════════════════════════════════════ -->
-    <div class="font-modal-overlay" id="fontModalOverlay" role="dialog" aria-modal="true" aria-labelledby="fontModalTitle">
-        <div class="font-modal">
-            <h3 id="fontModalTitle">🔤 字體 → 樣式 人工對應審閱</h3>
-            <p style="color:#94a3b8; font-size:0.82rem; margin: 0 0 1rem 0;">
-                以下為本 PDF 中偵測到的字體，請為每種字體選擇對應的 Word 樣式角色。<br>
-                設定後點擊「確認套用」儲存至 fonts.json，下次執行 OCR 將自動使用。
-            </p>
-            <div class="font-modal-body">
-                <table class="font-table" id="fontTable">
-                    <thead>
-                        <tr>
-                            <th>字體名稱</th>
-                            <th>字級</th>
-                            <th>範例文字</th>
-                            <th>對應樣式</th>
-                        </tr>
-                    </thead>
-                    <tbody id="fontTableBody">
-                        <tr><td colspan="4" style="text-align:center; color:#94a3b8; padding: 2rem;">
-                            正在分析字體，請稍候...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-            <div style="font-size:0.78rem; color:#64748b; margin-bottom:0.8rem;" id="fontMappingSaveStatus"></div>
-            <div class="font-modal-footer">
-                <button class="btn-cancel-modal" id="fontModalCancelBtn">取消</button>
-                <button class="btn-confirm" id="fontModalConfirmBtn">✅ 確認套用</button>
+        <div class="font-modal-overlay" id="fontModalOverlay" role="dialog" aria-modal="true"
+            aria-labelledby="fontModalTitle">
+            <div class="font-modal">
+                <h3 id="fontModalTitle">字體樣式對應審閱</h3>
+                <p style="color:#94a3b8; font-size:0.82rem; margin: 0 0 1rem 0;">
+                    以下為本 PDF 中偵測到的字體，請為每種字體選擇對應的 Word 樣式角色。<br>
+                    設定後點擊「確認套用」儲存至 fonts.json，下次執行 OCR 將自動使用。
+                </p>
+                <div class="font-modal-body">
+                    <table class="font-table" id="fontTable">
+                        <thead>
+                            <tr>
+                                <th>字體名稱</th>
+                                <th>字級</th>
+                                <th>範例文字</th>
+                                <th>對應樣式</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fontTableBody">
+                            <tr>
+                                <td colspan="4" style="text-align:center; color:#94a3b8; padding: 2rem;">
+                                    正在分析字體，請稍候...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div style="font-size:0.78rem; color:#64748b; margin-bottom:0.8rem;" id="fontMappingSaveStatus"></div>
+                <div class="font-modal-footer">
+                    <button class="btn-cancel-modal" id="fontModalCancelBtn">取消</button>
+                    <button class="btn-confirm" id="fontModalConfirmBtn">確認套用</button>
+                </div>
             </div>
         </div>
-    </div>
 
     </div>
 
@@ -450,13 +715,13 @@
                     const h3 = document.getElementById('h3Style');
                     const imgCaption = document.getElementById('imageCaptionStyle');
                     const kaiti = document.getElementById('kaitiStyle');
-                    
+
                     h1.innerHTML = '<option value="">(預設 Heading 1)</option>';
                     h2.innerHTML = '<option value="">(預設 Heading 2)</option>';
                     h3.innerHTML = '<option value="">(預設 Heading 3)</option>';
                     imgCaption.innerHTML = '<option value="">(不套用自訂樣式)</option>';
                     kaiti.innerHTML = '<option value="">(不套用自訂樣式)</option>';
-                    
+
                     data.styles.forEach(s => {
                         const opt = `<option value="${s}">${s}</option>`;
                         h1.innerHTML += opt;
@@ -465,7 +730,7 @@
                         imgCaption.innerHTML += opt;
                         kaiti.innerHTML += opt;
                     });
-                    
+
                     document.getElementById('styleMappingSection').style.display = 'block';
                 }
             } catch (err) {
@@ -479,10 +744,10 @@
             const file = e.target.files[0];
             const formData = new FormData();
             formData.append('file', file);
-            
+
             templateUploadStatus.textContent = '上傳中...';
             templateUploadStatus.style.color = '#64748b';
-            
+
             try {
                 const res = await fetch('/api/upload_template', {
                     method: 'POST',
@@ -524,10 +789,10 @@
             currentFile = file;
             currentFileOrigName = file.name.replace(/\.[^/.]+$/, "");
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-            
+
             fileNameDisplay.innerHTML = `已選擇: <b>${file.name}</b> (${sizeMB} MB)`;
             submitBtn.disabled = true;
-                analyzeFontsBtn.disabled = true;
+            analyzeFontsBtn.disabled = true;
             submitBtn.textContent = '正在上傳並產生預覽...';
             statusDiv.textContent = '';
             outlineEditorBtnGroup.style.display = 'none';
@@ -567,7 +832,7 @@
             const f = footerSlider.value;
             const l = leftSlider.value;
             const r = rightSlider.value;
-            
+
             headerVal.textContent = h;
             footerVal.textContent = f;
             leftVal.textContent = l;
@@ -606,7 +871,7 @@
             if (!currentFile && !currentFileId) return;
 
             submitBtn.disabled = true;
-                analyzeFontsBtn.disabled = true;
+            analyzeFontsBtn.disabled = true;
             outlineEditorBtnGroup.style.display = 'none';
 
             const formData = new FormData();
@@ -616,7 +881,7 @@
             } else if (currentFile) {
                 formData.append('file', currentFile);
             }
-            
+
             const h1Style = document.getElementById('h1Style')?.value;
             const h2Style = document.getElementById('h2Style')?.value;
             const h3Style = document.getElementById('h3Style')?.value;
@@ -666,24 +931,24 @@
 
                 const result = await response.json();
                 const stem = result.filename_stem;
-                
+
                 let isFinished = false;
                 const pollInterval = setInterval(async () => {
                     if (isFinished) return;
                     try {
                         const res = await fetch(`/api/ocr_progress/${stem}`);
                         const prog = await res.json();
-                        
+
                         const pBar = document.getElementById('progressBar');
                         const pText = document.getElementById('progressText');
-                        
+
                         if (pBar && prog.progress !== undefined) {
                             pBar.style.width = prog.progress + '%';
                         }
                         if (pText && prog.message) {
                             pText.innerText = prog.message;
                         }
-                        
+
                         if (prog.status === 'completed' || prog.progress === 100) {
                             isFinished = true;
                             clearInterval(pollInterval);
@@ -693,43 +958,43 @@
                             clearInterval(pollInterval);
                             throw new Error(prog.message || '後端轉檔發生錯誤');
                         }
-                    } catch(e) {
+                    } catch (e) {
                         console.error('Polling error:', e);
                     }
                 }, 1000);
-                
+
                 function onComplete(filename_stem) {
                     statusDiv.innerHTML += `<div style="margin-top:1rem; color:#16a34a; font-weight:bold;">✅ 處理完成！請點選以下按鈕另存新檔：</div>`;
-                    
+
                     const btnContainer = document.createElement('div');
                     btnContainer.id = 'saveBtnContainer';
                     btnContainer.style.display = 'flex';
                     btnContainer.style.gap = '10px';
                     btnContainer.style.marginTop = '15px';
                     btnContainer.style.flexWrap = 'wrap';
-                    
+
                     const btnDocx = document.createElement('button');
                     btnDocx.className = 'btn';
                     btnDocx.style.background = '#2563eb';
                     btnDocx.style.flex = '1';
                     btnDocx.innerText = '📁 本機另存 DOCX (原生視窗)';
                     btnDocx.onclick = (e) => nativeSave(filename_stem, 'docx', e.currentTarget);
-                    
+
                     const btnMd = document.createElement('button');
                     btnMd.className = 'btn';
                     btnMd.style.background = '#16a34a';
                     btnMd.style.flex = '1';
                     btnMd.innerText = '📁 本機另存 Markdown (原生視窗)';
                     btnMd.onclick = (e) => nativeSave(filename_stem, 'md', e.currentTarget);
-                    
+
                     btnContainer.appendChild(btnDocx);
                     btnContainer.appendChild(btnMd);
                     statusDiv.appendChild(btnContainer);
-                    
+
                     outlineEditorBtnGroup.style.display = 'block';
                     outlineEditorBtn.dataset.stem = filename_stem;
                     submitBtn.disabled = false;
-                analyzeFontsBtn.disabled = false;
+                    analyzeFontsBtn.disabled = false;
                 }
 
             } catch (err) {
@@ -741,7 +1006,7 @@
                 analyzeFontsBtn.disabled = false;
             }
         };
-        
+
         async function nativeSave(stem, ext, btnElement) {
             const origText = btnElement ? btnElement.innerText : '';
             if (btnElement) {
@@ -752,21 +1017,21 @@
                 const source_path = `data/03_output/${stem}.${ext}`;
                 const res = await fetch('/api/native_save_file', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({source_path, suggested_filename: `${stem}.${ext}`})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ source_path, suggested_filename: `${stem}.${ext}` })
                 });
-                
+
                 if (!res.ok) {
                     throw new Error(`伺服器回應異常 (${res.status})`);
                 }
                 const result = await res.json();
-                
+
                 if (result.status === 'success') {
                     if (btnElement) {
                         btnElement.innerText = `✅ 已儲存 ${ext.toUpperCase()}`;
                         btnElement.disabled = false;
                     }
-                    
+
                     let saveInfoId = `savedInfo_${ext}`;
                     let savedInfo = document.getElementById(saveInfoId);
                     if (!savedInfo) {
@@ -798,7 +1063,7 @@
                         btnElement.disabled = false;
                     }
                 }
-            } catch(e) {
+            } catch (e) {
                 console.warn('原生另存發生錯誤，降級為瀏覽器下載:', e);
                 window.location.href = `/api/download_ocr_result/${stem}/${ext}`;
                 if (btnElement) {
@@ -812,59 +1077,59 @@
             try {
                 await fetch('/api/open_file_folder', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({file_path: filePath})
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_path: filePath })
                 });
-            } catch(err) {
+            } catch (err) {
                 alert('無法開啟檔案總管: ' + err.message);
             }
         }
 
         // Outline Editor Logic
         let currentMdLines = [];
-        
-        outlineEditorBtn.onclick = async function() {
+
+        outlineEditorBtn.onclick = async function () {
             const stem = this.dataset.stem;
             if (!stem) return;
-            
+
             document.getElementById('outlineEditorSection').style.display = 'block';
             document.getElementById('outlineList').innerHTML = '讀取中...';
-            
+
             try {
                 const res = await fetch(`/api/get_markdown/${stem}`);
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail);
-                
+
                 currentMdLines = data.content.split('\n');
                 renderOutlineList();
             } catch (err) {
                 document.getElementById('outlineList').innerHTML = `<span style="color:red">無法讀取 Markdown 檔案: ${err.message}</span>`;
             }
         };
-        
+
         function renderOutlineList() {
             const listDiv = document.getElementById('outlineList');
             listDiv.innerHTML = '';
-            
+
             currentMdLines.forEach((line, index) => {
                 const match = line.match(/^(#{1,3})\s+(.*)$/);
                 if (match) {
                     const level = match[1].length;
                     const text = match[2];
-                    
+
                     const row = document.createElement('div');
                     row.style.display = 'flex';
                     row.style.gap = '10px';
                     row.style.marginBottom = '8px';
                     row.style.alignItems = 'center';
                     row.style.paddingLeft = `${(level - 1) * 20}px`;
-                    
+
                     const select = document.createElement('select');
                     select.innerHTML = `
                         <option value="0">一般內文</option>
-                        <option value="1" ${level===1?'selected':''}>H1</option>
-                        <option value="2" ${level===2?'selected':''}>H2</option>
-                        <option value="3" ${level===3?'selected':''}>H3</option>
+                        <option value="1" ${level === 1 ? 'selected' : ''}>H1</option>
+                        <option value="2" ${level === 2 ? 'selected' : ''}>H2</option>
+                        <option value="3" ${level === 3 ? 'selected' : ''}>H3</option>
                     `;
                     select.onchange = (e) => {
                         const newLevel = parseInt(e.target.value);
@@ -875,34 +1140,34 @@
                             currentMdLines[index] = cleanText;
                         }
                     };
-                    
+
                     const span = document.createElement('span');
                     span.textContent = text;
                     span.style.flex = '1';
-                    
+
                     row.appendChild(select);
                     row.appendChild(span);
                     listDiv.appendChild(row);
                 }
             });
-            
+
             if (listDiv.children.length === 0) {
                 listDiv.innerHTML = '<span style="color:#64748b;">未偵測到任何標題，這可能是因為全文書籍皆為內文，或者偵測未命中。</span>';
             }
         }
-        
-        document.getElementById('saveOutlineBtn').onclick = async function() {
+
+        document.getElementById('saveOutlineBtn').onclick = async function () {
             const stem = outlineEditorBtn.dataset.stem;
             const statusDiv = document.getElementById('outlineSaveStatus');
-            
+
             statusDiv.textContent = '儲存並重新產生 Word 中...';
             statusDiv.style.color = '#ea580c';
             this.disabled = true;
-            
+
             try {
                 const res = await fetch(`/api/update_and_rebuild_docx/${stem}`, {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ content: currentMdLines.join('\n') })
                 });
                 const data = await res.json();
@@ -918,38 +1183,38 @@
             }
             this.disabled = false;
         };
-    </script>
-<script src="/static/sidebar.js">
+
         // ════════════════════════════════════════════════════════
         // 字體分析 Modal 邏輯
+
         // ════════════════════════════════════════════════════════
         const fontModalOverlay = document.getElementById('fontModalOverlay');
-        const fontTableBody    = document.getElementById('fontTableBody');
+        const fontTableBody = document.getElementById('fontTableBody');
         const fontModalConfirmBtn = document.getElementById('fontModalConfirmBtn');
-        const fontModalCancelBtn  = document.getElementById('fontModalCancelBtn');
+        const fontModalCancelBtn = document.getElementById('fontModalCancelBtn');
         const fontMappingSaveStatus = document.getElementById('fontMappingSaveStatus');
-        const analyzeFontsBtn  = document.getElementById('analyzeFontsBtn');
+        const analyzeFontsBtn = document.getElementById('analyzeFontsBtn');
 
         let _docxStyleList = [];
-        let _defaultRoles  = ['H1','H2','H3','圖說','楷體','正文','忽略'];
-        let _fontData      = [];
+        let _defaultRoles = ['H1', 'H2', 'H3', '圖說', '楷體', '正文', '忽略'];
+        let _fontData = [];
 
         analyzeFontsBtn.addEventListener('click', async () => {
-            if (!uploadedFileId) {
+            if (!currentFileId) {
                 alert('請先上傳 PDF 檔案');
                 return;
             }
-            fontTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:2rem;">⏳ 正在掃描字體，請稍候...</td></tr>';
+            fontTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#94a3b8;padding:2rem;">正在掃描字體，請稍候...</td></tr>';
             fontModalOverlay.classList.add('open');
             fontMappingSaveStatus.textContent = '';
 
             try {
                 const resp = await fetch('/api/scan_fonts', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
-                        file_id: uploadedFileId,
-                        filename_orig: uploadedOrigName ? uploadedOrigName + '.pdf' : ''
+                        file_id: currentFileId,
+                        filename_orig: currentFileOrigName ? currentFileOrigName + '.pdf' : ''
                     })
                 });
                 if (!resp.ok) {
@@ -957,9 +1222,9 @@
                     throw new Error(err.detail || resp.statusText);
                 }
                 const data = await resp.json();
-                _fontData     = data.fonts      || [];
+                _fontData = data.fonts || [];
                 _docxStyleList = data.docx_styles || [];
-                _defaultRoles  = data.default_roles || _defaultRoles;
+                _defaultRoles = data.default_roles || _defaultRoles;
                 renderFontTable(_fontData, _docxStyleList, _defaultRoles);
             } catch (e) {
                 fontTableBody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#ef4444;padding:2rem;">⚠️ 錯誤：${e.message}</td></tr>`;
@@ -1017,7 +1282,7 @@
         }
 
         function escHtml(str) {
-            return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+            return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
         }
 
         fontModalCancelBtn.addEventListener('click', () => {
@@ -1064,7 +1329,7 @@
             try {
                 const resp = await fetch('/api/save_font_mapping', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ mapping })
                 });
                 const result = await resp.json();
@@ -1084,5 +1349,7 @@
         });
 
     </script>
+    <script src="/static/sidebar.js"></script>
 </body>
+
 </html>
