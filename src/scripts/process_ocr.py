@@ -664,42 +664,21 @@ def main(args=None):
                 final_md = "\n\n".join(all_page_contents)
 
 
-            # ── 辭典專用語意後處理：自動降級詞條標題與楷體區隔 ──
-            try:
-                from src.scripts.dictionary_post_processor import postprocess_dictionary_markdown
-                final_md = postprocess_dictionary_markdown(final_md, style_mapping)
-                print(json.dumps({"progress": 81, "message": "[INFO] 已套用辭典專用語意修正器 (自動降級詞條標題與楷體區隔)"}))
+            # ── 統一節點式後處理 ──
+            from src.extraction.pipeline.facade import run_unified_postprocessing
+            
+            def _progress_cb(p, msg):
+                print(json.dumps({"progress": p, "message": msg}))
                 sys.stdout.flush()
-            except ImportError:
-                try:
-                    from scripts.dictionary_post_processor import postprocess_dictionary_markdown
-                    final_md = postprocess_dictionary_markdown(final_md, style_mapping)
-                    print(json.dumps({"progress": 81, "message": "[INFO] 已套用辭典專用語意修正器 (自動降級詞條標題與楷體區隔)"}))
-                    sys.stdout.flush()
-                except ImportError:
-                    pass
-
-            # ── 生僻字後處理：靜態字典校正 + 方正亂碼修復 + 可疑字元偵測 ──
-            if postprocess_ocr_markdown is not None:
-                data_dir = str(PATHS.data_dir)
-                final_md, rare_char_stats = postprocess_ocr_markdown(
-                    markdown_text=final_md,
-                    data_dir=data_dir,
-                    pdf_name=pdf_name,
-                    output_dir=output_dir,
-                )
-                corrected = rare_char_stats.get("corrections_applied", 0)
-                suspicious = rare_char_stats.get("suspicious_chars_found", 0)
-                if corrected > 0:
-                    print(json.dumps({"progress": 82, "message": f"[INFO] 靜態字典自動修正了 {corrected} 處已知錯字。"}))
-                    sys.stdout.flush()
-                if suspicious > 0:
-                    report_path = rare_char_stats.get("report_path", "")
-                    print(json.dumps({"progress": 83, "message": f"[REVIEW] ⚠️ 偵測到 {suspicious} 處可疑字元（疑似生僻字/亂碼），覆核報告：{report_path}"}))
-                    sys.stdout.flush()
-                else:
-                    print(json.dumps({"progress": 83, "message": "[INFO] 未偵測到可疑字元，文字品質良好。"}))
-                    sys.stdout.flush()
+                
+            final_md, rare_char_stats = run_unified_postprocessing(
+                markdown_text=final_md,
+                pdf_name=pdf_name,
+                output_dir=output_dir,
+                style_mapping=style_mapping,
+                progress_callback=_progress_cb,
+                enable_dictionary_postprocess=True
+            )
 
             out_name = Path(pdf_path).stem + ".md"
             out_path = os.path.join(output_dir, out_name)

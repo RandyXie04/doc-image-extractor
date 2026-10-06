@@ -664,38 +664,20 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
 
     full_markdown = re.sub(r'!\[__IMG_PLACEHOLDER_(\d+)_(\d+)__\]\(\)', _repl_placeholder, full_markdown)
     
-    # ── 生僻字後處理：靜態字典校正 + 方正亂碼修復 + 可疑字元偵測 ──
-    try:
-        from src.scripts.ocr_rare_char_corrector import postprocess_ocr_markdown
-    except ImportError:
-        try:
-            from scripts.ocr_rare_char_corrector import postprocess_ocr_markdown
-        except ImportError:
-            postprocess_ocr_markdown = None
+    # ── 統一節點式後處理 ──
+    from src.extraction.pipeline.facade import run_unified_postprocessing
     
-    if postprocess_ocr_markdown is not None:
-        # 動態取得 data_dir 路徑
-        try:
-            from config import PATHS
-            data_dir = str(PATHS.data_dir)
-        except ImportError:
-            data_dir = str(Path(__file__).parent.parent.parent / "data")
-        
-        full_markdown, rare_char_stats = postprocess_ocr_markdown(
-            markdown_text=full_markdown,
-            data_dir=data_dir,
-            pdf_name=os.path.basename(pdf_path),
-            output_dir=output_dir,
-        )
-        corrected = rare_char_stats.get("corrections_applied", 0)
-        suspicious = rare_char_stats.get("suspicious_chars_found", 0)
-        audit_data["rare_char_corrections"] = corrected
-        audit_data["rare_char_suspicious"] = suspicious
-        if progress_callback:
-            if corrected > 0:
-                progress_callback(88, f"[INFO] 靜態字典自動修正了 {corrected} 處已知錯字。")
-            if suspicious > 0:
-                progress_callback(89, f"[REVIEW] ⚠️ 偵測到 {suspicious} 處可疑字元（疑似生僻字/亂碼），覆核報告已生成。")
+    full_markdown, rare_char_stats = run_unified_postprocessing(
+        markdown_text=full_markdown,
+        pdf_name=os.path.basename(pdf_path),
+        output_dir=output_dir,
+        style_mapping=style_mapping,
+        progress_callback=progress_callback,
+        enable_dictionary_postprocess=False
+    )
+    
+    audit_data["rare_char_corrections"] = rare_char_stats.get("corrections_applied", 0)
+    audit_data["rare_char_suspicious"] = rare_char_stats.get("suspicious_chars_found", 0)
     
     with open(out_md_path, "w", encoding="utf-8") as f:
         f.write(full_markdown)
