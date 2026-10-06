@@ -342,26 +342,13 @@
             </div>
 
             <div class="options-group">
-                <label class="option-card">
-                    <input type="checkbox" name="convert_word" checked> 
-                    <span>轉換為 Word (動態裁邊)</span>
-                </label>
-                <label class="option-card">
-                    <input type="checkbox" name="extract_formulas" checked> 
-                    <span>萃取獨立數學公式 (AI)</span>
-                </label>
-            </div>
-
-            <div class="options-group" style="margin-top: 0.8rem; background: rgba(255, 255, 255, 0.02); padding: 0.8rem; border-radius: 8px; border: 1px solid var(--border-color);">
                 <label class="option-card" style="margin: 0; background: transparent; border: none; padding: 0.3rem;">
                     <input type="checkbox" name="extract_inline"> 
                     <span style="font-size: 0.9rem;">包含顯著行內公式 (Inline Math)</span>
                 </label>
-                <label class="option-card" style="margin: 0; background: transparent; border: none; padding: 0.3rem;">
-                    <input type="checkbox" name="embed_formulas_in_word" checked> 
-                    <span style="font-size: 0.9rem;">將 Word 內破碎公式替換為高清圖片 (圖文合成)</span>
-                </label>
             </div>
+
+
 
             <div class="input-group" style="margin-top: 1rem;">
                 <div>
@@ -389,7 +376,6 @@
             
             <div id="downloadActionGroup" style="display: none; flex-direction: column; gap: 0.75rem; margin-top: 1rem;">
                 <div style="display: flex; gap: 1rem;">
-                    <button id="downloadWordBtn" class="submit-btn" style="flex: 1; background: #2563eb; display: none;">📥 下載 Word 文件 (.docx)</button>
                     <button id="downloadZipBtn" class="submit-btn" style="flex: 1; background: #059669; display: none;">📥 下載公式圖片包 (.zip)</button>
                 </div>
                 <button id="openFolderBtn" class="submit-btn" style="background: #475569; width: 100%;">📁 在 Windows 檔案總管中檢視成果檔案</button>
@@ -414,7 +400,6 @@
         const percentageText = document.getElementById('percentageText');
         const logContainer = document.getElementById('logContainer');
         const downloadActionGroup = document.getElementById('downloadActionGroup');
-        const downloadWordBtn = document.getElementById('downloadWordBtn');
         const downloadZipBtn = document.getElementById('downloadZipBtn');
         const openFolderBtn = document.getElementById('openFolderBtn');
         const reportIssueBtn = document.getElementById('reportIssueBtn');
@@ -570,14 +555,12 @@
             const formData = new FormData();
             formData.append('file_id', currentFileId);
             formData.append('orig_name', currentFileOrigName);
-            formData.append('convert_word', document.querySelector('[name="convert_word"]').checked);
-            formData.append('extract_formulas', document.querySelector('[name="extract_formulas"]').checked);
+            formData.append('extract_formulas', 'true');
             formData.append('header_ratio', headerSlider.value);
             formData.append('footer_ratio', footerSlider.value);
             formData.append('left_ratio', leftSlider.value);
             formData.append('right_ratio', rightSlider.value);
             formData.append('extract_inline', document.querySelector('[name="extract_inline"]').checked);
-            formData.append('embed_formulas_in_word', document.querySelector('[name="embed_formulas_in_word"]').checked);
             
             let start = document.querySelector('[name="start_page"]').value;
             let end = document.querySelector('[name="end_page"]').value;
@@ -666,73 +649,6 @@
                             downloadZipBtn.style.display = 'none';
                             openFolderBtn.style.display = 'none';
 
-                            if (data.word_file) {
-                                downloadWordBtn.style.display = 'block';
-                                downloadWordBtn.style.width = '100%';
-                                downloadWordBtn.textContent = '📥 另存 Word 文件 (.docx)';
-                                downloadWordBtn.style.backgroundColor = '#2563eb';
-
-                                downloadWordBtn.onclick = async () => {
-                                    const origText = downloadWordBtn.textContent;
-                                    downloadWordBtn.disabled = true;
-                                    downloadWordBtn.textContent = '⏳ 請在開啟的視窗中選擇儲存位置...';
-
-                                    try {
-                                        const res = await fetch(`/api/save_word_dialog/${taskId}`, { method: 'POST' });
-                                        const saveResult = await res.json();
-
-                                        if (saveResult.status === 'success') {
-                                            downloadWordBtn.style.backgroundColor = '#16a34a';
-                                            downloadWordBtn.textContent = '✅ 已成功儲存！點擊可再次另存他處';
-                                            downloadWordBtn.disabled = false;
-
-                                            let savedInfo = document.getElementById('savedPathDisplay');
-                                            if (!savedInfo) {
-                                                savedInfo = document.createElement('div');
-                                                savedInfo.id = 'savedPathDisplay';
-                                                savedInfo.style.marginTop = '0.8rem';
-                                                savedInfo.style.padding = '0.8rem';
-                                                savedInfo.style.background = 'rgba(22, 163, 74, 0.1)';
-                                                savedInfo.style.border = '1px solid rgba(22, 163, 74, 0.3)';
-                                                savedInfo.style.borderRadius = '8px';
-                                                savedInfo.style.color = '#4ade80';
-                                                savedInfo.style.fontSize = '0.9rem';
-                                                downloadActionGroup.appendChild(savedInfo);
-                                            }
-                                            savedInfo.innerHTML = `<div><b>Word 文件已成功儲存至：</b></div>
-                                            <div style="margin:4px 0; word-break:break-all; font-family:monospace; background:rgba(0,0,0,0.2); padding:6px; border-radius:4px; border:1px solid rgba(22, 163, 74, 0.2);">${saveResult.saved_path}</div>
-                                            <button id="openSavedDirBtn" type="button" style="margin-top:6px; padding:6px 12px; background:#15803d; color:white; border:none; border-radius:6px; cursor:pointer; font-size:0.85rem;">📂 在 Windows 檔案總管中開啟</button>`;
-
-                                            document.getElementById('openSavedDirBtn').onclick = () => {
-                                                fetch(`/api/open_saved_folder/${taskId}`, { method: 'POST' });
-                                            };
-                                        } else if (saveResult.status === 'cancelled') {
-                                            downloadWordBtn.textContent = origText;
-                                            downloadWordBtn.disabled = false;
-                                        } else {
-                                            downloadFileBlob(`/api/download/${taskId}/word`, `${currentFileOrigName || '已轉檔'}.docx`, downloadWordBtn);
-                                        }
-                                    } catch (err) {
-                                        downloadFileBlob(`/api/download/${taskId}/word`, `${currentFileOrigName || '已轉檔'}.docx`, downloadWordBtn);
-                                    }
-                                };
-                            } else {
-                                downloadWordBtn.style.display = 'none';
-                            }
-                        } else {
-                            // 內部工程師模式：顯示完整除錯日誌與全套按鈕
-                            logContainer.style.display = 'block';
-
-                            if (data.word_file) {
-                                downloadWordBtn.style.display = 'block';
-                                downloadWordBtn.textContent = '📥 下載 Word 文件 (.docx)';
-                                downloadWordBtn.onclick = () => {
-                                    downloadFileBlob(`/api/download/${taskId}/word`, `${currentFileOrigName || '已轉檔'}.docx`, downloadWordBtn);
-                                };
-                            } else {
-                                downloadWordBtn.style.display = 'none';
-                            }
-                            
                             if (data.zip_file) {
                                 downloadZipBtn.style.display = 'block';
                                 downloadZipBtn.onclick = () => {

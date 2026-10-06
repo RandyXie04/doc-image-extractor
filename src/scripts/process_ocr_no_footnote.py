@@ -450,8 +450,26 @@ def main(args=None):
         sys.stdout.flush()
         sys.exit(1)
         
-    os.environ["RECOGNITION_MODEL_CHECKPOINT"] = "vikp/surya_rec"
-    os.environ["LAYOUT_MODEL_CHECKPOINT"] = "vikp/surya_layout"
+    # 支援離線本地模型載入 (PyTorch版)
+    import sys
+    from pathlib import Path
+    
+    # 解析專案根目錄
+    if getattr(sys, 'frozen', False):
+        _PROJECT_ROOT = Path(sys.executable).parent.resolve()
+    else:
+        _PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
+        
+    surya_pt_dir = _PROJECT_ROOT / "models" / "surya_pt"
+    
+    if (surya_pt_dir / "rec").exists():
+        os.environ["RECOGNITION_MODEL_CHECKPOINT"] = str(surya_pt_dir / "rec")
+        os.environ["LAYOUT_MODEL_CHECKPOINT"] = str(surya_pt_dir / "layout")
+        os.environ["DETECTION_MODEL_CHECKPOINT"] = str(surya_pt_dir / "det")
+        os.environ["ORDER_MODEL_CHECKPOINT"] = str(surya_pt_dir / "order")
+    else:
+        os.environ["RECOGNITION_MODEL_CHECKPOINT"] = "vikp/surya_rec"
+        os.environ["LAYOUT_MODEL_CHECKPOINT"] = "vikp/surya_layout"
     
 
     print(json.dumps({"progress": 5, "message": "[INFO] Initializing Surya OCR engine (v0.6.x)..."}))

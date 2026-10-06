@@ -257,7 +257,7 @@ async def render_preview(file_id: str, page: int = 1, header: float = 0.1, foote
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formulas: bool, start_page: int, end_page: int, header_ratio: float, footer_ratio: float, left_ratio: float = 0.0, right_ratio: float = 0.0, extract_inline: bool = False, embed_formulas_in_word: bool = True):
+def process_pdf(task_id: str, file_path: str, extract_formulas: bool, start_page: int, end_page: int, header_ratio: float, footer_ratio: float, left_ratio: float = 0.0, right_ratio: float = 0.0, extract_inline: bool = False):
     try:
         tasks[task_id]["status"] = "processing"
         tasks[task_id]["progress"] = 5.0
@@ -271,7 +271,7 @@ def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formul
         def log_fn(msg):
             tasks[task_id]["log"] += f"{msg}\n"
             
-        log_fn(f"[DEBUG] 轉檔配置: convert_word={convert_word}, extract_formulas={extract_formulas}, extract_inline={extract_inline}, embed_formulas_in_word={embed_formulas_in_word}")
+        log_fn(f"[DEBUG] 轉檔配置: extract_formulas={extract_formulas}, extract_inline={extract_inline}")
 
         agent = PDFConversionAgent(
             input_pdf=file_path, 
@@ -279,12 +279,10 @@ def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formul
             footer_ratio=footer_ratio,
             left_ratio=left_ratio,
             right_ratio=right_ratio,
-            extract_inline=extract_inline,
-            embed_formulas_in_word=embed_formulas_in_word
+            extract_inline=extract_inline
         )
         
         pipeline_res = agent.execute_pipeline(
-            convert_word=convert_word,
             extract_formulas=extract_formulas,
             start_page_idx=start_page,
             end_page_idx=end_page if end_page > 0 else None,
@@ -293,9 +291,9 @@ def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formul
         )
         
         if pipeline_res and pipeline_res.get("delivery_folder"):
-            tasks[task_id]["word_file"] = pipeline_res.get("word_path")
+            tasks[task_id]["word_file"] = None
             tasks[task_id]["zip_file"] = pipeline_res.get("zip_path")
-            tasks[task_id]["result_file"] = pipeline_res.get("zip_path") or pipeline_res.get("word_path")
+            tasks[task_id]["result_file"] = pipeline_res.get("zip_path")
             tasks[task_id]["progress"] = 100.0
             tasks[task_id]["status"] = "completed"
             tasks[task_id]["message"] = "處理完成"
@@ -311,7 +309,6 @@ def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formul
 async def start_process(
     background_tasks: BackgroundTasks,
     file_id: str = Form(...),
-    convert_word: bool = Form(True),
     extract_formulas: bool = Form(True),
     start_page: int = Form(0),
     end_page: int = Form(0),
@@ -320,7 +317,6 @@ async def start_process(
     left_ratio: float = Form(0.0),
     right_ratio: float = Form(0.0),
     extract_inline: bool = Form(False),
-    embed_formulas_in_word: bool = Form(True),
     orig_name: str = Form("")
 ):
     file_path = PATHS.input_dir / file_id
@@ -343,7 +339,6 @@ async def start_process(
         process_pdf, 
         task_id, 
         str(file_path), 
-        convert_word, 
         extract_formulas, 
         start_page, 
         end_page, 
@@ -351,8 +346,7 @@ async def start_process(
         footer_ratio,
         left_ratio,
         right_ratio,
-        extract_inline,
-        embed_formulas_in_word
+        extract_inline
     )
     return {"task_id": task_id}
 
@@ -419,17 +413,7 @@ async def get_hardware_status():
     profile = CFG.get_hardware_profile()
     return profile
 
-@app.get("/api/download/{task_id}/word")
-async def download_word(task_id: str):
-    """專用 Word 文件下載端點"""
-    if task_id in tasks and tasks[task_id].get("word_file"):
-        path = tasks[task_id]["word_file"]
-        return FileResponse(
-            path,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            filename=os.path.basename(path)
-        )
-    return {"error": "Word file not available for this task"}
+
 
 @app.get("/api/download/{task_id}/formulas")
 async def download_formulas(task_id: str):
@@ -536,77 +520,14 @@ async def download_extracted_images(task_id: str):
 async def open_folder(task_id: str):
     """在 Windows 檔案總管中開啟成果所在資料夾並選取檔案"""
     if task_id in tasks:
-        target = tasks[task_id].get("word_file") or tasks[task_id].get("zip_file") or tasks[task_id].get("result_file")
+        target = tasks[task_id].get("zip_file") or tasks[task_id].get("result_file")
         if target and os.path.exists(target):
             import subprocess
             subprocess.Popen(f'explorer /select,"{os.path.abspath(target)}"')
             return {"status": "success"}
     raise HTTPException(status_code=404, detail="成果檔案不存在或尚未生成")
 
-@app.post("/api/save_word_dialog/{task_id}")
-async def save_word_dialog(task_id: str):
-    """
-    [出版社編輯專用] 彈出 Windows 原生檔案總管『另存新檔』視窗，
-    讓編輯指定任意儲存路徑 (如桌面或工作資料夾)，並自動複製檔案。
-    採用非同步獨立進程以確保不阻塞 Event Loop，並強制視窗前置獲得焦點。
-    """
-    if task_id not in tasks or not tasks[task_id].get("word_file"):
-        raise HTTPException(status_code=404, detail="找不到轉檔成果")
-        
-    src_word = tasks[task_id]["word_file"]
-    if not os.path.exists(src_word):
-        raise HTTPException(status_code=404, detail="生成的 Word 檔案不存在")
 
-    orig_name = tasks[task_id].get("orig_name", "已轉檔書籍")
-    default_filename = f"{orig_name}_已轉檔.docx"
-
-    cmd = [
-        sys.executable,
-        str(PATHS.root / "src" / "scripts" / "native_dialog.py"),
-        str(src_word),
-        default_filename
-    ]
-    try:
-        import asyncio
-        import json
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(PATHS.root)
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300.0)
-        output_str = stdout.decode("utf-8", errors="replace").strip()
-        if output_str:
-            try:
-                res_data = json.loads(output_str)
-                if res_data.get("status") == "success":
-                    tasks[task_id]["saved_user_path"] = res_data["saved_path"]
-                    return {
-                        "status": "success",
-                        "saved_path": res_data["saved_path"],
-                        "filename": os.path.basename(res_data["saved_path"]),
-                        "message": f"成功儲存至：{res_data['saved_path']}"
-                    }
-                elif res_data.get("status") == "cancelled":
-                    return {"status": "cancelled", "message": "已取消儲存"}
-            except Exception:
-                pass
-        return {"status": "cancelled", "message": "已取消儲存"}
-    except Exception as e:
-        print(f"[SaveDialog] 原生檔案對話框失敗: {e}")
-        return {"status": "fallback", "message": "請使用瀏覽器直接下載"}
-
-@app.post("/api/open_saved_folder/{task_id}")
-async def open_saved_folder(task_id: str):
-    """在 Windows 檔案總管中開啟編輯剛才指定另存的檔案目錄並選取檔案"""
-    if task_id in tasks and tasks[task_id].get("saved_user_path"):
-        target = tasks[task_id]["saved_user_path"]
-        if os.path.exists(target):
-            import subprocess
-            subprocess.Popen(f'explorer /select,"{os.path.abspath(target)}"')
-            return {"status": "success"}
-    return await open_folder(task_id)
 
 
 # =========================================================================

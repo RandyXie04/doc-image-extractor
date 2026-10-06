@@ -53,7 +53,7 @@ def download_file_with_progress(url: str, dest_path: Path):
                 print("\n[ModelManager] 檔案已存在且完整，略過下載。")
             else:
                 downloaded = existing_size
-                block_size = 8192
+                block_size = 1048576  # 從 8KB 加大至 1MB 以減少 I/O 次數
                 mode = 'ab' if existing_size > 0 else 'wb'
                 with open(dest_path, mode) as f:
                     while True:
@@ -155,6 +155,62 @@ def try_download_model_from_github(dest_dir: Path) -> Path | None:
         print(f"[ModelManager] 查詢更新時發生異常: {e}")
     return None
 
+def try_download_surya_from_github(dest_dir: Path) -> Path | None:
+    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+    print(f"[ModelManager] 嘗試查詢 GitHub Releases 以獲取 Surya 模型... ({api_url})")
+    
+    try:
+        req = urllib.request.Request(api_url, headers={'User-Agent': 'PDF-Toolkit-App'})
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode('utf-8'))
+            assets = data.get('assets', [])
+            
+            target_asset = None
+            for asset in assets:
+                name = asset.get('name', '')
+                if name.startswith('surya_pt') and name.endswith('.zip'):
+                    target_asset = asset
+                    break
+                        
+            if target_asset:
+                download_url = target_asset.get('browser_download_url')
+                file_name = target_asset.get('name')
+                dest_path = dest_dir / file_name
+                temp_path = dest_dir / f"{file_name}.downloading"
+                download_file_with_progress(download_url, temp_path)
+                
+                if temp_path.exists():
+                    temp_path.replace(dest_path)
+                    
+                    # Unzip
+                    print(f"[ModelManager] 正在解壓縮 {file_name}...")
+                    import zipfile
+                    with zipfile.ZipFile(dest_path, 'r') as zip_ref:
+                        extract_path = dest_dir / "surya_pt"
+                        extract_path.mkdir(parents=True, exist_ok=True)
+                        zip_ref.extractall(extract_path)
+                    
+                    # 進行熱刪除，節省硬碟空間
+                    try:
+                        dest_path.unlink()
+                        print(f"[ModelManager] 已刪除安裝壓縮檔: {file_name}")
+                    except Exception as e:
+                        print(f"[ModelManager] 警告: 無法刪除壓縮檔 {file_name}: {e}")
+                        
+                    print("[ModelManager] Surya 模型解壓縮與清理完成！")
+                    return extract_path
+            else:
+                print(f"[ModelManager] 在最新的 Release 中找不到 Surya 壓縮檔 (surya_pt*.zip)")
+                return None
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            print("[ModelManager] 尚未發布任何 GitHub Release。無法自動下載 Surya 模型。")
+        else:
+            print(f"[ModelManager] GitHub API 查詢失敗: HTTP {e.code}")
+    except Exception as e:
+        print(f"[ModelManager] 下載 Surya 模型發生異常: {e}")
+    return None
+
 def ensure_model_ready() -> dict:
     """
     Check model status and prepare it.
@@ -164,6 +220,14 @@ def ensure_model_ready() -> dict:
     with _model_lock:
         PATHS.models_dir.mkdir(parents=True, exist_ok=True)
     
+    # 檢查 SuryaOCR 本地模型是否存在
+    surya_pt_dir = PATHS.models_dir / "surya_pt"
+    if not (surya_pt_dir / "rec").exists():
+        print("[Model Check] 本機無 SuryaOCR 本地權重檔，開始自動從 GitHub 下載...")
+        try_download_surya_from_github(PATHS.models_dir)
+    else:
+        print(f"[Model Check] 找到 SuryaOCR 本地模型: {surya_pt_dir}")
+        
     onnx_path = _get_exact_model_path(DEFAULT_MODEL_NAME)
     if onnx_path:
         print(f"[Model Check] 找到 ONNX 模型: {onnx_path}")

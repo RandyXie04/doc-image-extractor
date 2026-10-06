@@ -53,6 +53,12 @@ class _Paths:
 
     # // Models
     models_dir:     Path = _PROJECT_ROOT / "models"
+    surya_pt_dir:   Path = _PROJECT_ROOT / "models" / "surya_pt"
+
+    @property
+    def surya_model_path(self) -> Path:
+        env_custom = os.getenv("SURYA_PT_PATH")
+        return Path(env_custom) if env_custom else self.surya_pt_dir
 
     def get_model_path(self, model_name: str = "yolo_v8_ft.pt") -> Path | None:
         """
@@ -85,7 +91,7 @@ class _Paths:
         dirs = [
             self.input_dir, self.formula_dir, self.formula_dir_v2,
             self.cleaned_dir, self.preview_dir, self.backup_dir,
-            self.models_dir
+            self.models_dir, self.surya_pt_dir
         ]
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)
@@ -152,7 +158,6 @@ class _Config:
     left_ratio:     float = field(default_factory=lambda: float(os.getenv("LEFT_RATIO", "0.0")))
     right_ratio:    float = field(default_factory=lambda: float(os.getenv("RIGHT_RATIO", "0.0")))
     extract_inline: bool  = field(default_factory=lambda: os.getenv("EXTRACT_INLINE", "false").lower() == "true")
-    embed_formulas_in_word: bool = field(default_factory=lambda: os.getenv("EMBED_FORMULAS_IN_WORD", "true").lower() == "true")
     easyocr_langs:  list  = field(default_factory=lambda: os.getenv("EASYOCR_LANGS", "ch_sim,en").split(","))
     
     # // AI Heading Classifier Settings
