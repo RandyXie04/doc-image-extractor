@@ -7,7 +7,7 @@
 ## 功能模組
 
 | 模組 | 說明文件 |
-|------|----------|
+| ------ | ---------- |
 | PDF 數學公式提取 | [README_MathFormula.md](src/README_MathFormula.md) |
 | 雙引擎 PDF 轉檔與 OCR 管線 | [README_OCR.md](src/scripts/README_OCR.md) |
 | 文件圖片無損提取 | [README_ImageExtractor.md](src/scripts/README_ImageExtractor.md) |
@@ -31,8 +31,10 @@ python -m pip install -r requirements.txt
 
 ### AI 模型
 
-- **YOLOv8**：將 ONNX 權重放置於 `models/` 目錄
-- **Surya OCR**：首次執行時自動從 HuggingFace 下載，需網路連線
+若第一次開啟 `start_app.bat` 找不到 `models` 中存放任何模型則會自動從 GitHub Releases 自動下載模型。
+
+- **YOLOv8**
+- **Surya OCR**
 
 ---
 
