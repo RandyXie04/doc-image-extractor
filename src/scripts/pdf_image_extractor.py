@@ -77,7 +77,8 @@ def extract_pdf_images(
     pdf_path: str,
     image_blocks: list,
     output_dir: str,
-    pre_extract_dir: str = None
+    pre_extract_dir: str = None,
+    progress_callback = None
 ) -> dict:
     """
     Extract images from a PDF, one per detected image block.
@@ -131,7 +132,12 @@ def extract_pdf_images(
                 except ImportError:
                     from extract_images import extract_from_pdf
 
-            extracted_count = extract_from_pdf(pdf_path, temp_extract_dir, to_grayscale=False)
+            extracted_count = extract_from_pdf(
+                pdf_path, 
+                temp_extract_dir, 
+                to_grayscale=False, 
+                progress_callback=progress_callback
+            )
 
             if extracted_count == 0:
                 return results

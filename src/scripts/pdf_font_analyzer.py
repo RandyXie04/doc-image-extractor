@@ -46,15 +46,17 @@ def scan_pdf_fonts(pdf_path: str, max_samples: int = 3, max_sample_len: int = 60
                     # 去掉 PDF 子集前綴（格式：XXXXXX+FontName）
                     clean_name = raw_font.split("+", 1)[-1] if "+" in raw_font else raw_font
 
-                    if clean_name not in font_data:
-                        font_data[clean_name] = {
+                    font_key = f"{clean_name}_{size}"
+
+                    if font_key not in font_data:
+                        font_data[font_key] = {
+                            "clean_name": clean_name,
                             "full_name": raw_font,
-                            "sizes": [],
+                            "size": size,
                             "texts": [],
                         }
 
-                    entry = font_data[clean_name]
-                    entry["sizes"].append(size)
+                    entry = font_data[font_key]
 
                     # 積累非重複的樣本句子
                     if text not in entry["texts"] and len(text) >= 3:
@@ -63,12 +65,9 @@ def scan_pdf_fonts(pdf_path: str, max_samples: int = 3, max_sample_len: int = 60
     doc.close()
 
     result = []
-    for clean_name, data in font_data.items():
-        # 眾數字級
-        if data["sizes"]:
-            size_mode = max(set(data["sizes"]), key=data["sizes"].count)
-        else:
-            size_mode = 0.0
+    for font_key, data in font_data.items():
+        clean_name = data["clean_name"]
+        size_mode = data["size"]
 
         samples = []
         texts = data["texts"]
@@ -79,8 +78,11 @@ def scan_pdf_fonts(pdf_path: str, max_samples: int = 3, max_sample_len: int = 60
                     break
                 samples.append(texts[i][:max_sample_len])
 
+        # Add rounded size to the name to distinguish them in the UI if needed
+        # Or we can just keep the name clean, but the UI might need to show the size.
+        # The result structure already has size_pt.
         result.append({
-            "name": clean_name,
+            "name": f"{clean_name} ({size_mode}pt)", # Combine name and size for the identifier
             "full_name": data["full_name"],
             "size_pt": size_mode,
             "sample_texts": samples,

@@ -444,7 +444,12 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 for _line in lines:
                     for _span in _line.get('spans', []):
                         _raw_fn = (_span.get('font') or '').split('+', 1)[-1]
-                        if _raw_fn in font_role_map:
+                        _size = round(_span.get('size', 0) * 2) / 2
+                        _key = f"{_raw_fn}_{_size}"
+                        if _key in font_role_map:
+                            _block_font_role = font_role_map[_key].get('role')
+                            break
+                        elif _raw_fn in font_role_map:
                             _block_font_role = font_role_map[_raw_fn].get('role')
                             break
                     if _block_font_role:
@@ -510,7 +515,12 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                     for line in lines:
                         for span in line.get('spans', []):
                             raw_fn = (span.get('font') or '').split('+', 1)[-1]
-                            if raw_fn in font_role_map:
+                            size_v = round(span.get('size', 0) * 2) / 2
+                            key_v = f"{raw_fn}_{size_v}"
+                            if key_v in font_role_map:
+                                _caption_style = font_role_map[key_v].get('docx_style')
+                                break
+                            elif raw_fn in font_role_map:
                                 _caption_style = font_role_map[raw_fn].get('docx_style')
                                 break
                         if _caption_style:
@@ -652,7 +662,8 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             image_path_map = extract_pdf_images(
                 pdf_path=pdf_path,
                 image_blocks=all_image_blocks,
-                output_dir=images_dir
+                output_dir=images_dir,
+                progress_callback=progress_callback
             )
             if progress_callback:
                 progress_callback(85, f"[INFO] 成功提取 {len(image_path_map)} 張圖片。")

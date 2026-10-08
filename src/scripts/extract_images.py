@@ -85,7 +85,7 @@ def extract_from_docx(docx_path: str, output_dir: str, to_grayscale: bool = Fals
     return count
 
 
-def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False, duplicate_policy: str = "every_occurrence") -> int:
+def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False, duplicate_policy: str = "every_occurrence", progress_callback=None) -> int:
     """
     從 PDF (.pdf) 文件中無損提取所有圖片，支援進階的遮罩(Mask)解析、去重複與透明度合成。
     支援 duplicate_policy: "unique" | "every_occurrence"。
@@ -98,7 +98,11 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False,
     MIN_HEIGHT = 50
 
     try:
-        for page_index in range(len(doc)):
+        total_pages = len(doc)
+        for page_index in range(total_pages):
+            if progress_callback:
+                progress_callback(85, f"[INFO] 正在掃描並提取圖片 (第 {page_index+1}/{total_pages} 頁)...")
+                
             page = doc[page_index]
             image_list = page.get_images(full=True)
 

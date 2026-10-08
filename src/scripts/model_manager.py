@@ -175,61 +175,36 @@ def try_download_model_from_github(dest_dir: Path) -> Path | None:
         print(f"[ModelManager] 查詢更新時發生異常: {e}")
     return None
 
-def try_download_surya_from_github(dest_dir: Path) -> Path | None:
-    api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
-    print(f"[ModelManager] 嘗試查詢 GitHub Releases 以獲取 Surya 模型... ({api_url})")
+def try_download_surya_from_huggingface(dest_dir: Path) -> Path | None:
+    print("[ModelManager] 嘗試從 HuggingFace 官方拉取 Surya 模型...")
+    base_dir = dest_dir / "surya_pt"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    
+    models_to_download = {
+        "det": "vikp/surya_det",
+        "rec": "vikp/surya_rec",
+        "layout": "vikp/surya_layout",
+        "order": "vikp/surya_order"
+    }
     
     try:
-        req = urllib.request.Request(api_url, headers={'User-Agent': 'PDF-Toolkit-App'})
-        with urllib.request.urlopen(req, timeout=10) as response:
-            data = json.loads(response.read().decode('utf-8'))
-            assets = data.get('assets', [])
+        from huggingface_hub import snapshot_download
+        for folder_name, repo_id in models_to_download.items():
+            dest_path = base_dir / folder_name
+            print(f"[ModelManager] 正在處理 {repo_id} -> {dest_path} ...")
+            snapshot_download(
+                repo_id=repo_id,
+                local_dir=dest_path,
+                local_dir_use_symlinks=False,
+                ignore_patterns=["*.onnx", "*.safetensors.onnx", "*.msgpack"]
+            )
+            print(f"[ModelManager] {repo_id} 完成！")
             
-            target_asset = None
-            for asset in assets:
-                name = asset.get('name', '')
-                if name.startswith('surya_pt') and name.endswith('.zip'):
-                    target_asset = asset
-                    break
-                        
-            if target_asset:
-                download_url = target_asset.get('browser_download_url')
-                file_name = target_asset.get('name')
-                dest_path = dest_dir / file_name
-                temp_path = dest_dir / f"{file_name}.downloading"
-                download_file_with_progress(download_url, temp_path)
-                
-                if temp_path.exists():
-                    temp_path.replace(dest_path)
-                    
-                    # Unzip
-                    print(f"[ModelManager] 正在解壓縮 {file_name}...")
-                    import zipfile
-                    with zipfile.ZipFile(dest_path, 'r') as zip_ref:
-                        extract_path = dest_dir / "surya_pt"
-                        extract_path.mkdir(parents=True, exist_ok=True)
-                        zip_ref.extractall(extract_path)
-                    
-                    # 進行熱刪除，節省硬碟空間
-                    try:
-                        dest_path.unlink()
-                        print(f"[ModelManager] 已刪除安裝壓縮檔: {file_name}")
-                    except Exception as e:
-                        print(f"[ModelManager] 警告: 無法刪除壓縮檔 {file_name}: {e}")
-                        
-                    print("[ModelManager] Surya 模型解壓縮與清理完成！")
-                    return extract_path
-            else:
-                print(f"[ModelManager] 在最新的 Release 中找不到 Surya 壓縮檔 (surya_pt*.zip)")
-                return None
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            print("[ModelManager] 尚未發布任何 GitHub Release。無法自動下載 Surya 模型。")
-        else:
-            print(f"[ModelManager] GitHub API 查詢失敗: HTTP {e.code}")
+        print("[ModelManager] Surya 模型從 HuggingFace 下載完成！")
+        return base_dir
     except Exception as e:
         print(f"[ModelManager] 下載 Surya 模型發生異常: {e}")
-    return None
+        return None
 
 def ensure_model_ready() -> dict:
     """
@@ -243,8 +218,8 @@ def ensure_model_ready() -> dict:
     # 檢查 SuryaOCR 本地模型是否存在
     surya_pt_dir = PATHS.models_dir / "surya_pt"
     if not (surya_pt_dir / "rec").exists():
-        print("[Model Check] 本機無 SuryaOCR 本地權重檔，開始自動從 GitHub 下載...")
-        try_download_surya_from_github(PATHS.models_dir)
+        print("[Model Check] 本機無 SuryaOCR 本地權重檔，開始自動從 HuggingFace 下載...")
+        try_download_surya_from_huggingface(PATHS.models_dir)
     else:
         print(f"[Model Check] 找到 SuryaOCR 本地模型: {surya_pt_dir}")
         

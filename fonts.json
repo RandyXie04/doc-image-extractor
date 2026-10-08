@@ -19,9 +19,8 @@
   },
   "FZHTK--GBK1-0": {
     "role": null,
-    "docx_style": null,
-    "sample": "一二三上　册下　册",
-    "mapped_by": "legacy"
+    "docx_style": "屬名",
+    "mapped_by": "user"
   },
   "FZKTJW--GB1-0": {
     "role": null,
@@ -60,6 +59,11 @@
     "mapped_by": "legacy"
   },
   "FZLTZHK--GBK1-0": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "SourceHanSerifCN-Bold": {
     "role": "H1",
     "docx_style": null,
     "mapped_by": "user"
