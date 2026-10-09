@@ -123,7 +123,12 @@ def load_fonts_json(fonts_json_path: str) -> dict:
     統一回傳新格式 dict。
     """
     if not os.path.exists(fonts_json_path):
-        return {}
+        for alt in ["config/fonts.json", "fonts.json"]:
+            if os.path.exists(alt):
+                fonts_json_path = alt
+                break
+        else:
+            return {}
     try:
         with open(fonts_json_path, "r", encoding="utf-8") as f:
             raw = json.load(f)
@@ -204,7 +209,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="掃描 PDF 字體並輸出 JSON")
     parser.add_argument("pdf_path", help="PDF 檔案路徑")
     parser.add_argument("--template", help="template.docx 路徑（選用）", default=None)
-    parser.add_argument("--fonts_json", help="fonts.json 路徑", default="fonts.json")
+    parser.add_argument("--fonts_json", help="fonts.json 路徑", default="config/fonts.json")
     args = parser.parse_args()
 
     result = analyze_pdf_for_ui(

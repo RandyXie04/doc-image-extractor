@@ -65,7 +65,7 @@ start_app_dev.bat
 一鍵打包為獨立執行檔：
 
 ```bash
-cmd /c build_exe.bat
+cmd /c build_app.bat
 ```
 
 產出位於 `dist/PDF_Toolkit/`：
@@ -85,7 +85,7 @@ dist/PDF_Toolkit/
 
 ```text
 Project Root
-├── config/                     # 系統設定 (settings.py)
+├── config/                     # 系統設定 (settings.py, fonts.json)
 ├── src/
 │   ├── core_agent.py           # 公式提取、Word 轉檔引擎
 │   ├── extraction/             # 自動化管線節點
@@ -106,6 +106,7 @@ Project Root
 │   │   ├── pdf_font_analyzer.py      # PDF 字型分析
 │   │   ├── hardware_probe.py         # GPU 硬體探測
 │   │   ├── model_manager.py          # 模型管理
+│   │   ├── download_models.py        # HuggingFace 模型下載工具
 │   │   ├── native_dialog.py          # Windows 原生對話框
 │   │   ├── updater_service.py        # 線上更新
 │   │   ├── cleanup_scratch.py        # 暫存清理
@@ -127,14 +128,14 @@ Project Root
 ├── docs/                       # 文件 (BUG_LOG, RELEASE_SOP)
 ├── logs/                       # 執行日誌
 ├── scratch/                    # 開發暫存 (自動清理)
-├── app_window.py               # 主程式入口 (WebView2 + FastAPI)
+├── main.py                     # 標準程式入口 (轉導至 app_window)
+├── app_window.py               # 視窗核心入口 (WebView2 + FastAPI)
 ├── start_app.bat               # 啟動腳本
 ├── start_app_dev.bat           # 除錯模式啟動
 ├── build_app.spec              # PyInstaller 規格檔
-├── build_exe.bat               # 打包腳本
+├── build_app.bat               # 打包腳本
 ├── updater.bat                 # 熱更新腳本
-├── setup_pipeline.py           # 管線設定
-├── download_models.py          # 模型下載
 ├── version.json                # 版本資訊
 └── requirements.txt            # 依賴清單
 ```
+

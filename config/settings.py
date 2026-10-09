@@ -33,6 +33,15 @@ class _Paths:
     root:           Path = _PROJECT_ROOT
     bundle_root:    Path = _BUNDLE_ROOT
     data_dir:       Path = _PROJECT_ROOT / "data"
+    scratch_dir:    Path = _PROJECT_ROOT / "scratch"
+    config_dir:     Path = _PROJECT_ROOT / "config"
+
+    @property
+    def fonts_json_path(self) -> Path:
+        target = self.config_dir / "fonts.json"
+        if not target.exists() and (self.root / "fonts.json").exists():
+            return self.root / "fonts.json"
+        return target
 
     # // Input area
     input_dir:      Path = _PROJECT_ROOT / "data" / "01_input"

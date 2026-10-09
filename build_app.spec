@@ -21,6 +21,10 @@ datas = [
 if os.path.exists('src/founder_tools/template.docx'):
     datas.append(('src/founder_tools/template.docx', 'src/founder_tools'))
 
+# Check fonts.json in config
+if os.path.exists('config/fonts.json'):
+    datas.append(('config/fonts.json', 'config'))
+
 # Check bundled pandoc
 if os.path.exists('bin/pandoc.exe'):
     datas.append(('bin/pandoc.exe', 'bin'))

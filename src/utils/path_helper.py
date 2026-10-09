@@ -36,6 +36,9 @@ def get_data_dir() -> Path:
 def get_log_dir() -> Path:
     return get_app_dir() / "logs" # 獨立出 logs 資料夾
 
+def get_scratch_dir() -> Path:
+    return get_app_dir() / "scratch"
+
 # --- Bundle 內部資源 (須與 build_app.spec 'datas' 嚴格對應) ---
 # Spec: ('src/web/static', 'src/web/static')
 def get_static_dir() -> Path:

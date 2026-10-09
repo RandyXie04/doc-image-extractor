@@ -68,3 +68,4 @@ models/
 build/
 dist/
 *.exe
+*.msi

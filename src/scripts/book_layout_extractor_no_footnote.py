@@ -175,13 +175,13 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
     # ── 讀取人工字體角色對應表（fonts.json）──
     try:
         from src.scripts.pdf_font_analyzer import get_font_role_map
-        _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'fonts.json')
+        _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json')
         _fonts_json = os.path.normpath(_fonts_json)
         font_role_map = get_font_role_map(_fonts_json)
     except Exception:
         try:
             from scripts.pdf_font_analyzer import get_font_role_map
-            _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'fonts.json')
+            _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json')
             _fonts_json = os.path.normpath(_fonts_json)
             font_role_map = get_font_role_map(_fonts_json)
         except Exception:

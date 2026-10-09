@@ -1,23 +1,29 @@
+import os
+import io
+import sys
+import shutil
+import uuid
+import asyncio
+from pathlib import Path
+
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Request
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-import shutil
-import uuid
-import os
-import io
-import sys
+from pydantic import BaseModel
 
 import warnings
 warnings.filterwarnings("ignore", message=".*The `fitz` API is deprecated.*")
 import pymupdf as fitz
-import numpy as np
 from PIL import Image, ImageDraw
-from pathlib import Path
 
 from src.core_agent import PDFConversionAgent
 from config import PATHS
 from src.scripts.cleanup_scratch import cleanup_scratch
+
+# --- Pydantic Data Models / Schemas ---
+class MarkdownUpdate(BaseModel):
+    content: str
 
 app = FastAPI(title="PDF AI 公式萃取站")
 
@@ -673,7 +679,7 @@ async def api_scan_fonts(request: Request):
             template_path = str(tc)
             break
 
-    fonts_json_path = str(PATHS.root / "fonts.json")
+    fonts_json_path = str(PATHS.fonts_json_path)
 
     try:
         result = await asyncio.to_thread(
@@ -710,7 +716,7 @@ async def api_save_font_mapping(request: Request):
             "mapped_by": "user",
         }
 
-    fonts_json_path = str(PATHS.root / "fonts.json")
+    fonts_json_path = str(PATHS.fonts_json_path)
     try:
         save_fonts_json(fonts_json_path, mapping)
     except Exception as e:
@@ -894,35 +900,35 @@ async def download_ocr_result(filename_stem: str, ext: str):
         raise HTTPException(status_code=404, detail="檔案尚未生成或不存在")
     return FileResponse(file_path, filename=f"{filename_stem}.{ext}")
 
-from pydantic import BaseModel
-class MarkdownUpdate(BaseModel):
-    content: str
 
 @app.get("/api/get_markdown/{filename_stem}")
-async def get_markdown(filename_stem: str):
-    from config import PATHS
+def get_markdown(filename_stem: str):
     md_file = PATHS.root / 'data' / '03_output' / f"{filename_stem}.md"
     if not md_file.exists():
         raise HTTPException(status_code=404, detail="Markdown file not found")
     with open(md_file, "r", encoding="utf-8") as f:
         return {"content": f.read()}
 
+
 @app.post("/api/update_and_rebuild_docx/{filename_stem}")
 async def update_and_rebuild_docx(filename_stem: str, data: MarkdownUpdate):
-    import subprocess
-    import sys
-    from config import PATHS
-    
     md_file = PATHS.root / 'data' / '03_output' / f"{filename_stem}.md"
     if not md_file.exists():
         raise HTTPException(status_code=404, detail="Markdown file not found")
         
-    with open(md_file, "w", encoding="utf-8") as f:
-        f.write(data.content)
+    def write_file():
+        with open(md_file, "w", encoding="utf-8") as f:
+            f.write(data.content)
+            
+    await asyncio.to_thread(write_file)
         
     # Re-run md_to_docx.py
     cmd = [sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py"), "--files", str(md_file)]
-    subprocess.run(cmd, cwd=str(PATHS.root))
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=str(PATHS.root)
+    )
+    await proc.wait()
     
     return {"status": "success", "message": "已成功更新大綱並重新生成 Word 文件！"}
 
@@ -1005,12 +1011,26 @@ class OpenFileFolderRequest(BaseModel):
     file_path: str
 
 @app.post("/api/open_file_folder")
-async def api_open_file_folder(req: OpenFileFolderRequest):
+def api_open_file_folder(req: OpenFileFolderRequest):
     """在 Windows 檔案總管中定位並選取已儲存之檔案"""
     import subprocess
+    from config import PATHS
+    
+    # 嚴格路徑校驗 (Path Traversal 防禦)
+    allowed_dirs = [
+        (PATHS.root / "data").resolve(),
+        PATHS.data_dir.resolve()
+    ]
+    
     target = Path(req.file_path).resolve()
+    is_safe = any(str(target).startswith(str(d)) for d in allowed_dirs)
+    
+    if not is_safe:
+        raise HTTPException(status_code=403, detail="存取受限：路徑超出允許之專案資料目錄")
+        
     if not target.exists():
         raise HTTPException(status_code=404, detail="目標檔案不存在")
+        
     subprocess.Popen(f'explorer /select,"{str(target)}"')
     return {"status": "success"}
 

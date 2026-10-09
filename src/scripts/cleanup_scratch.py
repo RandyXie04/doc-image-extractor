@@ -7,15 +7,15 @@ from pathlib import Path
 def cleanup_scratch(force: bool = False, log_fn=print) -> bool:
     today = datetime.date.today()
     try:
-        from src.utils.path_helper import get_data_dir
+        from src.utils.path_helper import get_scratch_dir
     except ImportError:
         import sys
         from pathlib import Path
         _fallback = Path(__file__).parent.parent.parent.resolve()
         if str(_fallback) not in sys.path:
             sys.path.insert(0, str(_fallback))
-        from src.utils.path_helper import get_data_dir
-    scratch_dir = get_data_dir() / "scratch"
+        from src.utils.path_helper import get_scratch_dir
+    scratch_dir = get_scratch_dir()
     
     if not scratch_dir.exists():
         os.makedirs(scratch_dir, exist_ok=True)
