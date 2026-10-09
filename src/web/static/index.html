@@ -5,141 +5,182 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>書籍轉檔與文檔數位化工具箱</title>
     <style>
-        :root {
-            --primary: #4f46e5;
-            --primary-hover: #4338ca;
-            --bg: #f8fafc;
-            --card-bg: #ffffff;
-            --text-main: #1e293b;
-            --text-muted: #64748b;
-            --border: #e2e8f0;
-        }
+:root {
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --bg-color: #111111;
+    --surface: rgba(255,255,255,0.03);
+    --text-main: #f4f4f5;
+    --text-muted: #a1a1aa;
+    --border: rgba(255,255,255,0.08);
+    --card-bg: var(--surface);
+}
+
+:root[data-theme="light"] {
+    --bg-color: #f1f5f9;
+    --surface: rgba(255,255,255,0.7);
+    --text-main: #0f172a;
+    --text-muted: #475569;
+    --border: rgba(148, 163, 184, 0.3);
+    --card-bg: var(--surface);
+}
 
         body {
-            background-color: var(--bg);
-            color: var(--text-main);
-            font-family: 'Segoe UI', system-ui, sans-serif;
-            margin: 0;
-            padding: 3rem 1.5rem;
-            display: flex;
-            justify-content: center;
+            /* Handled globally by sidebar.css */
         }
 
         .container {
-            max-width: 1100px;
+            max-width: 960px;
             width: 100%;
         }
 
-        .hero {
-            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 40%, #312e81 70%, #4338ca 100%);
-            border-radius: 24px;
-            padding: 2.5rem 3rem;
-            color: white;
-            box-shadow: 0 15px 35px rgba(30, 27, 75, 0.2);
-            margin-bottom: 2.5rem;
-            text-align: center;
+        .header {
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
         }
 
-        .hero h1 { margin: 0 0 1rem; font-size: 2.5rem; letter-spacing: -0.02em; }
-        .hero p { opacity: 0.9; margin: 0; font-size: 1.15rem; line-height: 1.6; max-width: 800px; margin: 0 auto; }
+        .header h1 { 
+            margin: 0 0 0.5rem; 
+            font-size: 2rem; 
+            letter-spacing: -0.02em; 
+            font-weight: 600; 
+            color: var(--text-main);
+        }
+        
+        .header p { 
+            margin: 0; 
+            font-size: 1.125rem; 
+            color: var(--text-muted);
+            max-width: 600px;
+        }
+
+        .guide-box {
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 8px;
+            margin-bottom: 3rem;
+            border: 1px solid var(--border);
+        }
+
+        .guide-box h2 {
+            font-size: 1rem;
+            margin: 0 0 0.5rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .guide-box p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin: 0;
+            line-height: 1.5;
+        }
+
+        .section-title {
+            margin-bottom: 1.5rem;
+            font-weight: 600;
+            color: var(--text-main);
+            font-size: 1.125rem;
+            letter-spacing: -0.01em;
+        }
 
         .grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 1.5rem;
+            margin-bottom: 3rem;
         }
 
         .card {
             background: var(--card-bg);
             border: 1px solid var(--border);
-            border-radius: 20px;
-            padding: 1.8rem;
+            border-radius: 8px;
+            padding: 1.5rem;
             display: flex;
             flex-direction: column;
-            transition: all 0.2s ease;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.03);
             text-decoration: none;
             color: inherit;
         }
 
         .card:hover {
-            transform: translateY(-4px);
-            box-shadow: 0 12px 28px rgba(0,0,0,0.08);
-            border-color: var(--primary);
+            border-color: var(--border);
         }
 
-        .badge {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 6px;
-            font-size: 0.8rem;
+        .card-label {
+            font-size: 0.75rem;
             font-weight: 600;
-            margin-bottom: 1rem;
-            width: max-content;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-bottom: 0.75rem;
         }
 
-        .badge.purple { background: #eef2ff; color: #4f46e5; }
-        .badge.blue { background: #e0f2fe; color: #0284c7; }
-        .badge.green { background: #dcfce7; color: #16a34a; }
-
-        .card h3 { margin: 0 0 0.8rem; font-size: 1.35rem; }
-        .card p { color: var(--text-muted); line-height: 1.5; margin-bottom: 1.5rem; flex-grow: 1; }
+        .card h3 { 
+            margin: 0 0 0.5rem; 
+            font-size: 1.125rem; 
+            font-weight: 600; 
+            color: var(--text-main); 
+        }
+        
+        .card p { 
+            color: var(--text-muted); 
+            line-height: 1.5; 
+            margin: 0 0 1.5rem; 
+            font-size: 0.95rem;
+            flex-grow: 1; 
+        }
 
         .action-text {
-            color: var(--primary);
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            color: var(--text-main);
+            font-weight: 500;
+            font-size: 0.875rem;
         }
-
-        .action-text span { transition: transform 0.2s; }
-        .card:hover .action-text span { transform: translateX(4px); }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="hero">
-            <h1>📚 書籍轉檔與文檔數位化工具箱</h1>
-            <p>全方位整合「AI 公式萃取」、「文件圖片無損提取」、「方正排版 CMap 標點修復」與「自動化校註」的一站式桌面處理中心。</p>
+        <div class="header">
+            <h1>書籍轉檔與文檔數位化工具箱</h1>
+            <p>整合公式萃取、圖片提取、編碼修復與自動化校註的處理中心。</p>
         </div>
 
-        <div style="margin-bottom: 2rem;">
-            <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem; color: #1e293b;">📌 新手指南：建議處理流程</h2>
-            <p style="color: #64748b; line-height: 1.6;">若是處理古老電子書或學術論文，建議依循以下步驟進行數位化。您可以隨時點選左側面板快速切換工具。</p>
+        <div class="guide-box">
+            <h2>處理流程建議</h2>
+            <p>處理古老電子書或學術論文時，請先進行編碼修復與圖片提取，確認無誤後再使用主轉換引擎進行 OCR 與格式重構。</p>
         </div>
 
-        <div style="margin-bottom: 1.5rem; font-weight: bold; color: #4338ca; border-bottom: 2px solid #e0e7ff; padding-bottom: 0.5rem;">階段一：修復與前置準備</div>
-        <div class="grid" style="margin-bottom: 2rem;">
-            <a href="/static/founder_repair.html" class="card" style="border-left: 4px solid #16a34a;">
-                <span class="badge green">第一步：編碼修復</span>
-                <h3>🛠️ 方正書版亂碼修復</h3>
-                <p>若來源是早期方正系統出版的 PDF，請先經過此工具修復 CMap 編碼缺陷與亂碼，再進入後續處理。</p>
-                <div class="action-text">開啟工具 <span>→</span></div>
+        <div class="section-title">階段一：修復與前置準備</div>
+        <div class="grid">
+            <a href="/static/founder_repair.html" class="card">
+                <div class="card-label">編碼修復</div>
+                <h3>方正書版亂碼修復</h3>
+                <p>修復早期方正系統出版 PDF 的 CMap 編碼缺陷與亂碼問題。</p>
+                <div class="action-text">開啟工具</div>
             </a>
             
-            <a href="/static/extract_images.html" class="card" style="border-left: 4px solid #0284c7;">
-                <span class="badge blue">可選：資源擷取</span>
-                <h3>🖼️ 文件圖片無損提取</h3>
-                <p>在轉換格式前，若需保留原版插圖，可使用此工具一鍵打包 PDF 內所有高畫質原始圖片。</p>
-                <div class="action-text">開啟工具 <span>→</span></div>
+            <a href="/static/extract_images.html" class="card">
+                <div class="card-label">資源擷取</div>
+                <h3>文件圖片無損提取</h3>
+                <p>一鍵打包 PDF 內所有高畫質原始圖片，保留原版插圖。</p>
+                <div class="action-text">開啟工具</div>
             </a>
         </div>
 
-        <div style="margin-bottom: 1.5rem; font-weight: bold; color: #4338ca; border-bottom: 2px solid #e0e7ff; padding-bottom: 0.5rem;">階段二：主轉換引擎</div>
+        <div class="section-title">階段二：主轉換引擎</div>
         <div class="grid">
-            <a href="/static/formula.html" class="card" style="border-left: 4px solid #4f46e5;">
-                <span class="badge purple">理科文獻專用</span>
-                <h3>🔍 PDF 數學公式提取</h3>
-                <p>適合包含大量數學公式的理工論文。使用 YOLOv8 模型定位獨立公式，精準轉換為 Word 格式並保留公式圖片。</p>
-                <div class="action-text">開啟工具 <span>→</span></div>
+            <a href="/static/formula.html" class="card">
+                <div class="card-label">理科文獻專用</div>
+                <h3>PDF 數學公式提取</h3>
+                <p>使用 YOLOv8 模型定位獨立公式，轉換為 Word 格式並保留公式圖片。</p>
+                <div class="action-text">開啟工具</div>
             </a>
 
-            <a href="/static/ocr_pipeline.html" class="card" style="border-left: 4px solid #ea580c;">
-                <span class="badge" style="background:#fff7ed;color:#ea580c;">純文字與表格專用</span>
-                <h3>📄 全自動 OCR 與排版</h3>
-                <p>適合圖文混排、大量表格或掃描檔的純文字書籍。使用 RapidDoc 自動版面分析並重建層級排版。</p>
-                <div class="action-text">啟動管線 <span>→</span></div>
+            <a href="/static/ocr_pipeline.html" class="card">
+                <div class="card-label">純文字與表格專用</div>
+                <h3>全自動 OCR 與排版</h3>
+                <p>使用 Surya OCR 自動版面分析，重建層級排版，適合圖文混排文件。</p>
+                <div class="action-text">啟動管線</div>
             </a>
         </div>
     </div>

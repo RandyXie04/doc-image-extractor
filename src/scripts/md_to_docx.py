@@ -248,33 +248,34 @@ def main():
                     return f"![{alt_text}]({abs_img.replace(os.sep, '/')})"
                 return m.group(0)
             md_content = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', _resolve_img_path, md_content)
+            
+            # 確保圖片 Markdown 語法獨立成行（前後各加空行）
+            md_content = re.sub(
+                r'([^\n])(!\[[^\]]*\]\([^)]*\))',
+                r'\1\n\n\2',
+                md_content
+            )
+            md_content = re.sub(
+                r'(!\[[^\]]*\]\([^)]*\))([^\n])',
+                r'\1\n\n\2',
+                md_content
+            )
 
             temp_md_path = os.path.join(tempfile.gettempdir(), f"temp_{uuid.uuid4().hex}.md")
             with open(temp_md_path, 'w', encoding='utf-8') as f:
                 f.write(md_content)
 
-            # Step 1: Convert MD (including raw HTML tables) to intermediate HTML
-            html = pypandoc.convert_file(
-                temp_md_path,
-                'html',
-                format='markdown+raw_html+tex_math_dollars',
-                extra_args=['--math-method=mathjax']
-            )
-
-            # Inject Table CSS for Solid Black Borders
-            table_css = "<style>table, th, td { border: 1px solid black; border-collapse: collapse; }</style>\n"
-            html = table_css + html
-
-            # Step 2: Convert HTML to DOCX with reference doc (native table generation)
+            # Convert MD (including raw HTML tables) directly to DOCX
             # 加入 --resource-path 確保 Pandoc 能解析圖片路徑並嵌入 Word
             pandoc_extra = []
             if template_path:
                 pandoc_extra.append(f'--reference-doc={template_path}')
             pandoc_extra.append(f'--resource-path={md_base_dir}')
-            pypandoc.convert_text(
-                html,
+            
+            pypandoc.convert_file(
+                temp_md_path,
                 'docx',
-                format='html',
+                format='markdown+raw_html+tex_math_dollars',
                 outputfile=out_path,
                 extra_args=pandoc_extra
             )

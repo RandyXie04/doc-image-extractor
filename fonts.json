@@ -1,0 +1,71 @@
+{
+  "FZSSK--GBK1-0": {
+    "role": null,
+    "docx_style": null,
+    "sample": "我和唐史以及齐周隋史代前言我这个人在学问上兴趣广，史学、古典文学以及版本、碑刻、书法都写过自认为过得去的文字，但较成体系的还在于我国的中古一段。年代",
+    "mapped_by": "legacy"
+  },
+  "NEU-BZ-Regular": {
+    "role": null,
+    "docx_style": null,
+    "sample": "()40901938 ",
+    "mapped_by": "legacy"
+  },
+  "FZLTHK--GBK1-0": {
+    "role": null,
+    "docx_style": null,
+    "sample": "我和唐史以及齐周隋史（代前言）黄永年先生与中国中古史研究论北齐的政治斗争",
+    "mapped_by": "legacy"
+  },
+  "FZHTK--GBK1-0": {
+    "role": null,
+    "docx_style": "屬名",
+    "mapped_by": "user"
+  },
+  "FZKTJW--GB1-0": {
+    "role": null,
+    "docx_style": null,
+    "sample": "黄永年　1998年6月··贾二强  2024年孟夏",
+    "mapped_by": "legacy"
+  },
+  "FZFSJW--GB1-0": {
+    "role": null,
+    "docx_style": null,
+    "sample": "（选自《文史探微》，中华书局 2000年版，原载《学林春秋》二编上册，朝华出版社1999年版）",
+    "mapped_by": "legacy"
+  },
+  "NSimSun-18030": {
+    "role": null,
+    "docx_style": null,
+    "sample": "　陈寅恪：《唐代政治史述论稿》中篇《政治革命及党派分野》，生活读书新知三联书店年版。",
+    "mapped_by": "legacy"
+  },
+  "NEU-B3-Regular": {
+    "role": null,
+    "docx_style": null,
+    "sample": "20011993619936",
+    "mapped_by": "legacy"
+  },
+  "FZKTK--GBK1-0": {
+    "role": null,
+    "docx_style": null,
+    "sample": "——兼论我国中古兵制的变革——兼论李杨与宦官高力士之争—",
+    "mapped_by": "legacy"
+  },
+  "FZBSK--GBK1-0": {
+    "role": null,
+    "docx_style": null,
+    "sample": "目　录　　",
+    "mapped_by": "legacy"
+  },
+  "FZLTZHK--GBK1-0": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "SourceHanSerifCN-Bold": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  }
+}

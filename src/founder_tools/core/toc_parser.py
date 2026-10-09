@@ -12,7 +12,7 @@ from typing import Optional
 def find_toc_pages_ocr(pages_data: list) -> tuple:
     """
     在 OCR 管線的 pages_data 中定位目錄頁範圍。
-    pages_data: list of dicts, each with "page_num", "para_blocks" from RapidDoc.
+    pages_data: list of dicts, each with "page_num", "para_blocks" from layout/OCR parser.
 
     Returns:
         (toc_start_page, toc_end_page) — 1-indexed page numbers.

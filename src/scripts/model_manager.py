@@ -28,33 +28,41 @@ def _get_exact_model_path(model_name: str) -> Path | None:
             return p
     return None
 
-def download_file_with_progress(url: str, dest_path: Path):
-    print(f"[ModelManager] 正在從 {url} 下載模型...")
+def download_file_with_progress(url: str, dest_path: Path, max_retries: int = 5):
     import hashlib
-    try:
-        existing_size = dest_path.stat().st_size if dest_path.exists() else 0
-        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-        if existing_size > 0:
-            req.add_header('Range', f'bytes={existing_size}-')
-            
-        with urllib.request.urlopen(req) as response:
-            total_size_header = response.info().get('Content-Length')
-            content_range = response.info().get('Content-Range')
-            
-            if content_range:
-                # e.g., bytes 200-1000/1000
-                total_size = int(content_range.split('/')[-1])
-            elif total_size_header:
-                total_size = int(total_size_header) + existing_size
-            else:
-                total_size = 0
+    import time
+    
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                print(f"[ModelManager] 網路中斷，正在進行第 {attempt} 次重試...")
+                time.sleep(2)
+                
+            print(f"[ModelManager] 正在從 {url} 下載模型...")
+            existing_size = dest_path.stat().st_size if dest_path.exists() else 0
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            if existing_size > 0:
+                req.add_header('Range', f'bytes={existing_size}-')
+                
+            with urllib.request.urlopen(req, timeout=15) as response:
+                total_size_header = response.info().get('Content-Length')
+                content_range = response.info().get('Content-Range')
+                
+                if content_range:
+                    total_size = int(content_range.split('/')[-1])
+                elif total_size_header:
+                    total_size = int(total_size_header) + existing_size
+                else:
+                    total_size = 0
 
-            if existing_size > 0 and existing_size == total_size:
-                print("\n[ModelManager] 檔案已存在且完整，略過下載。")
-            else:
+                if existing_size > 0 and existing_size == total_size:
+                    print("\n[ModelManager] 檔案已存在且完整，略過下載。")
+                    return
+                
                 downloaded = existing_size
-                block_size = 8192
+                block_size = 1048576  # 1MB
                 mode = 'ab' if existing_size > 0 else 'wb'
+                
                 with open(dest_path, mode) as f:
                     while True:
                         buffer = response.read(block_size)
@@ -65,38 +73,50 @@ def download_file_with_progress(url: str, dest_path: Path):
                         if total_size > 0:
                             percent = downloaded * 100 / total_size
                             print(f"\r[ModelManager] 下載進度: {percent:.1f}% ({downloaded}/{total_size} bytes)", end='')
+                
                 print("\n[ModelManager] 下載完成！")
-            
-            # Size check
-            if total_size > 0 and dest_path.stat().st_size != total_size:
-                dest_path.unlink()
-                raise RuntimeError(f"檔案大小校驗失敗: 預期 {total_size} bytes，實際 {dest_path.stat().st_size} bytes。")
-            
-            # Hash check if available in version.json
-            from config import VERSION
-            if VERSION.model_hash and VERSION.model_hash != "sha256:default":
-                print("[ModelManager] 正在校驗檔案完整性 (SHA256)...")
-                sha256 = hashlib.sha256()
-                with open(dest_path, 'rb') as f:
-                    for chunk in iter(lambda: f.read(4096), b""):
-                        sha256.update(chunk)
-                        
-                expected_hash = VERSION.model_hash.replace("sha256:", "").strip()
-                if sha256.hexdigest() != expected_hash:
-                    dest_path.unlink()
-                    raise RuntimeError("檔案 Hash 校驗失敗，模型檔案可能損壞。")
-                print("[ModelManager] 檔案校驗通過！")
+                
+                # Size check
+                if total_size > 0 and dest_path.exists() and dest_path.stat().st_size != total_size:
+                    raise RuntimeError(f"檔案大小校驗失敗: 預期 {total_size} bytes，實際 {dest_path.stat().st_size} bytes。")
+                
+                # Hash check if available in version.json
+                from config import VERSION
+                if VERSION.model_hash and VERSION.model_hash != "sha256:default":
+                    print("[ModelManager] 正在校驗檔案完整性 (SHA256)...")
+                    sha256 = hashlib.sha256()
+                    with open(dest_path, 'rb') as f:
+                        for chunk in iter(lambda: f.read(4096), b""):
+                            sha256.update(chunk)
+                            
+                    expected_hash = VERSION.model_hash.replace("sha256:", "").strip()
+                    if sha256.hexdigest() != expected_hash:
+                        if dest_path.exists():
+                            dest_path.unlink()
+                        raise RuntimeError("檔案 Hash 校驗失敗，模型檔案可能損壞。")
+                    print("[ModelManager] 檔案校驗通過！")
+                
+                return # 成功則直接返回
 
-    except urllib.error.HTTPError as e:
-        if e.code == 416: # Range Not Satisfiable
-            print("\n[ModelManager] 斷點續傳範圍無效，重新下載。")
-            if dest_path.exists():
-                dest_path.unlink()
-            download_file_with_progress(url, dest_path)
-        else:
-            raise RuntimeError(f"模型下載失敗 (HTTP {e.code}): {e}")
-    except Exception as e:
-        raise RuntimeError(f"模型下載發生錯誤: {e}")
+        except urllib.error.HTTPError as e:
+            if e.code == 416: # Range Not Satisfiable
+                print("\n[ModelManager] 斷點續傳範圍無效，重新下載。")
+                if dest_path.exists():
+                    dest_path.unlink()
+                continue # Retry from scratch
+            else:
+                if attempt == max_retries - 1:
+                    raise RuntimeError(f"模型下載失敗 (HTTP {e.code}): {e}")
+        except Exception as e:
+            if attempt == max_retries - 1:
+                # 確保檔案存在再刪除，避免 WinError 2
+                if dest_path.exists() and total_size > 0 and dest_path.stat().st_size != total_size:
+                    try:
+                        dest_path.unlink()
+                    except:
+                        pass
+                raise RuntimeError(f"模型下載發生錯誤: {e}")
+            print(f"\n[ModelManager] 下載過程發生例外 ({e})，準備重試...")
 
 
 def convert_pt_to_onnx(pt_path: Path) -> Path | None:
@@ -155,6 +175,37 @@ def try_download_model_from_github(dest_dir: Path) -> Path | None:
         print(f"[ModelManager] 查詢更新時發生異常: {e}")
     return None
 
+def try_download_surya_from_huggingface(dest_dir: Path) -> Path | None:
+    print("[ModelManager] 嘗試從 HuggingFace 官方拉取 Surya 模型...")
+    base_dir = dest_dir / "surya_pt"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    
+    models_to_download = {
+        "det": "vikp/surya_det",
+        "rec": "vikp/surya_rec",
+        "layout": "vikp/surya_layout",
+        "order": "vikp/surya_order"
+    }
+    
+    try:
+        from huggingface_hub import snapshot_download
+        for folder_name, repo_id in models_to_download.items():
+            dest_path = base_dir / folder_name
+            print(f"[ModelManager] 正在處理 {repo_id} -> {dest_path} ...")
+            snapshot_download(
+                repo_id=repo_id,
+                local_dir=dest_path,
+                local_dir_use_symlinks=False,
+                ignore_patterns=["*.onnx", "*.safetensors.onnx", "*.msgpack"]
+            )
+            print(f"[ModelManager] {repo_id} 完成！")
+            
+        print("[ModelManager] Surya 模型從 HuggingFace 下載完成！")
+        return base_dir
+    except Exception as e:
+        print(f"[ModelManager] 下載 Surya 模型發生異常: {e}")
+        return None
+
 def ensure_model_ready() -> dict:
     """
     Check model status and prepare it.
@@ -164,6 +215,14 @@ def ensure_model_ready() -> dict:
     with _model_lock:
         PATHS.models_dir.mkdir(parents=True, exist_ok=True)
     
+    # 檢查 SuryaOCR 本地模型是否存在
+    surya_pt_dir = PATHS.models_dir / "surya_pt"
+    if not (surya_pt_dir / "rec").exists():
+        print("[Model Check] 本機無 SuryaOCR 本地權重檔，開始自動從 HuggingFace 下載...")
+        try_download_surya_from_huggingface(PATHS.models_dir)
+    else:
+        print(f"[Model Check] 找到 SuryaOCR 本地模型: {surya_pt_dir}")
+        
     onnx_path = _get_exact_model_path(DEFAULT_MODEL_NAME)
     if onnx_path:
         print(f"[Model Check] 找到 ONNX 模型: {onnx_path}")

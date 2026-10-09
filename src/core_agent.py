@@ -3,17 +3,12 @@
 """
 PDF 智慧轉換與 AI 公式萃取全功能工作站 (PDFConversionAgent Pipeline & GUI)
 =============================================================================
-整合功能說明：
-1. 【任務一:動態裁切與轉檔 Word】
-   透過 PyMuPDF 動態分析頁首與頁尾邊界、自動裁切掉頁眉頁碼雜訊，並轉換為排版乾淨的 Word (.docx) 文件。
-
-2. 【任務二:AI 深度學習數學公式萃取】
+1. 【AI 深度學習數學公式萃取】
    利用 Pix2Text 開源之 MathFormulaDetector (MFD) 深度學習模型，針對原始未裁切 PDF 以 300 DPI 高解析度渲染，
    自動偵測獨立公式，具備「夾縫中文字檢查 (防誤合併)」與「全形/半形括號編號右界自適應擴展 (防雜圖)」雙重防呆機制，
    最後裁切為高畫質 PNG 公式截圖並自動封裝為 ZIP 壓縮檔。
 
-3. 【雙模啟動介面】
-   - 雙擊執行 / 無參數呼叫：開啟 Tkinter 原生全功能視窗介面 (GUI)，可自由勾選任務一、任務二或一鍵雙開。
+2. 【啟動介面】
    - 命令列模式 (CLI)：支援帶參數背景自動化批次執行。
 """
 
@@ -91,13 +86,7 @@ def _safe_pixmap_save(self, filename, output=None, *args, **kwargs):
 fitz.Pixmap.tobytes = _safe_pixmap_tobytes  # type: ignore
 fitz.Pixmap.save = _safe_pixmap_save  # type: ignore
 
-# pdf2docx 延遲/防呆載入
-try:
-    # pyrefly: ignore [missing-import]
-    from pdf2docx import Converter
-    HAS_PDF2DOCX = True
-except ImportError:
-    HAS_PDF2DOCX = False
+# HAS_PDF2DOCX is removed
 
 
 
@@ -391,8 +380,7 @@ class PDFConversionAgent:
                  footer_ratio: float = None,
                  left_ratio: float = None,
                  right_ratio: float = None,
-                 extract_inline: bool = None,
-                 embed_formulas_in_word: bool = None):
+                 extract_inline: bool = None):
         if not input_pdf.lower().endswith('.pdf'):
             raise ValueError(f"輸入檔案必須是 PDF 格式，但收到了：'{input_pdf}'")
             
@@ -416,7 +404,6 @@ class PDFConversionAgent:
         self.left_ratio = left_ratio if left_ratio is not None else CFG.left_ratio
         self.right_ratio = right_ratio if right_ratio is not None else CFG.right_ratio
         self.extract_inline = extract_inline if extract_inline is not None else CFG.extract_inline
-        self.embed_formulas_in_word = embed_formulas_in_word if embed_formulas_in_word is not None else CFG.embed_formulas_in_word
 
         os.makedirs(self.preview_dir, exist_ok=True)
         os.makedirs(self.formula_dir, exist_ok=True)
@@ -504,89 +491,7 @@ class PDFConversionAgent:
         finally:
             doc.close()
 
-    def convert_to_word(self, start_page_idx: int = 0, end_page_idx: int = None, bboxes_by_page: dict = None, log_fn=print, progress_callback=None) -> bool:
-        """
-        [任務一核心] 執行 PDF 動態邊界裁切並轉換為 Word (.docx)
-        支援 PDF 預先換圖法 (Redaction & Image Insertion) 消除破碎文字
-        """
-        if not HAS_PDF2DOCX:
-            log_fn("[ERROR] 尚未安裝 pdf2docx 套件！請在終端機執行：pip install pdf2docx")
-            return False
 
-        if not os.path.exists(self.input_pdf):
-            log_fn(f"[ERROR] 找不到 PDF 檔案 '{self.input_pdf}'")
-            return False
-
-        log_fn("\n" + "=" * 60)
-        log_fn(">>> [階段一] 開始執行 PDF 動態裁切與 Word 轉檔...")
-        plan = self.plan_crop_parameters()
-        report, has_warning = self.generate_verification_report(plan, log_fn=log_fn)
-
-        log_fn(">>> 抽樣驗證報告完成：")
-        for r in report:
-            log_fn(f"  * 抽樣頁面 {r['page']} | 頂部: {r['header_cut_y']} | 底部: {r['footer_cut_y']} | 狀態: {r['status']}")
-
-        log_fn(">>> 正在批次動態計算每頁裁切邊界...")
-        with fitz.open(self.input_pdf) as doc:
-            total_pages = len(doc)
-            end_page_idx = min(end_page_idx, total_pages - 1) if end_page_idx is not None else total_pages - 1
-            
-            # Guardrail 1: Limit max pages
-            total_to_process = end_page_idx - start_page_idx + 1
-            if total_to_process > CFG.max_safe_pages:
-                log_fn(f"[WARNING] Word 轉檔請求頁數 ({total_to_process}) 超過上限 ({CFG.max_safe_pages})，已截斷！")
-                end_page_idx = start_page_idx + CFG.max_safe_pages - 1
-                
-            for page_idx in range(start_page_idx, end_page_idx + 1):
-                page = doc[page_idx]
-                rect = page.rect
-                apply_top, apply_bottom, apply_left, apply_right, _, _ = self._detect_page_boundaries(page, plan)
-                page.set_cropbox(fitz.Rect(apply_left, apply_top, apply_right, apply_bottom))
-
-            # 若啟用將公式圖片嵌入 Word：透過 Redaction 抹除破碎文字並貼入高清圖片
-            if self.embed_formulas_in_word and bboxes_by_page:
-                log_fn(">>> [Word 公式合成] 正在執行 PDF 預先換圖 (Redaction & Image Insertion)...")
-                embedded_count = 0
-                for page_idx in range(start_page_idx, end_page_idx + 1):
-                    page = doc[page_idx]
-                    page_items = bboxes_by_page.get(page_idx, [])
-                    for item in page_items:
-                        r = fitz.Rect(item["rect_pdf"])
-                        page.add_redact_annot(r, fill=False)
-                    if page_items:
-                        page.apply_redactions()
-                        for item in page_items:
-                            r = fitz.Rect(item["rect_pdf"])
-                            img_p = item["image_path"]
-                            if os.path.exists(img_p):
-                                page.insert_image(r, filename=img_p)
-                                embedded_count += 1
-                log_fn(f">>> [Word 公式合成] 已成功將 {embedded_count} 個公式替換為高清圖！")
-
-            # Only save the specific pages if we're not doing the whole book
-            if start_page_idx > 0 or end_page_idx < total_pages - 1:
-                doc.select(list(range(start_page_idx, end_page_idx + 1)))
-                
-            doc.save(self.temp_cropped_pdf, deflate=True)
-
-        log_fn(f">>> 邊界裁切完成！開始轉檔至 Word: '{self.output_docx}' (轉檔較耗時，請稍候)...")
-        try:
-            cv = Converter(self.temp_cropped_pdf)
-            try:
-                cv.convert(self.output_docx, start=0, end=None)
-            finally:
-                cv.close()
-            log_fn(f"[SUCCESS] 🎉 Word 轉檔成功！已產出：{self.output_docx}")
-            return True
-        except Exception as e:
-            log_fn(f"[ERROR] Word 轉檔失敗：{e}")
-            return False
-        finally:
-            if os.path.exists(self.temp_cropped_pdf):
-                try:
-                    os.remove(self.temp_cropped_pdf)
-                except OSError:
-                    pass
 
     def extract_formulas(self, dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None) -> dict:
         """
@@ -646,8 +551,8 @@ class PDFConversionAgent:
             import torch
             use_gpu = CFG.use_gpu and torch.cuda.is_available()
             # For GPU, 2-4 workers give max throughput without VRAM contention on 6GB VRAM.
-            # For CPU, 4-8 workers avoid overwhelming RAM.
-            num_workers = min(3, multiprocessing.cpu_count()) if use_gpu else min(8, multiprocessing.cpu_count())
+            # For CPU, limit to 1 worker to avoid instant RAM exhaustion and PyTorch thread thrashing.
+            num_workers = min(3, multiprocessing.cpu_count()) if use_gpu else 1
             device_str = f"GPU: {torch.cuda.get_device_name(0)}" if use_gpu else "CPU"
             log_fn(f"[SYS] 啟動 Multiprocessing Pool (Workers: {num_workers}, 運算裝置: {device_str}) 進行平行公式萃取...")
 
@@ -746,15 +651,14 @@ class PDFConversionAgent:
             "bboxes_by_page": bboxes_by_page
         }
 
-    def execute_pipeline(self, convert_word: bool = True, extract_formulas: bool = True, formula_dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None) -> dict:
+    def execute_pipeline(self, extract_formulas: bool = True, formula_dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None) -> dict:
         """
-        端到端執行流程：支援優先提取公式後進行 Word 公式高清替換，並分流產出。
+        端到端執行流程：執行公式偵測與擷取。
         """
         bboxes_by_page = {}
         formula_result = None
 
-        # 若需要提取公式，或需要轉 Word 且啟用了公式圖片替換，則先執行公式偵測與擷取
-        if extract_formulas or (convert_word and self.embed_formulas_in_word):
+        if extract_formulas:
             formula_result = self.extract_formulas(
                 dpi=formula_dpi,
                 start_page_idx=start_page_idx,
@@ -764,16 +668,6 @@ class PDFConversionAgent:
             )
             if formula_result and "bboxes_by_page" in formula_result:
                 bboxes_by_page = formula_result["bboxes_by_page"]
-
-        word_success = False
-        if convert_word:
-            word_success = self.convert_to_word(
-                start_page_idx=start_page_idx,
-                end_page_idx=end_page_idx,
-                bboxes_by_page=bboxes_by_page,
-                log_fn=log_fn,
-                progress_callback=progress_callback
-            )
 
         # ── 統整輸出包裝與分流 ──
         log_fn("\n>>> 正在統整輸出產物...")
@@ -790,13 +684,7 @@ class PDFConversionAgent:
         try:
             os.makedirs(delivery_folder, exist_ok=True)
             
-            # 複製 Word 檔
-            if convert_word and os.path.exists(self.output_docx):
-                dest_word = delivery_folder / os.path.basename(self.output_docx)
-                shutil.copy(self.output_docx, dest_word)
-                delivery_word_path = str(dest_word)
-                has_moved = True
-                
+
             # 複製公式 ZIP 檔
             zip_filename = os.path.join(self.formula_dir, "all_pdf_formulas_ai_mfd.zip")
             if extract_formulas and os.path.exists(zip_filename):
@@ -818,7 +706,7 @@ class PDFConversionAgent:
 
         return {
             "delivery_folder": str(delivery_folder) if has_moved else None,
-            "word_path": delivery_word_path,
+            "word_path": None,
             "zip_path": delivery_zip_path
         }
 # =========================================================================

@@ -5,17 +5,54 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>方正排版標點修復</title>
     <style>
-        :root { --primary: #16a34a; --primary-hover: #15803d; --bg: #f8fafc; --card: #ffffff; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); display: flex; justify-content: center; padding: 3rem; }
-        .container { background: var(--card); padding: 2.5rem; border-radius: 16px; box-shadow: 0 10px 25px rgba(0,0,0,0.05); max-width: 600px; width: 100%; }
+        :root {
+            --primary: #16a34a;
+            --primary-hover: #15803d;
+            --bg: transparent;
+            --card: rgba(255, 255, 255, 0.03);
+            --border: rgba(255, 255, 255, 0.08);
+            --text-main: #f4f4f5;
+            --text-muted: #a1a1aa;
+        }
+        
+        :root[data-theme="light"] {
+            --bg: transparent;
+            --card: rgba(255, 255, 255, 0.7);
+            --border: rgba(148, 163, 184, 0.3);
+            --text-main: #0f172a;
+            --text-muted: #475569;
+        }
+        :root[data-theme="light"] .upload-area { background-color: rgba(255, 255, 255, 0.6); }
+        body { font-family: 'Inter', system-ui, sans-serif; display: flex; justify-content: center; padding: 3rem; color: var(--text-main); }
+        .container { 
+            background: var(--card); 
+            backdrop-filter: blur(20px); 
+            -webkit-backdrop-filter: blur(20px);
+            padding: 3rem; 
+            border-radius: 24px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.5); 
+            max-width: 600px; width: 100%; 
+            border: 1px solid rgba(255,255,255,0.6);
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .header a { text-decoration: none; color: var(--primary); font-weight: bold; }
-        .upload-area { border: 2px dashed #cbd5e1; padding: 3rem; text-align: center; border-radius: 12px; cursor: pointer; margin-bottom: 1.5rem; }
-        .upload-area.dragover { border-color: var(--primary); background: #f0fdf4; }
-        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 8px; font-weight: bold; cursor: pointer; width: 100%; font-size: 1.1rem; }
-        .btn:disabled { background: #9ca3af; cursor: not-allowed; }
-        #status { margin-top: 1rem; text-align: center; font-weight: 500; color: #475569; }
-        #downloadBtn { display: none; background: #0284c7; margin-top: 1rem; text-align: center; text-decoration: none; }
+        .header a { text-decoration: none; color: var(--primary); font-weight: 600; background: rgba(22, 163, 74, 0.1); padding: 6px 12px; border-radius: 6px; transition: 0.2s; }
+        .header a:hover { background: rgba(22, 163, 74, 0.2); }
+        .upload-area { border: 2px dashed var(--border); border-radius: 16px; padding: 3.5rem 2rem; text-align: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); margin-bottom: 2rem; background-color: rgba(255, 255, 255, 0.02); position: relative; overflow: hidden; }
+        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background-color: rgba(255, 255, 255, 0.05); transform: scale(1.01); }
+        .upload-area svg { width: 56px; height: 56px; color: var(--primary); margin-bottom: 1.2rem; transition: transform 0.3s; }
+        .upload-area:hover svg { transform: translateY(-5px); }
+        .upload-area input[type="file"] { display: none; }
+        .btn { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; width: 100%; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3); transition: all 0.3s; letter-spacing: 0.02em; }
+        .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(22, 163, 74, 0.4); }
+        .btn:disabled { background: #cbd5e1; cursor: not-allowed; box-shadow: none; transform: none; }
+        #status { margin-top: 1.5rem; text-align: center; font-weight: 500; color: #475569; }
+        #downloadBtn { display: none; margin-top: 1rem; text-align: center; text-decoration: none; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3); }
+        #downloadBtn:hover { box-shadow: 0 8px 20px rgba(14, 165, 233, 0.4); }
     </style>
 </head>
 <body>
@@ -29,7 +66,10 @@
 
         <form id="uploadForm">
             <div class="upload-area" id="dropZone">
-                <p>點擊選擇，或將 PDF / DOCX 拖曳至此</p>
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                <h3 id="fileNameDisplay" style="margin: 0; font-size: 1.1rem; color: var(--text-muted); font-weight: 500;">點擊選擇，或將 PDF / DOCX 拖曳至此</h3>
                 <input type="file" id="fileInput" accept=".pdf,.docx">
             </div>
             <div id="fileInfo" style="text-align: center; margin-bottom: 1rem; font-weight: bold;"></div>

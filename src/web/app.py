@@ -257,7 +257,7 @@ async def render_preview(file_id: str, page: int = 1, header: float = 0.1, foote
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formulas: bool, start_page: int, end_page: int, header_ratio: float, footer_ratio: float, left_ratio: float = 0.0, right_ratio: float = 0.0, extract_inline: bool = False, embed_formulas_in_word: bool = True):
+def process_pdf(task_id: str, file_path: str, extract_formulas: bool, start_page: int, end_page: int, header_ratio: float, footer_ratio: float, left_ratio: float = 0.0, right_ratio: float = 0.0, extract_inline: bool = False):
     try:
         tasks[task_id]["status"] = "processing"
         tasks[task_id]["progress"] = 5.0
@@ -271,7 +271,7 @@ def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formul
         def log_fn(msg):
             tasks[task_id]["log"] += f"{msg}\n"
             
-        log_fn(f"[DEBUG] 轉檔配置: convert_word={convert_word}, extract_formulas={extract_formulas}, extract_inline={extract_inline}, embed_formulas_in_word={embed_formulas_in_word}")
+        log_fn(f"[DEBUG] 轉檔配置: extract_formulas={extract_formulas}, extract_inline={extract_inline}")
 
         agent = PDFConversionAgent(
             input_pdf=file_path, 
@@ -279,12 +279,10 @@ def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formul
             footer_ratio=footer_ratio,
             left_ratio=left_ratio,
             right_ratio=right_ratio,
-            extract_inline=extract_inline,
-            embed_formulas_in_word=embed_formulas_in_word
+            extract_inline=extract_inline
         )
         
         pipeline_res = agent.execute_pipeline(
-            convert_word=convert_word,
             extract_formulas=extract_formulas,
             start_page_idx=start_page,
             end_page_idx=end_page if end_page > 0 else None,
@@ -293,9 +291,9 @@ def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formul
         )
         
         if pipeline_res and pipeline_res.get("delivery_folder"):
-            tasks[task_id]["word_file"] = pipeline_res.get("word_path")
+            tasks[task_id]["word_file"] = None
             tasks[task_id]["zip_file"] = pipeline_res.get("zip_path")
-            tasks[task_id]["result_file"] = pipeline_res.get("zip_path") or pipeline_res.get("word_path")
+            tasks[task_id]["result_file"] = pipeline_res.get("zip_path")
             tasks[task_id]["progress"] = 100.0
             tasks[task_id]["status"] = "completed"
             tasks[task_id]["message"] = "處理完成"
@@ -311,7 +309,6 @@ def process_pdf(task_id: str, file_path: str, convert_word: bool, extract_formul
 async def start_process(
     background_tasks: BackgroundTasks,
     file_id: str = Form(...),
-    convert_word: bool = Form(True),
     extract_formulas: bool = Form(True),
     start_page: int = Form(0),
     end_page: int = Form(0),
@@ -320,7 +317,6 @@ async def start_process(
     left_ratio: float = Form(0.0),
     right_ratio: float = Form(0.0),
     extract_inline: bool = Form(False),
-    embed_formulas_in_word: bool = Form(True),
     orig_name: str = Form("")
 ):
     file_path = PATHS.input_dir / file_id
@@ -343,7 +339,6 @@ async def start_process(
         process_pdf, 
         task_id, 
         str(file_path), 
-        convert_word, 
         extract_formulas, 
         start_page, 
         end_page, 
@@ -351,8 +346,7 @@ async def start_process(
         footer_ratio,
         left_ratio,
         right_ratio,
-        extract_inline,
-        embed_formulas_in_word
+        extract_inline
     )
     return {"task_id": task_id}
 
@@ -419,17 +413,7 @@ async def get_hardware_status():
     profile = CFG.get_hardware_profile()
     return profile
 
-@app.get("/api/download/{task_id}/word")
-async def download_word(task_id: str):
-    """專用 Word 文件下載端點"""
-    if task_id in tasks and tasks[task_id].get("word_file"):
-        path = tasks[task_id]["word_file"]
-        return FileResponse(
-            path,
-            media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-            filename=os.path.basename(path)
-        )
-    return {"error": "Word file not available for this task"}
+
 
 @app.get("/api/download/{task_id}/formulas")
 async def download_formulas(task_id: str):
@@ -481,19 +465,34 @@ async def api_extract_images(
             to_grayscale=to_grayscale
         )
 
+        # 雙重驗證：檢查實際在資料夾中產生的檔案數量
+        actual_files = 0
+        if extracted_folder.exists():
+            actual_files = len([f for f in extracted_folder.iterdir() if f.is_file()])
+        
+        if actual_files == 0:
+            count = 0
+            
+        if count == 0:
+            return {
+                "success": False,
+                "count": 0,
+                "message": "未在此文件中偵測到任何內嵌圖片，或提取過程未產出任何圖檔。"
+            }
+
         extracted_image_tasks[task_id] = {
             "zip_path": str(zip_path),
             "filename": output_zip_name,
-            "count": count
+            "count": actual_files
         }
 
         return {
             "success": True,
-            "count": count,
+            "count": actual_files,
             "download_url": f"/api/download_extracted_images/{task_id}",
             "filename": output_zip_name,
             "source_path": f"data/03_output/{output_zip_name}",
-            "message": f"成功提取 {count} 張圖片！" if count > 0 else "未在此文件中偵測到任何內嵌圖片。"
+            "message": f"成功提取 {actual_files} 張圖片！"
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"圖片提取失敗: {str(e)}")
@@ -521,77 +520,14 @@ async def download_extracted_images(task_id: str):
 async def open_folder(task_id: str):
     """在 Windows 檔案總管中開啟成果所在資料夾並選取檔案"""
     if task_id in tasks:
-        target = tasks[task_id].get("word_file") or tasks[task_id].get("zip_file") or tasks[task_id].get("result_file")
+        target = tasks[task_id].get("zip_file") or tasks[task_id].get("result_file")
         if target and os.path.exists(target):
             import subprocess
             subprocess.Popen(f'explorer /select,"{os.path.abspath(target)}"')
             return {"status": "success"}
     raise HTTPException(status_code=404, detail="成果檔案不存在或尚未生成")
 
-@app.post("/api/save_word_dialog/{task_id}")
-async def save_word_dialog(task_id: str):
-    """
-    [出版社編輯專用] 彈出 Windows 原生檔案總管『另存新檔』視窗，
-    讓編輯指定任意儲存路徑 (如桌面或工作資料夾)，並自動複製檔案。
-    採用非同步獨立進程以確保不阻塞 Event Loop，並強制視窗前置獲得焦點。
-    """
-    if task_id not in tasks or not tasks[task_id].get("word_file"):
-        raise HTTPException(status_code=404, detail="找不到轉檔成果")
-        
-    src_word = tasks[task_id]["word_file"]
-    if not os.path.exists(src_word):
-        raise HTTPException(status_code=404, detail="生成的 Word 檔案不存在")
 
-    orig_name = tasks[task_id].get("orig_name", "已轉檔書籍")
-    default_filename = f"{orig_name}_已轉檔.docx"
-
-    cmd = [
-        sys.executable,
-        str(PATHS.root / "src" / "scripts" / "native_dialog.py"),
-        str(src_word),
-        default_filename
-    ]
-    try:
-        import asyncio
-        import json
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(PATHS.root)
-        )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=300.0)
-        output_str = stdout.decode("utf-8", errors="replace").strip()
-        if output_str:
-            try:
-                res_data = json.loads(output_str)
-                if res_data.get("status") == "success":
-                    tasks[task_id]["saved_user_path"] = res_data["saved_path"]
-                    return {
-                        "status": "success",
-                        "saved_path": res_data["saved_path"],
-                        "filename": os.path.basename(res_data["saved_path"]),
-                        "message": f"成功儲存至：{res_data['saved_path']}"
-                    }
-                elif res_data.get("status") == "cancelled":
-                    return {"status": "cancelled", "message": "已取消儲存"}
-            except Exception:
-                pass
-        return {"status": "cancelled", "message": "已取消儲存"}
-    except Exception as e:
-        print(f"[SaveDialog] 原生檔案對話框失敗: {e}")
-        return {"status": "fallback", "message": "請使用瀏覽器直接下載"}
-
-@app.post("/api/open_saved_folder/{task_id}")
-async def open_saved_folder(task_id: str):
-    """在 Windows 檔案總管中開啟編輯剛才指定另存的檔案目錄並選取檔案"""
-    if task_id in tasks and tasks[task_id].get("saved_user_path"):
-        target = tasks[task_id]["saved_user_path"]
-        if os.path.exists(target):
-            import subprocess
-            subprocess.Popen(f'explorer /select,"{os.path.abspath(target)}"')
-            return {"status": "success"}
-    return await open_folder(task_id)
 
 
 # =========================================================================
@@ -690,10 +626,104 @@ async def report_issue(request: Request):
 
 
 
+# =========================================================================
+# 字體分析與樣式對應 API
+# =========================================================================
+
+@app.post("/api/scan_fonts")
+async def api_scan_fonts(request: Request):
+    """
+    掃描指定 PDF 的字體清單及 template.docx 中的段落樣式。
+    前端在「字體審閱」Modal 開啟前呼叫此路由。
+    Body JSON: { "file_id": "...", "filename_orig": "..." }
+    """
+    import asyncio
+    from src.scripts.pdf_font_analyzer import analyze_pdf_for_ui
+    from src.utils.path_helper import get_template_path
+
+    data = await request.json()
+    file_id: str = data.get("file_id", "")
+    filename_orig: str = data.get("filename_orig", "")
+
+    # 解析 PDF 路徑（支援 input_dir 的上傳快取，或 database_text 的已存 PDF）
+    pdf_path = None
+    if file_id:
+        candidate = PATHS.input_dir / file_id
+        if candidate.exists():
+            pdf_path = str(candidate)
+
+    # 若 input_dir 找不到，嘗試 database_text
+    if not pdf_path and filename_orig:
+        candidate2 = PATHS.root / "data" / "database_text" / filename_orig
+        if Path(candidate2).exists():
+            pdf_path = str(candidate2)
+
+    if not pdf_path:
+        raise HTTPException(status_code=404, detail="找不到對應的 PDF 檔案，請先上傳 PDF。")
+
+    # 解析 template.docx 路徑（按優先順序尋找）
+    template_candidates = [
+        PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx",
+        PATHS.data_dir / "database_text" / "template.docx",
+        get_template_path(),
+    ]
+    template_path = None
+    for tc in template_candidates:
+        if Path(str(tc)).exists():
+            template_path = str(tc)
+            break
+
+    fonts_json_path = str(PATHS.root / "fonts.json")
+
+    try:
+        result = await asyncio.to_thread(
+            analyze_pdf_for_ui,
+            pdf_path,
+            template_path,
+            fonts_json_path,
+        )
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"字體分析失敗: {str(e)}")
+
+
+@app.post("/api/save_font_mapping")
+async def api_save_font_mapping(request: Request):
+    """
+    儲存人工審閱後的字體 → 樣式對應表至 fonts.json。
+    Body JSON: { "mapping": { "FontName": {"role": "H2", "docx_style": "標題 2"}, ... } }
+    """
+    from src.scripts.pdf_font_analyzer import save_fonts_json
+
+    data = await request.json()
+    mapping_raw: dict = data.get("mapping", {})
+
+    if not mapping_raw:
+        raise HTTPException(status_code=400, detail="mapping 不可為空")
+
+    # 標記每筆為人工設定
+    mapping = {}
+    for font_name, info in mapping_raw.items():
+        mapping[font_name] = {
+            "role": info.get("role"),
+            "docx_style": info.get("docx_style"),
+            "mapped_by": "user",
+        }
+
+    fonts_json_path = str(PATHS.root / "fonts.json")
+    try:
+        save_fonts_json(fonts_json_path, mapping)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"儲存 fonts.json 失敗: {str(e)}")
+
+    return {"status": "success", "saved": len(mapping), "message": f"已儲存 {len(mapping)} 筆字體對應"}
+
+
 @app.get("/api/ocr_progress/{filename_stem}")
 async def get_ocr_progress(filename_stem: str):
     progress = ocr_progress_dict.get(filename_stem, {"progress": 0, "message": "Waiting...", "status": "processing"})
     return progress
+
 
 @app.post("/api/upload_and_run_ocr")
 async def upload_and_run_ocr(
@@ -706,7 +736,10 @@ async def upload_and_run_ocr(
     header_ratio: float = Form(0.1),
     footer_ratio: float = Form(0.1),
     left_ratio: float = Form(0.0),
-    right_ratio: float = Form(0.0)
+    right_ratio: float = Form(0.0),
+    start_page: int = Form(0),
+    end_page: int = Form(0),
+    no_footnote: bool = Form(False)
 ):
     import sys
     import shutil
@@ -732,30 +765,39 @@ async def upload_and_run_ocr(
     else:
         raise HTTPException(status_code=400, detail="請提供 PDF 檔案或檔案代碼")
 
-    # WYSIWYG pre-crop using fitz
+    # WYSIWYG pre-crop and page range selection using fitz
     input_pdf_path = raw_pdf_path
-    if header_ratio > 0 or footer_ratio > 0 or left_ratio > 0 or right_ratio > 0:
+    if header_ratio > 0 or footer_ratio > 0 or left_ratio > 0 or right_ratio > 0 or start_page > 0 or end_page > 0:
         cropped_pdf_path = pdf_dir / f"cropped_{filename_stem}.pdf"
         try:
             with fitz.open(raw_pdf_path) as doc:
+                total_pages = len(doc)
+                s_page = max(1, start_page) if start_page > 0 else 1
+                e_page = min(total_pages, end_page) if end_page > 0 else total_pages
+                
+                # Filter pages by only keeping the selected range
+                if s_page > 1 or e_page < total_pages:
+                    doc.select(range(s_page - 1, e_page))
+                
                 for page in doc:
-                    rect = page.rect
-                    y_top = rect.height * max(0.0, min(header_ratio, 0.49))
-                    f_r = footer_ratio if footer_ratio < 0.5 else (1.0 - footer_ratio)
-                    y_bottom = rect.height * (1.0 - max(0.0, min(f_r, 0.49)))
-                    x_left = rect.width * max(0.0, min(left_ratio, 0.49))
-                    r_r = right_ratio if right_ratio < 0.5 else (1.0 - right_ratio)
-                    x_right = rect.width * (1.0 - max(0.0, min(r_r, 0.49)))
-                    page.set_cropbox(fitz.Rect(x_left, y_top, x_right, y_bottom))
+                    if header_ratio > 0 or footer_ratio > 0 or left_ratio > 0 or right_ratio > 0:
+                        rect = page.rect
+                        y_top = rect.height * max(0.0, min(header_ratio, 0.49))
+                        f_r = footer_ratio if footer_ratio < 0.5 else (1.0 - footer_ratio)
+                        y_bottom = rect.height * (1.0 - max(0.0, min(f_r, 0.49)))
+                        x_left = rect.width * max(0.0, min(left_ratio, 0.49))
+                        r_r = right_ratio if right_ratio < 0.5 else (1.0 - right_ratio)
+                        x_right = rect.width * (1.0 - max(0.0, min(r_r, 0.49)))
+                        page.set_cropbox(fitz.Rect(x_left, y_top, x_right, y_bottom))
                 doc.save(cropped_pdf_path)
             input_pdf_path = cropped_pdf_path
         except Exception as crop_err:
-            print(f"[Warning] PDF pre-crop failed: {crop_err}")
+            print(f"[Warning] PDF pre-crop/page-range failed: {crop_err}")
             input_pdf_path = raw_pdf_path
 
     ocr_progress_dict[filename_stem] = {"progress": 0, "message": "正在初始化任務...", "status": "processing"}
 
-    async def run_scripts_async(pdf_path_str, stem, style_map_json, eng):
+    async def run_scripts_async(pdf_path_str, stem, style_map_json, eng, skip_footnotes):
         import asyncio
         import json as _json
         try:
@@ -780,6 +822,8 @@ async def upload_and_run_ocr(
                 "--output_stem", stem,
                 "--engine", eng
             ]
+            if skip_footnotes:
+                cmd.append("--no_footnote")
             if style_map_json:
                 cmd.extend(["--style_mapping", style_map_json])
                 
@@ -835,7 +879,7 @@ async def upload_and_run_ocr(
             ocr_progress_dict[stem]["message"] = f"處理過程異常: {str(err)}"
 
     import asyncio
-    asyncio.ensure_future(run_scripts_async(str(input_pdf_path), filename_stem, style_mapping, engine))
+    asyncio.ensure_future(run_scripts_async(str(input_pdf_path), filename_stem, style_mapping, engine, no_footnote))
     return {"message": "OCR 管道已成功啟動", "filename_stem": filename_stem}
 
 

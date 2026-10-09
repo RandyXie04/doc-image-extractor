@@ -22,6 +22,11 @@ try:
 except ImportError:
     HeadingDetector = None
 
+try:
+    from src.founder_tools.core.ai_kaiti_classifier import AIKaitiClassifier
+except ImportError:
+    AIKaitiClassifier = None
+
 CIRCLED_MAP = {
     '①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5,
     '⑥': 6, '⑦': 7, '⑧': 8, '⑨': 9, '⑩': 10,
@@ -30,8 +35,9 @@ CIRCLED_MAP = {
     '⑯': 16, '⑰': 17, '⑱': 18, '⑲': 19, '⑳': 20,
 }
 
-# Regex pattern matching any recognised footnote marker (circled / bracketed / numbered-dot)
-FN_MARKER_PATTERN = r'([\u2460-\u2473]|\[\d+\]|\(\d+\)|\d+\.)'
+# Regex pattern matching any recognised footnote marker (circled / bracketed / numbered-dot / bare number with space)
+# Added expanded unicode ranges for circled numbers > 10 and dingbats.
+FN_MARKER_PATTERN = r'([\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|\[\d+\]|\(\d+\)|\d+\.)'
 
 
 def _circled_to_int(marker_str: str) -> int:
@@ -165,11 +171,46 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
         except Exception:
             style_mapping = {}
 
+    # ── 讀取人工字體角色對應表（fonts.json）──
+    # 優先順序高於規則型 regex，讓使用者的手動設定生效。
+    try:
+        from src.scripts.pdf_font_analyzer import get_font_role_map
+        _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'fonts.json')
+        _fonts_json = os.path.normpath(_fonts_json)
+        font_role_map = get_font_role_map(_fonts_json)
+    except Exception:
+        try:
+            from scripts.pdf_font_analyzer import get_font_role_map
+            _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'fonts.json')
+            _fonts_json = os.path.normpath(_fonts_json)
+            font_role_map = get_font_role_map(_fonts_json)
+        except Exception:
+            font_role_map = {}
+    if font_role_map:
+        print(f"[FontMap] 已載入人工字體對應表，共 {len(font_role_map)} 筆")
+
     doc = fitz.open(pdf_path)
     total_pages = len(doc)
     stem = output_stem or os.path.basename(pdf_path).rsplit(".", 1)[0]
     
     os.makedirs(output_dir, exist_ok=True)
+
+    # ── AI Kaiti Classifier 初始化（若啟用且可用）──
+    ai_kaiti_classifier = None
+    try:
+        from config import CFG, AI
+        if False and CFG.ai_kaiti_enabled and AIKaitiClassifier is not None:
+            ai_kaiti_classifier = AIKaitiClassifier(
+                api_key=AI.gemini_key,
+                model=CFG.ai_kaiti_model,
+            )
+            if ai_kaiti_classifier.is_available:
+                print("[AI-Kaiti] Gemini Vision 楷體辨識已啟用")
+            else:
+                print("[AI-Kaiti] Gemini API Key 未設定，楷體 AI 辨識已停用")
+                ai_kaiti_classifier = None
+    except ImportError:
+        pass
     out_md_path = os.path.join(output_dir, f"{stem}.md")
     
     audit_data = {
@@ -185,6 +226,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
     }
     
     final_md_pages = []
+    all_image_blocks = []
     
     for page_idx in range(total_pages):
         page_num = page_idx + 1
@@ -224,9 +266,17 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
         # Step 1: Collect valid text blocks, separate header/footer/footnote
         body_blocks = []
         footnote_blocks = []
+        figure_blocks = []
 
         for b in blocks:
-            if b.get("type") != 0:
+            block_type = b.get("type")
+            
+            if block_type == 1:
+                if not is_page_header(b, page_h, page_w) and not is_page_footer(b, page_h):
+                    figure_blocks.append(b)
+                continue
+                
+            if block_type != 0:
                 continue
 
             # Clean duplicate spans within lines
@@ -263,10 +313,10 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 r'^\s*(' + FN_MARKER_PATTERN + r')\s*', block_text
             ))
 
-            if bbox[1] >= page_h * 0.72 and avg_size <= 9.5:
+            if bbox[1] >= page_h * 0.65:
                 if starts_with_fn_marker:
                     is_fn = True
-                elif footnote_blocks:
+                elif footnote_blocks and avg_size <= 10.0:
                     # Immediate subsequent block below a footnote block with small font
                     is_fn = True
 
@@ -335,6 +385,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
         page_paragraphs = []
         current_para_lines = []
         current_para_is_kaiti = False
+        last_block_x0 = 0.0
         last_heading_text = ""
 
         def flush_current_para():
@@ -354,16 +405,12 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                         else:
                             para_text += " " + line_txt
                 if current_para_is_kaiti:
-                    kaiti_style = style_mapping.get("kaiti")
-                    if kaiti_style:
-                        para_text = f"::: {{custom-style=\"{kaiti_style}\"}}\n{para_text}\n:::"
-                    else:
-                        para_text = "> " + para_text
+                    # Apply custom Word style instead of basic blockquote
+                    para_text = '::: {custom-style="楷體2"}\n' + para_text + '\n:::'
                 page_paragraphs.append(para_text)
                 current_para_lines = []
                 current_para_is_kaiti = False
         
-        last_x0 = None
         for bb in body_blocks:
             lines = bb.get("lines", [])
             if not lines:
@@ -390,7 +437,35 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             clean_for_heading = re.sub(r'[①-⑩\u2460-\u2473\s]', '', bb_text)
             has_sentence_punct = bool(re.search(r'[。，；？！“”‘’：:、]', clean_for_heading))
             
-            if not is_toc_line:
+            # ── Priority 0: 人工字體角色對應（優先於規則型 regex）──
+            # 取此 block 第一個命中 font_role_map 的字體角色
+            _block_font_role = None
+            if font_role_map and not is_toc_line:
+                for _line in lines:
+                    for _span in _line.get('spans', []):
+                        _raw_fn = (_span.get('font') or '').split('+', 1)[-1]
+                        _size = round(_span.get('size', 0) * 2) / 2
+                        _key = f"{_raw_fn}_{_size}"
+                        if _key in font_role_map:
+                            _block_font_role = font_role_map[_key].get('role')
+                            break
+                        elif _raw_fn in font_role_map:
+                            _block_font_role = font_role_map[_raw_fn].get('role')
+                            break
+                    if _block_font_role:
+                        break
+
+            if _block_font_role and not is_toc_line:
+                _role_upper = _block_font_role.upper()
+                if _role_upper == 'H1':
+                    heading_level = 1
+                elif _role_upper == 'H2':
+                    heading_level = 2
+                elif _role_upper == 'H3':
+                    heading_level = 3
+                # 「圖說」不在此轉為標題，由後面 caption 段落處理
+
+            if not heading_level and not is_toc_line:
                 # Rule 1: Regex for Major Chapters / Book Sections (H1/H2)
                 if re.match(r'^(?:[上下中]\s*篇(?:\s+[^\n]+)?)$', bb_text) or \
                    re.match(r'^(?:目\s*录|目录|序|后\s*记|后记|结\s*语|结语|主要参考文献)$', bb_text):
@@ -429,41 +504,86 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             else:
                 last_heading_text = ""
                 
-            # Regular Body Text
-            # Check font for KaiTi
+            # ── Regular Body Text ──────────────────────────────────────────────
+            # ── 圖說（Caption）判斷：人工字體角色優先 ──
+            is_block_caption = (_block_font_role and _block_font_role.lower() in ('圖說', '圖說', 'caption'))
+            if is_block_caption:
+                # 用 custom-style 輸出圖說段落，讓 Pandoc 套用對應 Word 樣式
+                flush_current_para()
+                _caption_style = None
+                if font_role_map:
+                    for line in lines:
+                        for span in line.get('spans', []):
+                            raw_fn = (span.get('font') or '').split('+', 1)[-1]
+                            size_v = round(span.get('size', 0) * 2) / 2
+                            key_v = f"{raw_fn}_{size_v}"
+                            if key_v in font_role_map:
+                                _caption_style = font_role_map[key_v].get('docx_style')
+                                break
+                            elif raw_fn in font_role_map:
+                                _caption_style = font_role_map[raw_fn].get('docx_style')
+                                break
+                        if _caption_style:
+                            break
+                if _caption_style:
+                    page_paragraphs.append(f'::: {{custom-style="{_caption_style}"}}\n{bb_text}\n:::')
+                else:
+                    page_paragraphs.append(f'*{bb_text}*')  # fallback: 斜體
+                continue
+
+            # Check font for KaiTi (Rule-based + AI Vision fallback)
             total_chars = 0
             kaiti_chars = 0
+            block_font_names = set()  # 收集此 block 的所有 font name
             for line in lines:
                 for span in line.get("spans", []):
                     span_text = span.get("text", "").strip()
                     if not span_text: continue
                     total_chars += len(span_text)
                     font_name = span.get("font", "").lower()
-                    if "kai" in font_name or "楷" in font_name or "kaiti" in font_name:
+                    if font_name:
+                        block_font_names.add(font_name)
+                    if "kai" in font_name or "楷" in font_name or "kt" in font_name:
                         kaiti_chars += len(span_text)
+
+            # ── 人工字體角色：楷體優先 ──
+            if _block_font_role and _block_font_role.lower() in ('楷體', 'kaiti', 'blockquote'):
+                is_block_kaiti = True
+            else:
+                is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
             
-            is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
+            # AI Vision fallback: 若規則型判定失敗且 AI 可用，
+            # 觸發 Gemini Vision 從 PDF 截圖辨識字型。
+            # 適用於所有 font name 無法用關鍵字匹配的情境：
+            #   方正(FZKTK)、Adobe CID、嵌入子集、WPS、任何私有字型...
+            # font_names 啟用「字型名稱學習快取」——
+            # 一旦 Vision 辨識過某 font name，後續同名 block 全部免呼叫 API
+            if not is_block_kaiti and ai_kaiti_classifier is not None:
+                try:
+                    is_block_kaiti = ai_kaiti_classifier.is_block_kaiti(
+                        page=page, block_bbox=bbox, block_text=bb_text,
+                        font_names=list(block_font_names),
+                    )
+                except Exception:
+                    pass  # AI 失敗時靜默降級，使用規則型結果
 
             # Check indentation to determine whether this block starts a new paragraph
-            is_indented = False
-            if last_x0 is not None:
-                # Indented relative to previous line (e.g. first line of quote)
-                if bbox[0] - last_x0 >= 12.0:
-                    is_indented = True
-                # Indented relative to base margin, BUT not aligned with previous line
-                elif bbox[0] - base_x0 >= 12.0 and abs(bbox[0] - last_x0) > 6.0:
-                    is_indented = True
-            else:
-                is_indented = (bbox[0] - base_x0) >= 12.0
+            is_indented = (bbox[0] - base_x0) >= 12.0
             
-            # If this block has an indent, flush the previous paragraph
-            if is_indented:
-                flush_current_para()
-                
-            last_x0 = bbox[0]
-                
-            if is_block_kaiti:
-                current_para_is_kaiti = True
+            if current_para_lines:
+                should_flush = False
+                if is_block_kaiti != current_para_is_kaiti:
+                    should_flush = True
+                # A new paragraph is indicated by an increase in indentation (e.g. from 2 chars to 4 chars)
+                # or a large jump in indent. We use > 5.0 instead of abs() to avoid breaking on hanging indents
+                elif is_indented and (bbox[0] - last_block_x0) >= 5.0:
+                    should_flush = True
+                    
+                if should_flush:
+                    flush_current_para()
+            
+            if not current_para_lines:
+                current_para_is_kaiti = is_block_kaiti
                 
             # Process lines in this block, replacing footnote anchors
             for line in lines:
@@ -473,8 +593,22 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 line_str = _replace_fn_markers_in_text(line_str, page_footnotes, page_num)
                 current_para_lines.append(line_str)
                 
+            last_block_x0 = bbox[0]
+                
         # Flush any remaining body text
         flush_current_para()
+
+        # ── Step 3c: Insert figure placeholders (sorted by document order ideally) ──────
+        for block_idx, fig_b in enumerate(figure_blocks):
+            fig_bbox = fig_b.get("bbox", [0, 0, 0, 0])
+            all_image_blocks.append({
+                "page_num": page_num,
+                "block_idx": block_idx,
+                "bbox": fig_bbox,
+                "page_w": page_w,
+                "page_h": page_h,
+            })
+            page_paragraphs.append(f"![__IMG_PLACEHOLDER_{page_num}_{block_idx}__]()")
 
         # ── Step 3b: Render detected tables (inserted in document order) ──────
         # Tables are inserted *after* the body paragraphs gathered so far;
@@ -519,40 +653,61 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
     # Write final Markdown file
     full_markdown = "\n\n".join(final_md_pages)
     
-    # ── 生僻字後處理：靜態字典校正 + 方正亂碼修復 + 可疑字元偵測 ──
-    try:
-        from src.scripts.ocr_rare_char_corrector import postprocess_ocr_markdown
-    except ImportError:
+    # ── Phase 2: Image Extraction for PyMuPDF ──
+    images_dir = os.path.join(output_dir, "images")
+    image_path_map = {}
+    if all_image_blocks:
         try:
-            from scripts.ocr_rare_char_corrector import postprocess_ocr_markdown
-        except ImportError:
-            postprocess_ocr_markdown = None
+            from src.scripts.pdf_image_extractor import extract_pdf_images
+            image_path_map = extract_pdf_images(
+                pdf_path=pdf_path,
+                image_blocks=all_image_blocks,
+                output_dir=images_dir,
+                progress_callback=progress_callback
+            )
+            if progress_callback:
+                progress_callback(85, f"[INFO] 成功提取 {len(image_path_map)} 張圖片。")
+        except Exception as img_err:
+            if progress_callback:
+                progress_callback(85, f"[WARN] 圖片提取失敗: {img_err}")
+                
+    # ── Replace image placeholders with actual paths ──
+    def _repl_placeholder(match):
+        p_num = int(match.group(1))
+        b_idx = int(match.group(2))
+        saved_path = image_path_map.get((p_num, b_idx))
+        if saved_path:
+            img_rel = os.path.relpath(saved_path, output_dir).replace("\\", "/")
+            img_name = os.path.basename(saved_path)
+            return f"![{img_name}]({img_rel})"
+        return "" # Remove placeholder if not found
+
+    full_markdown = re.sub(r'!\[__IMG_PLACEHOLDER_(\d+)_(\d+)__\]\(\)', _repl_placeholder, full_markdown)
     
-    if postprocess_ocr_markdown is not None:
-        # 動態取得 data_dir 路徑
-        try:
-            from config import PATHS
-            data_dir = str(PATHS.data_dir)
-        except ImportError:
-            data_dir = str(Path(__file__).parent.parent.parent / "data")
-        
-        full_markdown, rare_char_stats = postprocess_ocr_markdown(
-            markdown_text=full_markdown,
-            data_dir=data_dir,
-            pdf_name=os.path.basename(pdf_path),
-            output_dir=output_dir,
-        )
-        corrected = rare_char_stats.get("corrections_applied", 0)
-        suspicious = rare_char_stats.get("suspicious_chars_found", 0)
-        audit_data["rare_char_corrections"] = corrected
-        audit_data["rare_char_suspicious"] = suspicious
-        if progress_callback:
-            if corrected > 0:
-                progress_callback(88, f"[INFO] 靜態字典自動修正了 {corrected} 處已知錯字。")
-            if suspicious > 0:
-                progress_callback(89, f"[REVIEW] ⚠️ 偵測到 {suspicious} 處可疑字元（疑似生僻字/亂碼），覆核報告已生成。")
+    # ── 統一節點式後處理 ──
+    from src.extraction.pipeline.facade import run_unified_postprocessing
+    
+    full_markdown, rare_char_stats = run_unified_postprocessing(
+        markdown_text=full_markdown,
+        pdf_name=os.path.basename(pdf_path),
+        output_dir=output_dir,
+        style_mapping=style_mapping,
+        progress_callback=progress_callback,
+        enable_dictionary_postprocess=False
+    )
+    
+    audit_data["rare_char_corrections"] = rare_char_stats.get("corrections_applied", 0)
+    audit_data["rare_char_suspicious"] = rare_char_stats.get("suspicious_chars_found", 0)
     
     with open(out_md_path, "w", encoding="utf-8") as f:
         f.write(full_markdown)
+    
+    # ── AI Kaiti 統計輸出 ──
+    if ai_kaiti_classifier is not None:
+        stats_summary = ai_kaiti_classifier.get_stats_summary()
+        print(f"[AI-Kaiti] {stats_summary}")
+        audit_data["ai_kaiti_stats"] = ai_kaiti_classifier.stats
+        if progress_callback:
+            progress_callback(90, f"[AI-Kaiti] {stats_summary}")
         
     return out_md_path, audit_data
