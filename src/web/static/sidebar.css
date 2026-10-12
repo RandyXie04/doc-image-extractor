@@ -1,8 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
 
 :root {
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
+    --primary: #ea580c;
+    --primary-hover: #c2410c;
     --bg-color: #f8fafc;
     --sidebar-bg: #ffffff;
     --sidebar-border: #e2e8f0;
@@ -13,8 +13,8 @@
 }
 
 :root[data-theme="dark"] {
-    --primary: #3b82f6;
-    --primary-hover: #2563eb;
+    --primary: #ea580c;
+    --primary-hover: #c2410c;
     --bg-color: #0f172a;
     --sidebar-bg: #0b1120;
     --sidebar-border: rgba(255, 255, 255, 0.08);
@@ -32,9 +32,9 @@
     color: var(--text-main);
 }
 #sidebar a.nav-link.active {
-    background: rgba(37, 99, 235, 0.08);
+    background: rgba(234, 88, 12, 0.08);
     color: var(--primary);
-    border: 1px solid rgba(37, 99, 235, 0.16);
+    border: 1px solid rgba(234, 88, 12, 0.2);
     font-weight: 600;
 }
 #sidebar .brand {

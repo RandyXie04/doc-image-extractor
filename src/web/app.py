@@ -393,12 +393,18 @@ async def favicon():
     )
     return Response(content=svg_icon, media_type="image/svg+xml")
 
+NO_CACHE_HEADERS = {
+    "Cache-Control": "no-cache, no-store, must-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0"
+}
+
 @app.get("/", response_class=HTMLResponse)
 async def read_index():
     index_path = static_dir / "index.html"
     if index_path.exists():
         with open(index_path, "r", encoding="utf-8") as f:
-            return f.read()
+            return HTMLResponse(content=f.read(), headers=NO_CACHE_HEADERS)
     raise HTTPException(status_code=404, detail="Index page not found")
 
 @app.get("/{page}.html", response_class=HTMLResponse)
@@ -406,7 +412,7 @@ async def read_page(page: str):
     file_path = static_dir / f"{page}.html"
     if file_path.exists():
         with open(file_path, "r", encoding="utf-8") as f:
-            return f.read()
+            return HTMLResponse(content=f.read(), headers=NO_CACHE_HEADERS)
     raise HTTPException(status_code=404, detail="Page not found")
 
 @app.get("/api/status/{task_id}")
