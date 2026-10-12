@@ -29,14 +29,17 @@ def main():
     try:
         root = tk.Tk()
         root.withdraw()
+        # 短暫置頂以將視窗帶至最前台並取得焦點，隨後解除永久最上層鎖定，
+        # 確保對話框能隨使用者點擊其他視窗動態移動上下層（動態 Z-order 層疊）
         root.lift()
         root.attributes('-topmost', True)
+        root.update()
+        root.attributes('-topmost', False)
         root.focus_force()
 
         ext = suggested_filename.split(".")[-1] if "." in suggested_filename else "*"
         type_label = f"{ext.upper()} 文件" if ext != "*" else "所有檔案"
 
-        # Explicitly pass parent=root so the save dialog inherits HWND_TOPMOST and gains focus
         file_path = filedialog.asksaveasfilename(
             parent=root,
             title="請選擇儲存位置與檔名",

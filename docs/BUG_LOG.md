@@ -15,3 +15,21 @@ No new design decision is required. The fix simply corrects a regex quantifier f
 
 ## Resolution
 - Change `\([^)]+\)` to `\([^)]*\)` in `src/scripts/md_to_docx.py`.
+
+---
+
+## Bug Description
+原生「另存新檔」檔案總管視窗固定在最上層（Always on Top），使用者點擊其他應用程式視窗時，對話框無法動態下移或被覆蓋，阻礙多工作業。
+
+## Status
+CLOSED
+
+## Root Cause
+`src/scripts/native_dialog.py` 在初始化 Tkinter `root` 視窗時設定了 `root.attributes('-topmost', True)`，且將 `root` 作為 `parent` 傳遞給 `filedialog.asksaveasfilename`。因未解除該屬性，Windows 系統將 `WS_EX_TOPMOST` 樣式強制套用於原生另存新檔對話框及其父視窗，導致對話框永久固定在 Windows 最頂層 Z-order 帶，無法正常響應點擊切換視窗時的上下層動態層疊。
+
+## Decision Gate
+No new design decision is required.
+修復方式僅調整視窗屬性生命週期：在將視窗帶至最前台並觸發焦點後，立即調用 `root.update()` 並將 `topmost` 屬性重設為 `False`，使對話框既能在呼叫時正常顯示於瀏覽器前方，又不會被永久鎖定在最頂層。
+
+## Resolution
+- 在 `src/scripts/native_dialog.py` 中，於 `root.lift()` 與 `root.attributes('-topmost', True)` 後加入 `root.update()` 與 `root.attributes('-topmost', False)`，解除永久置頂鎖定。
