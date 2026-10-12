@@ -5,20 +5,17 @@ def is_frozen() -> bool:
     return getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS")
 
 def get_project_dir() -> Path:
-    """
-    Source mode 專案根目錄。
-    假設 path_helper 位於: <project_root>/src/utils/path_helper.py
-    """
+    """專案根目錄 (<project_root>/src/utils/path_helper.py)"""
     return Path(__file__).resolve().parents[2]
 
 def get_app_dir() -> Path:
-    """執行檔旁邊，可放 config/models/data/logs。"""
+    """應用程式根目錄"""
     if is_frozen():
         return Path(sys.executable).resolve().parent
     return get_project_dir()
 
 def get_bundle_dir() -> Path:
-    """PyInstaller bundle 內部資源 (OneFile 暫存區 或 OneDir _internal)"""
+    """資源目錄"""
     if is_frozen():
         return Path(sys._MEIPASS).resolve()
     return get_project_dir()

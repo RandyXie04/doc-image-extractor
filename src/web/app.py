@@ -6,7 +6,7 @@ import uuid
 import asyncio
 from pathlib import Path
 
-from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -381,6 +381,11 @@ static_dir = get_static_dir()
 
 os.makedirs(static_dir, exist_ok=True)
 app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    svg_icon = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y=".9em" font-size="90">📚</text></svg>'
+    return Response(content=svg_icon, media_type="image/svg+xml")
 
 @app.get("/", response_class=HTMLResponse)
 async def read_index():
@@ -822,7 +827,7 @@ async def upload_and_run_ocr(
                     except: pass
 
             cmd = [
-                sys.executable, str(PATHS.root / "src" / "scripts" / "pdf_engine_dispatcher.py"), 
+                sys.executable, "-m", "src.scripts.pdf_engine_dispatcher",
                 "--file", pdf_path_str,
                 "--output_dir", str(output_dir),  # absolute path
                 "--output_stem", stem,
@@ -869,7 +874,7 @@ async def upload_and_run_ocr(
             
             if md_file.exists():
                 md_proc = await asyncio.create_subprocess_exec(
-                    sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py"),
+                    sys.executable, "-m", "src.scripts.md_to_docx",
                     "--files", str(md_file),
                     cwd=str(PATHS.root),
                     stdout=asyncio.subprocess.DEVNULL,
@@ -923,7 +928,7 @@ async def update_and_rebuild_docx(filename_stem: str, data: MarkdownUpdate):
     await asyncio.to_thread(write_file)
         
     # Re-run md_to_docx.py
-    cmd = [sys.executable, str(PATHS.root / "src" / "scripts" / "md_to_docx.py"), "--files", str(md_file)]
+    cmd = [sys.executable, "-m", "src.scripts.md_to_docx", "--files", str(md_file)]
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         cwd=str(PATHS.root)
@@ -975,7 +980,7 @@ async def api_native_save_file(req: NativeSaveRequest):
     # 2. 非同步子進程執行原生對話框 (非阻塞 Event Loop)
     cmd = [
         sys.executable,
-        str(PATHS.root / "src" / "scripts" / "native_dialog.py"),
+        "-m", "src.scripts.native_dialog",
         str(target_path),
         suggested_filename
     ]

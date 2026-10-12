@@ -38,6 +38,9 @@ document.addEventListener("DOMContentLoaded", () => {
             </a>
         </nav>
         <div style="padding: 1.5rem; margin-top: auto; display: flex; flex-direction: column; gap: 8px;">
+            <div id="hardwareDisplay" style="font-size: 0.72rem; color: #94a3b8; text-align: center; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 4px 6px; line-height: 1.3;">
+                ⚡ 硬體加速: 偵測中...
+            </div>
             <div id="versionDisplay" style="font-size: 0.8rem; color: #64748b; text-align: center;">版本: 讀取中...</div>
             <button id="modeToggleBtn" style="width: 100%; background: #1e293b; color: #94a3b8; border: 1px dashed #475569; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 6px;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> 編輯專用 (點擊切換)
@@ -121,6 +124,28 @@ document.addEventListener("DOMContentLoaded", () => {
         versionDisplay.textContent = `App v${data.app_version} | Model v${data.model_version}`;
     }).catch(e => {
         versionDisplay.textContent = '無法讀取版本資訊';
+    });
+
+    // Fetch hardware acceleration status
+    const hardwareDisplay = document.getElementById('hardwareDisplay');
+    fetch('/api/hardware_status').then(res => res.json()).then(data => {
+        if (!hardwareDisplay) return;
+        const gpuName = data.gpu_name || 'N/A';
+        const shortGpu = gpuName.replace('NVIDIA GeForce ', '').replace('NVIDIA ', '');
+        const accel = data.target_accelerator || (data.is_accelerated ? 'GPU' : 'CPU');
+        if (data.is_accelerated) {
+            hardwareDisplay.style.color = '#10b981';
+            hardwareDisplay.style.background = 'rgba(16, 185, 129, 0.1)';
+            hardwareDisplay.style.borderColor = 'rgba(16, 185, 129, 0.25)';
+            hardwareDisplay.innerHTML = `⚡ <b>加速</b>: ${shortGpu}<br><span style="font-size:0.68rem; opacity:0.85;">(${accel})</span>`;
+        } else {
+            hardwareDisplay.style.color = '#94a3b8';
+            hardwareDisplay.style.background = 'rgba(148, 163, 184, 0.1)';
+            hardwareDisplay.style.borderColor = 'rgba(148, 163, 184, 0.2)';
+            hardwareDisplay.innerHTML = `💻 <b>運算</b>: CPU 相容模式`;
+        }
+    }).catch(e => {
+        if (hardwareDisplay) hardwareDisplay.textContent = '硬體探測離線';
     });
 
     closeUpdateBtn.onclick = () => updateModal.style.display = 'none';

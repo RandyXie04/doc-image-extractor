@@ -9,14 +9,14 @@ import pypandoc
 
 # Configure pypandoc to use the bundled pandoc.exe if available
 try:
-    from src.utils.path_helper import get_bundled_pandoc, get_data_dir, get_config_dir
+    from src.utils.path_helper import get_bundled_pandoc, get_data_dir, get_config_dir, get_template_path
 except ImportError:
     import sys
     from pathlib import Path
     _fallback_root = Path(__file__).parent.parent.parent.resolve()
     if str(_fallback_root) not in sys.path:
         sys.path.insert(0, str(_fallback_root))
-    from src.utils.path_helper import get_bundled_pandoc, get_data_dir, get_config_dir
+    from src.utils.path_helper import get_bundled_pandoc, get_data_dir, get_config_dir, get_template_path
 
 bundled_pandoc = get_bundled_pandoc()
 if bundled_pandoc.exists():
@@ -49,8 +49,9 @@ def main():
     # 1. Explicit --template arg (highest priority)
     # 2. User-uploaded user_template.docx in custom_templates/
     # 3. Default template.docx in database_text/
-    # 4. config dir template.docx
-    # 5. script dir template.docx
+    # 4. Bundled template.docx in package (src/founder_tools/template.docx)
+    # 5. config dir template.docx
+    # 6. script dir template.docx
     if args.template and Path(args.template).exists():
         template_path = args.template
         print(f"Using template (from --template arg): {template_path}")
@@ -58,6 +59,7 @@ def main():
         _template_candidates = [
             _data_dir / 'database_text' / 'custom_templates' / 'user_template.docx',  # user uploaded
             _data_dir / 'database_text' / 'template.docx',
+            get_template_path(),  # bundled in package
             _config_dir / 'template.docx',
             _script_dir / 'template.docx',
         ]

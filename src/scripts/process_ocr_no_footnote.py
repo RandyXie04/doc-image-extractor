@@ -1,7 +1,4 @@
 import os
-os.environ["RECOGNITION_BATCH_SIZE"] = "2"
-os.environ["DETECTOR_BATCH_SIZE"] = "2"
-
 import glob
 import sys
 import re
@@ -13,6 +10,21 @@ from pathlib import Path
 root_dir = Path(__file__).parent.parent.parent.absolute()
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
+
+# Dynamic Hardware Accelerator Configuration (CPU <-> CUDA)
+try:
+    from src.scripts.hardware_probe import get_ocr_accelerator_config
+    _device, _rec_batch, _det_batch = get_ocr_accelerator_config()
+except Exception:
+    import torch
+    if torch.cuda.is_available():
+        _device, _rec_batch, _det_batch = "cuda", 16, 16
+    else:
+        _device, _rec_batch, _det_batch = "cpu", 2, 2
+
+os.environ["TORCH_DEVICE"] = _device
+os.environ["RECOGNITION_BATCH_SIZE"] = str(_rec_batch)
+os.environ["DETECTOR_BATCH_SIZE"] = str(_det_batch)
 
 from config import PATHS
 
@@ -527,7 +539,8 @@ def main(args=None):
                 if not os.path.basename(f).startswith('temp_')
             ]
 
-    print(json.dumps({"progress": 10, "message": f"[INFO] Found {len(pdf_files)} PDF file(s). Starting OCR pipeline..."}))
+    accel_label = f"GPU ({_device.upper()})" if _device == "cuda" else "CPU (相容模式)"
+    print(json.dumps({"progress": 10, "message": f"[INFO] OCR 硬體加速模式: {accel_label} | 批次大小: {_rec_batch}"}))
     sys.stdout.flush()
 
     for pdf_path in pdf_files:

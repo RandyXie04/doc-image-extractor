@@ -1,8 +1,11 @@
 @echo off
+REM PDF Toolkit - Web Server Launcher
 cd /d "%~dp0"
-echo Starting PDF Toolkit...
-python app_window.py
+echo ============================================================
+echo Starting PDF Toolkit Web Server...
+echo ============================================================
+python "%~dp0main.py"
 if %ERRORLEVEL% NEQ 0 (
-    echo [ERROR] Application exited with code %ERRORLEVEL%
+    echo [ERROR] Web Server exited with code %ERRORLEVEL%
     pause
 )

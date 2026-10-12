@@ -1,6 +1,6 @@
-# Book PDF Digitalization Toolbox
+# Book PDF Digitalization Toolbox (Web 版)
 
-書籍 PDF 數位化桌面工具箱，整合 YOLOv8 公式識別、雙引擎 OCR 排版、文件圖片提取與方正書版亂碼修復。
+書籍 PDF 數位化工具箱，採用純網頁化服務架構 (FastAPI + 現代化 Web 前端)，整合 YOLOv8 公式識別、雙引擎 OCR 排版、文件圖片提取與方正書版亂碼修復。支援本機獨立運算與公司區域網路 (LAN) 私有化集中部署。
 
 ---
 
@@ -15,11 +15,11 @@
 
 ---
 
-## 安裝
+## 安裝與依賴
 
 ### Python 套件
 
-需求：Python 3.9+
+需求：Python 3.10+
 
 ```bash
 python -m pip install -r requirements.txt
@@ -31,53 +31,56 @@ python -m pip install -r requirements.txt
 
 ### AI 模型
 
-若第一次開啟 `start_app.bat` 找不到 `models` 中存放任何模型則會自動從 GitHub Releases 自動下載模型。
+模型置於專案根目錄 `models/`：
+- **YOLOv8**：`models/yolo_v8_ft.onnx`（公式提取）
+- **Surya OCR**：初次執行時會自動偵測並下載至模型目錄。
 
-- **YOLOv8**
-- **Surya OCR**
+### 硬體加速架構 (Hardware Acceleration)
+
+本專案具備全通道自動硬體偵測與自適應調度（Graceful Fallback）架構：
+- **公式提取通道**：採用 ONNX Runtime DirectML，支援全系列 DirectX 12 / NVIDIA GPU 高速推論。
+- **OCR 雙通道**：整合 PyTorch CUDA 加速，偵測到 NVIDIA GPU 時自動開啟 CUDA 模式並提升批次處理量；無顯卡時自動平滑降級為 CPU 相容模式。
+- **文字整稿通道**：PyMuPDF 原生 C++ 幾何流解析，毫秒級極速處理。
 
 ---
 
-## 啟動
+## 啟動方式
 
-Windows 一鍵啟動：
+### 1. Windows 一鍵啟動 (推薦)
+
+雙擊專案目錄下的批次檔：
 
 ```bash
 start_app.bat
 ```
+啟動後會自動開啟預設瀏覽器（Chrome / Edge）連至 `http://127.0.0.1:8000`。
 
-命令列啟動：
+### 2. 命令列啟動 (自訂監聽 IP / Port)
 
 ```bash
-python app_window.py
+# 預設監聽 0.0.0.0:8000 (本機與區域網路同仁皆可連入)
+python main.py
+
+# 指定連接埠或關閉自動開啟瀏覽器 (適合伺服器/後台常駐)
+python main.py --port 8080 --no-browser
 ```
 
-除錯模式：
+### 3. 開發除錯模式
 
 ```bash
 start_app_dev.bat
+# 或
+python main.py --dev
 ```
 
 ---
 
-## 打包
+## 公司內網私有化部署 (LAN Deployment)
 
-一鍵打包為獨立執行檔：
-
-```bash
-cmd /c build_app.bat
-```
-
-產出位於 `dist/PDF_Toolkit/`：
-
-```text
-dist/PDF_Toolkit/
-├── PDF_Toolkit.exe
-├── _internal/
-└── version.json
-```
-
-發行時將 `dist/PDF_Toolkit/` 提供給使用者，於同級目錄建立 `models/` 與 `data/` 即可離線運行。
+只需在公司內具備 GPU / 算力的主機執行 `start_app.bat` 或 `python main.py`：
+1. 終端機會顯示您的區域網路 IP（例如 `http://192.168.1.163:8000`）。
+2. 同仁在公司同個 Wi-Fi / 區域網路下，直接在瀏覽器輸入該 IP 即可開始轉檔。
+3. 同仁無需安裝 Python 或模型，算力全部由伺服器集中運算，轉檔結果直接在瀏覽器下載。
 
 ---
 
@@ -108,7 +111,6 @@ Project Root
 │   │   ├── model_manager.py          # 模型管理
 │   │   ├── download_models.py        # HuggingFace 模型下載工具
 │   │   ├── native_dialog.py          # Windows 原生對話框
-│   │   ├── updater_service.py        # 線上更新
 │   │   ├── cleanup_scratch.py        # 暫存清理
 │   │   ├── dictionary_post_processor.py  # 辭典後處理
 │   │   ├── ocr_rare_char_corrector.py    # 罕字校正
@@ -117,7 +119,7 @@ Project Root
 │   │   └── path_helper.py
 │   └── web/
 │       ├── app.py              # FastAPI 後端
-│       └── static/             # 前端靜態資源
+│       └── static/             # 前端網頁資源 (HTML, CSS, JS)
 ├── bin/                        # 內建 Pandoc 執行檔
 ├── data/                       # 資料目錄 (git ignored)
 │   ├── 01_input/
@@ -125,17 +127,12 @@ Project Root
 │   ├── 03_output/
 │   └── database_text/
 ├── models/                     # AI 模型權重
-├── docs/                       # 文件 (BUG_LOG, RELEASE_SOP)
+├── docs/                       # 開發記錄與說明
 ├── logs/                       # 執行日誌
 ├── scratch/                    # 開發暫存 (自動清理)
-├── main.py                     # 標準程式入口 (轉導至 app_window)
-├── app_window.py               # 視窗核心入口 (WebView2 + FastAPI)
-├── start_app.bat               # 啟動腳本
-├── start_app_dev.bat           # 除錯模式啟動
-├── build_app.spec              # PyInstaller 規格檔
-├── build_app.bat               # 打包腳本
-├── updater.bat                 # 熱更新腳本
+├── main.py                     # 網頁服務核心入口 (FastAPI + Uvicorn)
+├── start_app.bat               # 網頁服務啟動腳本
+├── start_app_dev.bat           # 開發除錯模式啟動腳本
 ├── version.json                # 版本資訊
-└── requirements.txt            # 依賴清單
+└── requirements.txt            # Python 依賴清單
 ```
-

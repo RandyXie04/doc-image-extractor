@@ -14,4 +14,3 @@ pypandoc
 fastapi
 uvicorn
 python-multipart
-pywebview

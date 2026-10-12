@@ -195,13 +195,17 @@ class _Config:
                     return json.load(f)
             except Exception:
                 pass
-        return {
-            "gpu_name": "Unknown",
-            "target_accelerator": "CPU",
-            "active_provider": "CPUExecutionProvider",
-            "vram_gb": 0.0,
-            "is_accelerated": False
-        }
+        try:
+            from src.scripts.hardware_probe import ensure_optimal_accelerator
+            return ensure_optimal_accelerator()
+        except Exception:
+            return {
+                "gpu_name": "Unknown",
+                "target_accelerator": "CPU",
+                "active_provider": "CPUExecutionProvider",
+                "vram_gb": 0.0,
+                "is_accelerated": False
+            }
 
 
 PATHS   = _Paths()
