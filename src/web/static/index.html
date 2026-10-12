@@ -8,21 +8,27 @@
 :root {
     --primary: #2563eb;
     --primary-hover: #1d4ed8;
-    --bg-color: #111111;
-    --surface: rgba(255,255,255,0.03);
-    --text-main: #f4f4f5;
-    --text-muted: #a1a1aa;
-    --border: rgba(255,255,255,0.08);
-    --card-bg: var(--surface);
+    --bg-color: #f8fafc;
+    --surface: #ffffff;
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --border: #e2e8f0;
+    --card-bg: #ffffff;
+    --card-hover-border: #cbd5e1;
+    --card-hover-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
-:root[data-theme="light"] {
-    --bg-color: #f1f5f9;
-    --surface: rgba(255,255,255,0.7);
-    --text-main: #0f172a;
-    --text-muted: #475569;
-    --border: rgba(148, 163, 184, 0.3);
-    --card-bg: var(--surface);
+:root[data-theme="dark"] {
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --bg-color: #0f172a;
+    --surface: rgba(255,255,255,0.03);
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --border: rgba(255,255,255,0.08);
+    --card-bg: rgba(255,255,255,0.03);
+    --card-hover-border: rgba(255, 255, 255, 0.2);
+    --card-hover-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
 }
 
         body {
@@ -101,16 +107,19 @@
             flex-direction: column;
             text-decoration: none;
             color: inherit;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
         }
 
         .card:hover {
-            border-color: var(--border);
+            border-color: var(--card-hover-border);
+            box-shadow: var(--card-hover-shadow);
+            transform: translateY(-2px);
         }
 
         .card-label {
             font-size: 0.75rem;
             font-weight: 600;
-            color: var(--text-muted);
+            color: var(--primary);
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-bottom: 0.75rem;
@@ -132,9 +141,12 @@
         }
 
         .action-text {
-            color: var(--text-main);
+            color: var(--primary);
             font-weight: 500;
             font-size: 0.875rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
         }
     </style>
 </head>
@@ -156,14 +168,14 @@
                 <div class="card-label">編碼修復</div>
                 <h3>方正書版亂碼修復</h3>
                 <p>修復早期方正系統出版 PDF 的 CMap 編碼缺陷與亂碼問題。</p>
-                <div class="action-text">開啟工具</div>
+                <div class="action-text">開啟工具 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
             </a>
             
             <a href="/static/extract_images.html" class="card">
                 <div class="card-label">資源擷取</div>
                 <h3>文件圖片無損提取</h3>
                 <p>一鍵打包 PDF 內所有高畫質原始圖片，保留原版插圖。</p>
-                <div class="action-text">開啟工具</div>
+                <div class="action-text">開啟工具 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
             </a>
         </div>
 
@@ -173,14 +185,14 @@
                 <div class="card-label">理科文獻專用</div>
                 <h3>PDF 數學公式提取</h3>
                 <p>使用 YOLOv8 模型定位獨立公式，轉換為 Word 格式並保留公式圖片。</p>
-                <div class="action-text">開啟工具</div>
+                <div class="action-text">開啟工具 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
             </a>
 
             <a href="/static/ocr_pipeline.html" class="card">
                 <div class="card-label">純文字與表格專用</div>
                 <h3>全自動 OCR 與排版</h3>
                 <p>使用 Surya OCR 自動版面分析，重建層級排版，適合圖文混排文件。</p>
-                <div class="action-text">啟動管線</div>
+                <div class="action-text">啟動管線 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></div>
             </a>
         </div>
     </div>

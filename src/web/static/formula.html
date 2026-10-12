@@ -6,26 +6,33 @@
     <title>PDF AI 公式萃取站</title>
     <style>
         :root {
-            --primary-color: #6366f1;
-            --primary-hover: #4f46e5;
+            --primary-color: #2563eb;
+            --primary-hover: #1d4ed8;
             --bg-color: transparent;
-            --card-bg: rgba(255, 255, 255, 0.03);
-            --text-main: #f4f4f5;
-            --text-muted: #a1a1aa;
-            --border-color: rgba(255, 255, 255, 0.08);
+            --card-bg: #ffffff;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border-color: #e2e8f0;
         }
         
-        :root[data-theme="light"] {
+        :root[data-theme="dark"] {
+            --primary-color: #3b82f6;
+            --primary-hover: #2563eb;
             --bg-color: transparent;
-            --card-bg: rgba(255, 255, 255, 0.7);
-            --text-main: #0f172a;
-            --text-muted: #475569;
-            --border-color: rgba(148, 163, 184, 0.3);
+            --card-bg: rgba(255, 255, 255, 0.03);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: rgba(255, 255, 255, 0.08);
         }
-        :root[data-theme="light"] .upload-area { background-color: rgba(255, 255, 255, 0.6); }
-        :root[data-theme="light"] .option-card { background: rgba(255, 255, 255, 0.6); }
-        :root[data-theme="light"] .input-group input[type="number"] { background: rgba(255, 255, 255, 0.6); }
-        :root[data-theme="light"] #previewContainer { background: rgba(255, 255, 255, 0.6); }
+        .upload-area { background-color: rgba(0, 0, 0, 0.02); }
+        .option-card { background: rgba(0, 0, 0, 0.02); }
+        .input-group input[type="number"] { background: rgba(0, 0, 0, 0.02); }
+        #previewContainer { background: rgba(0, 0, 0, 0.02); }
+
+        :root[data-theme="dark"] .upload-area { background-color: rgba(255, 255, 255, 0.02); }
+        :root[data-theme="dark"] .option-card { background: rgba(255, 255, 255, 0.02); }
+        :root[data-theme="dark"] .input-group input[type="number"] { background: rgba(255, 255, 255, 0.02); }
+        :root[data-theme="dark"] #previewContainer { background: rgba(255, 255, 255, 0.02); }
 
         * {
             box-sizing: border-box;
@@ -49,12 +56,12 @@
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             padding: 3rem;
-            border-radius: 24px;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08), inset 0 1px 0 rgba(255,255,255,0.5);
-            border: 1px solid rgba(255,255,255,0.6);
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
+            border: 1px solid var(--border-color);
             width: 100%;
             max-width: 680px;
-            animation: fadeIn 0.5s ease-out forwards;
+            animation: fadeIn 0.4s ease-out forwards;
         }
         
         @keyframes fadeIn {
@@ -296,12 +303,21 @@
 
     <div class="container">
         <div class="header-bar">
-            <span style="font-size: 0.875rem; color: var(--text-muted);">⚡ v2.1 Web Edition</span>
-            <a href="https://github.com/RandyXie04/doc-image-extractor/issues" target="_blank">🐞 回報問題 / 建議</a>
+            <span style="font-size: 0.875rem; color: var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                v2.1 Web Edition
+            </span>
+            <a href="https://github.com/RandyXie04/doc-image-extractor/issues" target="_blank" style="display:inline-flex; align-items:center; gap:4px;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="14" x="8" y="6" rx="4"/><path d="m19 7-3 2"/><path d="m5 7 3 2"/><path d="m19 19-3-2"/><path d="m5 19 3-2"/><path d="M20 13h-4"/><path d="M4 13h4"/></svg>
+                回報問題 / 建議
+            </a>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <a href="/" style="text-decoration: none; color: var(--primary-color); font-weight: bold;">◀ 返回首頁</a>
-            <h1 style="margin-bottom: 0;">PDF AI 公式萃取站</h1>
+            <a href="/" class="back-link" style="text-decoration: none; color: var(--primary-color); font-weight: 500; font-size: 0.9rem; display:inline-flex; align-items:center; gap:4px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                返回首頁
+            </a>
+            <h1 style="margin-bottom: 0; font-size: 1.4rem;">PDF AI 公式萃取站</h1>
             <div style="width: 80px;"></div>
         </div>
         <p class="subtitle">AI 模型驅動：精準偵測獨立公式並無損裁切，轉為 Word 可編輯文件</p>
@@ -311,16 +327,22 @@
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                <h3 id="fileNameDisplay">點擊或拖曳 PDF 檔案至此</h3>
+                <h3 id="fileNameDisplay" style="margin: 0; font-size: 1.1rem; color: var(--text-muted); font-weight: 500;">點擊或拖曳 PDF 檔案至此</h3>
                 <input type="file" id="fileInput" name="file" accept=".pdf" required>
             </div>
             
             <div id="previewContainer" style="display: none; margin-bottom: 1.5rem; text-align: center;">
-                <h4>裁切邊界預覽 (紅色=頂部, 藍色=底部, 綠色=左右)</h4>
+                <h4 style="font-size: 0.95rem; color: var(--text-main);">裁切邊界預覽 (紅色=頂部, 藍色=底部, 綠色=左右)</h4>
                 <div style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin-top: 1rem;">
-                    <button type="button" id="prevPageBtn" class="btn" style="padding: 5px 15px; min-width: auto;">◀ 上一頁</button>
-                    <span>預覽頁碼: <span id="previewPageDisplay">1</span> / <span id="totalPagesDisplay">?</span></span>
-                    <button type="button" id="nextPageBtn" class="btn" style="padding: 5px 15px; min-width: auto;">下一頁 ▶</button>
+                    <button type="button" id="prevPageBtn" class="btn" style="padding: 5px 15px; min-width: auto; display:inline-flex; align-items:center; gap:4px; font-size: 0.85rem;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                        上一頁
+                    </button>
+                    <span style="font-size: 0.9rem; color: var(--text-muted);">預覽頁碼: <span id="previewPageDisplay" style="font-weight: 600; color: var(--text-main);">1</span> / <span id="totalPagesDisplay">?</span></span>
+                    <button type="button" id="nextPageBtn" class="btn" style="padding: 5px 15px; min-width: auto; display:inline-flex; align-items:center; gap:4px; font-size: 0.85rem;">
+                        下一頁
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+                    </button>
                 </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; text-align: left;">
                     <label>頂部裁切 (0~0.5): <span id="headerVal">0.10</span>
@@ -348,8 +370,6 @@
                 </label>
             </div>
 
-
-
             <div class="input-group" style="margin-top: 1rem;">
                 <div>
                     <label>起始頁碼 (預設第 1 頁)</label>
@@ -376,11 +396,20 @@
             
             <div id="downloadActionGroup" style="display: none; flex-direction: column; gap: 0.75rem; margin-top: 1rem;">
                 <div style="display: flex; gap: 1rem;">
-                    <button id="downloadZipBtn" class="submit-btn" style="flex: 1; background: #059669; display: none;">📥 下載公式圖片包 (.zip)</button>
+                    <button id="downloadZipBtn" class="submit-btn" style="flex: 1; background: #059669; display: none; align-items:center; justify-content:center; gap:6px;">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        下載公式圖片包 (.zip)
+                    </button>
                 </div>
-                <button id="openFolderBtn" class="submit-btn" style="background: #475569; width: 100%;">📁 在 Windows 檔案總管中檢視成果檔案</button>
+                <button id="openFolderBtn" class="submit-btn" style="background: #475569; width: 100%; display:inline-flex; align-items:center; justify-content:center; gap:6px;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/></svg>
+                    在 Windows 檔案總管中檢視成果檔案
+                </button>
             </div>
-            <button id="reportIssueBtn" class="submit-btn" style="margin-top: 1rem;">🐞 一鍵至 GitHub 回報此問題</button>
+            <button id="reportIssueBtn" class="submit-btn" style="margin-top: 1rem; display:none; align-items:center; justify-content:center; gap:6px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="8" height="14" x="8" y="6" rx="4"/><path d="m19 7-3 2"/><path d="m5 7 3 2"/><path d="m19 19-3-2"/><path d="m5 19 3-2"/><path d="M20 13h-4"/><path d="M4 13h4"/></svg>
+                一鍵至 GitHub 回報此問題
+            </button>
         </div>
         
         <footer style="margin-top: 2.5rem; text-align: center; font-size: 0.8rem; color: var(--text-muted);">
@@ -469,10 +498,10 @@
                     currentFileId = data.file_id;
                     if (data.orig_name) currentFileOrigName = data.orig_name;
                     const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-                    fileNameDisplay.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; gap:5px;">
-                        <span style="font-size:2rem;">📄</span>
-                        <span style="color: #334155;">已選擇: <b>${file.name}</b></span>
-                        <span style="color:#64748b; font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
+                    fileNameDisplay.innerHTML = `<div style="display:flex; flex-direction:column; align-items:center; gap:6px; padding: 12px; background: rgba(0,0,0,0.03); border: 1px solid var(--border-color); border-radius: 8px;">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary-color);"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        <span style="color: var(--text-main);">已選擇: <b>${file.name}</b></span>
+                        <span style="color: var(--text-muted); font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
                     </div>`;
                     submitBtn.disabled = false;
                     submitBtn.textContent = "開始處理";
@@ -486,9 +515,12 @@
                     updatePreview();
                 }
             } catch (e) {
-                fileNameDisplay.innerHTML = `<div style="padding:1rem; background: rgba(220, 38, 38, 0.1); border:1px solid rgba(220, 38, 38, 0.3); border-radius:8px; color:#ef4444;">
-                    ❌ <b>上傳失敗：</b>${e.message || e} <br>
-                    <button onclick="fileInput.click()" style="margin-top:10px; padding: 5px 10px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px;">🔄 重新選擇檔案</button>
+                fileNameDisplay.innerHTML = `<div style="padding:1rem; background: rgba(220, 38, 38, 0.08); border:1px solid rgba(220, 38, 38, 0.25); border-radius:8px; color:#ef4444;">
+                    <b>上傳失敗：</b>${e.message || e} <br>
+                    <button onclick="fileInput.click()" style="margin-top:10px; padding: 6px 14px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px; font-size: 0.85rem; display:inline-flex; align-items:center; gap:4px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                        重新選擇檔案
+                    </button>
                 </div>`;
             }
         }
@@ -699,10 +731,10 @@
             const startP = document.querySelector('[name="start_page"]').value || '預設 (1)';
             const endP = document.querySelector('[name="end_page"]').value || '全本';
             
-            const body = `### 📌 問題描述
+            const body = `### 問題描述
 在轉檔 PDF 時發生異常中斷。
 
-### ⚙️ 執行環境與設定
+### 執行環境與設定
 - **檔案名稱**: \`${currentFileName}\`
 - **任務 ID**: \`${taskId}\`
 - **頁碼範圍**: 第 ${startP} 頁 至 第 ${endP} 頁
@@ -710,7 +742,7 @@
 - **瀏覽器**: \`${navigator.userAgent}\`
 - **時間戳記**: ${new Date().toISOString()}
 
-### 📋 系統日誌 (Logs / Traceback)
+### 系統日誌 (Logs / Traceback)
 \`\`\`text
 ${lastErrorLog || '未取得詳細錯誤日誌'}
 \`\`\`

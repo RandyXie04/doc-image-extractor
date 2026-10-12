@@ -6,63 +6,81 @@
     <title>文件圖片無損提取器</title>
     <style>
         :root {
-            --primary: #6366f1;
-            --primary-hover: #4f46e5;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg: transparent;
+            --card: #ffffff;
+            --border: #e2e8f0;
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+        }
+        
+        :root[data-theme="dark"] {
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
             --bg: transparent;
             --card: rgba(255, 255, 255, 0.03);
             --border: rgba(255, 255, 255, 0.08);
-            --text-main: #f4f4f5;
-            --text-muted: #a1a1aa;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
         }
-        
-        :root[data-theme="light"] {
-            --bg: transparent;
-            --card: rgba(255, 255, 255, 0.7);
-            --border: rgba(148, 163, 184, 0.3);
-            --text-main: #0f172a;
-            --text-muted: #475569;
-        }
-        :root[data-theme="light"] .upload-area { background-color: rgba(255, 255, 255, 0.6); }
+        .upload-area { background-color: rgba(0, 0, 0, 0.02); }
+        :root[data-theme="dark"] .upload-area { background-color: rgba(255, 255, 255, 0.02); }
         body { font-family: 'Inter', system-ui, sans-serif; display: flex; justify-content: center; padding: 3rem; color: var(--text-main); }
         .container { 
             background: var(--card); 
             backdrop-filter: blur(20px); 
             -webkit-backdrop-filter: blur(20px);
             padding: 3rem; 
-            border-radius: 24px; 
-            box-shadow: 0 20px 40px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.5); 
+            border-radius: 20px; 
+            box-shadow: 0 10px 30px rgba(0,0,0,0.06); 
             max-width: 600px; width: 100%; 
-            border: 1px solid rgba(255,255,255,0.6);
-            animation: fadeIn 0.5s ease-out forwards;
+            border: 1px solid var(--border);
+            animation: fadeIn 0.4s ease-out forwards;
         }
         @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
+            from { opacity: 0; transform: translateY(8px); }
             to { opacity: 1; transform: translateY(0); }
         }
         .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .header a { text-decoration: none; color: var(--primary); font-weight: 600; background: rgba(99, 102, 241, 0.1); padding: 6px 12px; border-radius: 6px; transition: 0.2s; }
-        .header a:hover { background: rgba(99, 102, 241, 0.2); }
-        .upload-area { border: 2px dashed var(--border); border-radius: 16px; padding: 3.5rem 2rem; text-align: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); margin-bottom: 2rem; background-color: rgba(255, 255, 255, 0.02); position: relative; overflow: hidden; }
-        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background-color: rgba(255, 255, 255, 0.05); transform: scale(1.01); }
-        .upload-area svg { width: 56px; height: 56px; color: var(--primary); margin-bottom: 1.2rem; transition: transform 0.3s; }
-        .upload-area:hover svg { transform: translateY(-5px); }
+        .header .back-link { 
+            text-decoration: none; 
+            color: var(--primary); 
+            font-weight: 500; 
+            font-size: 0.9rem;
+            background: rgba(37, 99, 235, 0.08); 
+            padding: 6px 12px; 
+            border-radius: 6px; 
+            transition: 0.2s; 
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .header .back-link:hover { background: rgba(37, 99, 235, 0.15); }
+        .upload-area { border: 2px dashed var(--border); border-radius: 16px; padding: 3.5rem 2rem; text-align: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); margin-bottom: 2rem; position: relative; overflow: hidden; }
+        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background-color: rgba(37, 99, 235, 0.04); transform: scale(1.01); }
+        .upload-area svg { width: 52px; height: 52px; color: var(--primary); margin-bottom: 1.2rem; transition: transform 0.3s; }
+        .upload-area:hover svg { transform: translateY(-4px); }
         .upload-area input[type="file"] { display: none; }
-        .btn { background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%); color: white; border: none; padding: 12px 24px; border-radius: 12px; font-weight: 600; cursor: pointer; width: 100%; font-size: 1.1rem; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); transition: all 0.3s; letter-spacing: 0.02em; }
-        .btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 8px 20px rgba(99, 102, 241, 0.4); }
+        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 600; cursor: pointer; width: 100%; font-size: 1rem; box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2); transition: all 0.2s; letter-spacing: 0.02em; }
+        .btn:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
         .btn:disabled { background: #cbd5e1; cursor: not-allowed; box-shadow: none; transform: none; }
-        #status { margin-top: 1.5rem; text-align: center; font-weight: 500; color: #475569; }
-        #downloadBtn { display: none; margin-top: 1rem; text-align: center; text-decoration: none; background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%); box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3); }
-        #downloadBtn:hover { box-shadow: 0 8px 20px rgba(14, 165, 233, 0.4); }
+        #status { margin-top: 1.5rem; text-align: center; font-weight: 500; color: var(--text-muted); }
+        #downloadBtn { display: none; margin-top: 1rem; text-align: center; text-decoration: none; background: #0284c7; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.2); }
+        #downloadBtn:hover { background: #0369a1; }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <a href="/">◀ 返回首頁</a>
-            <h2 style="margin: 0;">🖼️ 圖片無損提取器</h2>
+            <a href="/" class="back-link">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                返回首頁
+            </a>
+            <h2 style="margin: 0; font-size: 1.35rem; color: var(--text-main);">圖片無損提取器</h2>
             <div style="width: 80px;"></div>
         </div>
-        <p style="text-align: center; color: #64748b; margin-bottom: 2rem;">上傳 PDF 或 DOCX 檔案，自動批量提取內嵌高畫質圖片並打包為 ZIP 壓縮檔。</p>
+        <p style="text-align: center; color: var(--text-muted); margin-bottom: 2rem; font-size: 0.95rem;">上傳 PDF 或 DOCX 檔案，自動批量提取內嵌高畫質圖片並打包為 ZIP 壓縮檔。</p>
 
         <form id="uploadForm">
             <div class="upload-area" id="dropZone">
@@ -74,8 +92,8 @@
             </div>
             
             <div style="margin-bottom: 1.5rem;">
-                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                    <input type="checkbox" id="toGrayscale" name="toGrayscale">
+                <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; color: var(--text-main); font-size: 0.95rem;">
+                    <input type="checkbox" id="toGrayscale" name="toGrayscale" style="accent-color: var(--primary); width: 16px; height: 16px;">
                     將所有提取的彩色圖片轉換為黑白灰階
                 </label>
             </div>
@@ -84,7 +102,7 @@
             <button type="submit" class="btn" id="submitBtn" disabled>開始提取圖片</button>
         </form>
         <div id="status"></div>
-        <a id="downloadBtn" class="btn" href="#">⬇️ 下載圖片 ZIP 壓縮包</a>
+        <a id="downloadBtn" class="btn" href="#">下載圖片 ZIP 壓縮包</a>
     </div>
 
     <script>
@@ -112,10 +130,10 @@
             currentFile = file;
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
             fileInfo.innerHTML = `
-                <div style="display:flex; flex-direction:column; align-items:center; gap:5px; padding: 10px; background: #f1f5f9; border-radius: 8px;">
-                    <span style="font-size:2rem;">📄</span>
-                    <span style="color: #334155;">已選擇: <b>${file.name}</b></span>
-                    <span style="color:#64748b; font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
+                <div style="display:flex; flex-direction:column; align-items:center; gap:6px; padding: 12px; background: rgba(0,0,0,0.03); border: 1px solid var(--border); border-radius: 8px;">
+                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary);"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    <span style="color: var(--text-main);">已選擇: <b>${file.name}</b></span>
+                    <span style="color: var(--text-muted); font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
                 </div>`;
             submitBtn.disabled = false;
             downloadBtn.style.display = 'none';
@@ -128,7 +146,7 @@
 
             submitBtn.disabled = true;
             statusDiv.style.color = '#0284c7';
-            statusDiv.textContent = '🚀 正在上傳並提取檔案中的高畫質圖片，請稍候...';
+            statusDiv.textContent = '正在上傳並提取檔案中的高畫質圖片，請稍候...';
             downloadBtn.style.display = 'none';
 
             const toGrayscale = document.getElementById('toGrayscale').checked;
@@ -150,7 +168,7 @@
                 const result = await response.json();
                 if (result.success && result.count > 0) {
                     statusDiv.style.color = '#16a34a';
-                    statusDiv.innerHTML = `🎉 <b>處理完成！</b> 共成功提取 <b>${result.count}</b> 張高品質圖片。`;
+                    statusDiv.innerHTML = `<div style="font-weight: 600;">處理完成！共成功提取 <b>${result.count}</b> 張高品質圖片。</div>`;
                     
                     const btnContainer = document.createElement('div');
                     btnContainer.id = 'saveBtnContainer';
@@ -162,19 +180,22 @@
                     const btnSave = document.createElement('button');
                     btnSave.className = 'btn';
                     btnSave.style.background = '#2563eb';
-                    btnSave.innerText = '📁 本機另存 ZIP (原生視窗)';
+                    btnSave.innerHTML = '<span style="display:inline-flex; align-items:center; justify-content:center; gap:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 本機另存 ZIP (原生視窗)</span>';
                     btnSave.onclick = (e) => nativeSave(result.source_path, result.filename, e.currentTarget, result.download_url);
                     
                     btnContainer.appendChild(btnSave);
                     statusDiv.appendChild(btnContainer);
                 } else {
-                    statusDiv.style.color = '#eab308';
-                    statusDiv.textContent = '⚠️ 此文件中未偵測到任何內嵌圖片。';
+                    statusDiv.style.color = '#d97706';
+                    statusDiv.textContent = '此文件中未偵測到任何內嵌圖片。';
                 }
             } catch (err) {
-                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background: rgba(220, 38, 38, 0.1); border:1px solid rgba(220, 38, 38, 0.3); border-radius:8px; color:#ef4444;">
-                    ❌ <b>發生錯誤：</b>${err.message} <br>
-                    <button onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px;">🔄 重新嘗試</button>
+                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background: rgba(220, 38, 38, 0.08); border:1px solid rgba(220, 38, 38, 0.25); border-radius:8px; color:#ef4444;">
+                    <b>發生錯誤：</b>${err.message} <br>
+                    <button onclick="submitBtn.click()" style="margin-top:10px; padding: 6px 14px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px; font-size: 0.85rem; display:inline-flex; align-items:center; gap:4px;">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+                        重新嘗試
+                    </button>
                 </div>`;
             } finally {
                 submitBtn.disabled = false;
@@ -182,10 +203,10 @@
         };
 
         async function nativeSave(source_path, suggested_filename, btnElement, fallbackUrl) {
-            const origText = btnElement ? btnElement.innerText : '';
+            const origHTML = btnElement ? btnElement.innerHTML : '';
             if (btnElement) {
                 btnElement.disabled = true;
-                btnElement.innerText = '⏳ 請在開啟的視窗中選擇儲存位置...';
+                btnElement.innerText = '請在開啟的視窗中選擇儲存位置...';
             }
             try {
                 const res = await fetch('/api/native_save_file', {
@@ -201,7 +222,7 @@
                 
                 if (result.status === 'success') {
                     if (btnElement) {
-                        btnElement.innerText = `✅ 已儲存`;
+                        btnElement.innerText = '已儲存';
                         btnElement.disabled = false;
                     }
                     
@@ -212,27 +233,30 @@
                         savedInfo.id = saveInfoId;
                         savedInfo.style.marginTop = '0.8rem';
                         savedInfo.style.padding = '0.8rem';
-                        savedInfo.style.background = '#f0fdf4';
-                        savedInfo.style.border = '1px solid #bbf7d0';
+                        savedInfo.style.background = 'rgba(22, 163, 74, 0.08)';
+                        savedInfo.style.border = '1px solid rgba(22, 163, 74, 0.25)';
                         savedInfo.style.borderRadius = '8px';
-                        savedInfo.style.color = '#166534';
+                        savedInfo.style.color = '#15803d';
                         savedInfo.style.fontSize = '0.9rem';
                         const container = document.getElementById('saveBtnContainer') || statusDiv;
                         container.parentNode.insertBefore(savedInfo, container.nextSibling);
                     }
                     savedInfo.innerHTML = `<div><b>文件已成功儲存至：</b></div>
-                    <div style="margin:4px 0; word-break:break-all; font-family:monospace; background:#fff; padding:6px; border-radius:4px; border:1px solid #dcfce7;">${result.saved_path}</div>
-                    <button type="button" class="btn" style="margin-top:6px; padding:6px 12px; background:#15803d; color:white; font-size:0.85rem;" onclick="openSavedPath('${result.saved_path.replace(/\\/g, '\\\\')}')">📂 在 Windows 檔案總管中開啟</button>`;
+                    <div style="margin:4px 0; word-break:break-all; font-family:monospace; background:rgba(255,255,255,0.7); padding:6px; border-radius:4px; border:1px solid rgba(22, 163, 74, 0.2);">${result.saved_path}</div>
+                    <button type="button" class="btn" style="margin-top:6px; padding:6px 12px; background:#15803d; color:white; font-size:0.85rem; display:inline-flex; align-items:center; gap:6px;" onclick="openSavedPath('${result.saved_path.replace(/\\/g, '\\\\')}')">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/></svg>
+                        在 Windows 檔案總管中開啟
+                    </button>`;
                 } else if (result.status === 'cancelled') {
                     if (btnElement) {
-                        btnElement.innerText = origText;
+                        btnElement.innerHTML = origHTML;
                         btnElement.disabled = false;
                     }
                 } else {
                     console.warn('原生另存降級為瀏覽器直接下載:', result.message);
                     window.location.href = fallbackUrl;
                     if (btnElement) {
-                        btnElement.innerText = origText;
+                        btnElement.innerHTML = origHTML;
                         btnElement.disabled = false;
                     }
                 }
@@ -240,7 +264,7 @@
                 console.warn('原生另存發生錯誤，降級為瀏覽器下載:', e);
                 window.location.href = fallbackUrl;
                 if (btnElement) {
-                    btnElement.innerText = origText;
+                    btnElement.innerHTML = origHTML;
                     btnElement.disabled = false;
                 }
             }

@@ -38,11 +38,13 @@ document.addEventListener("DOMContentLoaded", () => {
             </a>
         </nav>
         <div style="padding: 1.5rem; margin-top: auto; display: flex; flex-direction: column; gap: 8px;">
-            <div id="hardwareDisplay" style="font-size: 0.72rem; color: #94a3b8; text-align: center; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 4px 6px; line-height: 1.3;">
-                ⚡ 硬體加速: 偵測中...
+            <div id="hardwareDisplay" style="font-size: 0.72rem; color: #64748b; text-align: center; background: rgba(0,0,0,0.03); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; line-height: 1.3;">
+                <span style="display:inline-flex; align-items:center; justify-content:center; gap:4px;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> 硬體加速: 偵測中...
+                </span>
             </div>
             <div id="versionDisplay" style="font-size: 0.8rem; color: #64748b; text-align: center;">版本: 讀取中...</div>
-            <button id="modeToggleBtn" style="width: 100%; background: #1e293b; color: #94a3b8; border: 1px dashed #475569; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <button id="modeToggleBtn" style="width: 100%; background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 6px;">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> 編輯專用 (點擊切換)
             </button>
             <button id="checkUpdateBtn" style="width: 100%; background: #0284c7; color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
@@ -55,14 +57,17 @@ document.addEventListener("DOMContentLoaded", () => {
     </div>
     
     <div id="updateModal" style="display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); align-items: center; justify-content: center; z-index: 1001;">
-        <div style="background: white; padding: 2rem; border-radius: 12px; width: 450px; max-width: 90%;">
-            <h3 style="margin-top: 0;">🚀 發現新版本！</h3>
-            <p id="updateVersionText" style="font-size: 1rem; font-weight: bold; color: #0f172a;"></p>
-            <div id="updateReleaseNotes" style="font-size: 0.9rem; color: #475569; background: #f8fafc; padding: 10px; border-radius: 8px; max-height: 150px; overflow-y: auto; margin-bottom: 1rem; white-space: pre-wrap;"></div>
-            <div id="updateMsg" style="margin-bottom: 1rem; font-size: 0.9rem; font-weight: bold; color: #0284c7;"></div>
+        <div style="background: var(--card-bg, #ffffff); padding: 2rem; border-radius: 12px; width: 450px; max-width: 90%; border: 1px solid var(--border, #e2e8f0); box-shadow: 0 10px 25px rgba(0,0,0,0.1);">
+            <h3 style="margin-top: 0; color: var(--text-main, #0f172a); display: flex; align-items: center; gap: 8px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                發現新版本
+            </h3>
+            <p id="updateVersionText" style="font-size: 1rem; font-weight: bold; color: var(--text-main, #0f172a);"></p>
+            <div id="updateReleaseNotes" style="font-size: 0.9rem; color: var(--text-muted, #475569); background: rgba(0,0,0,0.03); padding: 10px; border-radius: 8px; max-height: 150px; overflow-y: auto; margin-bottom: 1rem; white-space: pre-wrap; border: 1px solid var(--border, #e2e8f0);"></div>
+            <div id="updateMsg" style="margin-bottom: 1rem; font-size: 0.9rem; font-weight: 600; color: #0284c7;"></div>
             <div style="display: flex; gap: 10px; justify-content: flex-end;">
-                <button id="closeUpdateBtn" style="padding: 8px 16px; border: none; background: #e2e8f0; border-radius: 6px; cursor: pointer;">稍後再說</button>
-                <button id="applyUpdateBtn" style="padding: 8px 16px; border: none; background: #059669; color: white; border-radius: 6px; cursor: pointer;">立即下載並重啟</button>
+                <button id="closeUpdateBtn" style="padding: 8px 16px; border: 1px solid var(--border, #e2e8f0); background: rgba(0,0,0,0.04); color: var(--text-main, #0f172a); border-radius: 6px; cursor: pointer;">稍後再說</button>
+                <button id="applyUpdateBtn" style="padding: 8px 16px; border: none; background: #059669; color: white; border-radius: 6px; cursor: pointer; font-weight: 500;">立即下載並重啟</button>
             </div>
         </div>
     </div>
@@ -93,10 +98,10 @@ document.addEventListener("DOMContentLoaded", () => {
             const title = encodeURIComponent('[問題回報] 請簡述您遇到的問題');
             const versionText = document.getElementById('versionDisplay')?.textContent || 'App 版本未知';
             const bodyContent = 
-`### 📌 問題描述
+`### 問題描述
 <!-- 請在此詳細描述您遇到的異常現象、錯誤訊息或改進建議 -->
 
-### ⚙️ 系統資訊
+### 系統資訊
 - **應用版本**: ${versionText}
 - **瀏覽器**: ${navigator.userAgent}
 - **回報時間**: ${new Date().toLocaleString()}
@@ -134,15 +139,15 @@ document.addEventListener("DOMContentLoaded", () => {
         const shortGpu = gpuName.replace('NVIDIA GeForce ', '').replace('NVIDIA ', '');
         const accel = data.target_accelerator || (data.is_accelerated ? 'GPU' : 'CPU');
         if (data.is_accelerated) {
-            hardwareDisplay.style.color = '#10b981';
-            hardwareDisplay.style.background = 'rgba(16, 185, 129, 0.1)';
+            hardwareDisplay.style.color = '#059669';
+            hardwareDisplay.style.background = 'rgba(16, 185, 129, 0.08)';
             hardwareDisplay.style.borderColor = 'rgba(16, 185, 129, 0.25)';
-            hardwareDisplay.innerHTML = `⚡ <b>加速</b>: ${shortGpu}<br><span style="font-size:0.68rem; opacity:0.85;">(${accel})</span>`;
+            hardwareDisplay.innerHTML = `<span style="display:inline-flex; align-items:center; justify-content:center; gap:4px; font-weight:600;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> 加速: ${shortGpu}</span><br><span style="font-size:0.68rem; opacity:0.85;">(${accel})</span>`;
         } else {
-            hardwareDisplay.style.color = '#94a3b8';
-            hardwareDisplay.style.background = 'rgba(148, 163, 184, 0.1)';
-            hardwareDisplay.style.borderColor = 'rgba(148, 163, 184, 0.2)';
-            hardwareDisplay.innerHTML = `💻 <b>運算</b>: CPU 相容模式`;
+            hardwareDisplay.style.color = '#64748b';
+            hardwareDisplay.style.background = 'rgba(0, 0, 0, 0.03)';
+            hardwareDisplay.style.borderColor = 'var(--border, #e2e8f0)';
+            hardwareDisplay.innerHTML = `<span style="display:inline-flex; align-items:center; justify-content:center; gap:4px; font-weight:600;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> 運算: CPU 相容模式</span>`;
         }
     }).catch(e => {
         if (hardwareDisplay) hardwareDisplay.textContent = '硬體探測離線';
@@ -153,7 +158,7 @@ document.addEventListener("DOMContentLoaded", () => {
     checkUpdateBtn.onclick = async () => {
         checkUpdateBtn.disabled = true;
         const originalText = checkUpdateBtn.innerHTML;
-        checkUpdateBtn.innerHTML = '⏳ 檢查中...';
+        checkUpdateBtn.innerHTML = '<span style="display:inline-flex; align-items:center; gap:6px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg> 檢查中...</span>';
 
         try {
             const res = await fetch('/api/check_update', { method: 'POST' });
@@ -167,7 +172,7 @@ document.addEventListener("DOMContentLoaded", () => {
                 updateModal.style.display = 'flex';
                 applyUpdateBtn.disabled = !currentDownloadUrl;
                 if (!currentDownloadUrl) {
-                    updateMsg.textContent = '⚠️ 此 Release 尚未包含執行檔。';
+                    updateMsg.textContent = '此 Release 尚未包含執行檔。';
                 }
             } else {
                 alert(data.msg || '您目前使用的是最新版本！');
@@ -186,7 +191,7 @@ document.addEventListener("DOMContentLoaded", () => {
         applyUpdateBtn.disabled = true;
         closeUpdateBtn.disabled = true;
         updateMsg.style.color = '#0284c7';
-        updateMsg.textContent = '🚀 正在背景下載新版程式，請勿關閉視窗...';
+        updateMsg.textContent = '正在背景下載新版程式，請勿關閉視窗...';
 
         try {
             const res = await fetch('/api/apply_update', {
@@ -198,16 +203,16 @@ document.addEventListener("DOMContentLoaded", () => {
             
             if (data.status === 'success') {
                 updateMsg.style.color = '#15803d';
-                updateMsg.textContent = '✅ 下載完成！系統即將重新啟動...';
+                updateMsg.textContent = '下載完成！系統即將重新啟動...';
             } else {
                 updateMsg.style.color = '#dc2626';
-                updateMsg.textContent = '❌ 更新失敗: ' + (data.msg || '未知錯誤');
+                updateMsg.textContent = '更新失敗: ' + (data.msg || '未知錯誤');
                 applyUpdateBtn.disabled = false;
                 closeUpdateBtn.disabled = false;
             }
         } catch (e) {
             updateMsg.style.color = '#dc2626';
-            updateMsg.textContent = '❌ 網路錯誤，請稍後再試。';
+            updateMsg.textContent = '網路錯誤，請稍後再試。';
             applyUpdateBtn.disabled = false;
             closeUpdateBtn.disabled = false;
         }
@@ -219,14 +224,14 @@ document.addEventListener("DOMContentLoaded", () => {
         function updateModeBtnUI(mode) {
             if (mode === 'dev') {
                 modeToggleBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> 工程師除錯 (切換)';
-                modeToggleBtn.style.color = '#38bdf8';
+                modeToggleBtn.style.color = '#0284c7';
                 modeToggleBtn.style.borderColor = '#0284c7';
-                modeToggleBtn.style.background = '#0f172a';
+                modeToggleBtn.style.background = 'rgba(2, 132, 199, 0.08)';
             } else {
                 modeToggleBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> 編輯專用 (切換)';
-                modeToggleBtn.style.color = '#94a3b8';
-                modeToggleBtn.style.borderColor = '#475569';
-                modeToggleBtn.style.background = '#1e293b';
+                modeToggleBtn.style.color = '#475569';
+                modeToggleBtn.style.borderColor = '#cbd5e1';
+                modeToggleBtn.style.background = '#f1f5f9';
             }
         }
 
@@ -249,8 +254,8 @@ document.addEventListener("DOMContentLoaded", () => {
                     updateModeBtnUI(d.mode);
                     // 觸發全域事件並重整頁面狀態
                     window.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: d.mode } }));
-                    // 重新導向或小提示
-                    const msg = d.mode === 'dev' ? '已切換為【🛠️ 工程師除錯模式】！解鎖 Log、ZIP 下載與內部目錄。' : '已切換為【🏢 出版社編輯模式】！僅保留 Word 另存檔案功能。';
+                    // 提示
+                    const msg = d.mode === 'dev' ? '已切換為【工程師除錯模式】！解鎖 Log、ZIP 下載與內部目錄。' : '已切換為【出版社編輯模式】！僅保留 Word 另存檔案功能。';
                     alert(msg);
                     window.location.reload();
                 }
@@ -260,25 +265,35 @@ document.addEventListener("DOMContentLoaded", () => {
         };
     }
 
-    // --- Theme Toggle Logic ---
-    const savedTheme = localStorage.getItem('app-theme') || 'dark';
+    // --- Theme Toggle Logic (Light Mode by Default) ---
+    const savedTheme = localStorage.getItem('app-theme') || 'light';
     document.documentElement.setAttribute('data-theme', savedTheme);
 
     const themeToggleBtn = document.createElement('button');
     themeToggleBtn.id = 'themeToggleBtn';
-    themeToggleBtn.style.cssText = 'position: fixed; top: 1.5rem; right: 2rem; background: rgba(120, 120, 120, 0.2); border: 1px solid rgba(120,120,120,0.3); border-radius: 50%; width: 42px; height: 42px; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(8px); transition: all 0.3s;';
-    themeToggleBtn.innerHTML = savedTheme === 'light' ? '☀️' : '🌙';
-    themeToggleBtn.title = '切換主題 (Light/Dark)';
-    
-    themeToggleBtn.onmouseover = () => { themeToggleBtn.style.transform = 'scale(1.1)'; };
-    themeToggleBtn.onmouseout = () => { themeToggleBtn.style.transform = 'scale(1)'; };
+
+    function updateThemeToggleUI(theme) {
+        if (theme === 'dark') {
+            // In dark mode, clicking switches to light, show sun icon
+            themeToggleBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>`;
+            themeToggleBtn.title = '切換為淺色模式 (Light)';
+            themeToggleBtn.setAttribute('aria-label', '切換為淺色模式');
+        } else {
+            // In light mode, clicking switches to dark, show moon icon
+            themeToggleBtn.innerHTML = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>`;
+            themeToggleBtn.title = '切換為深色模式 (Dark)';
+            themeToggleBtn.setAttribute('aria-label', '切換為深色模式');
+        }
+    }
+
+    updateThemeToggleUI(savedTheme);
 
     themeToggleBtn.onclick = () => {
         const currentTheme = document.documentElement.getAttribute('data-theme');
-        const newTheme = currentTheme === 'light' ? 'dark' : 'light';
+        const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
         document.documentElement.setAttribute('data-theme', newTheme);
         localStorage.setItem('app-theme', newTheme);
-        themeToggleBtn.innerHTML = newTheme === 'light' ? '☀️' : '🌙';
+        updateThemeToggleUI(newTheme);
     };
     
     document.getElementById('main-content').appendChild(themeToggleBtn);
