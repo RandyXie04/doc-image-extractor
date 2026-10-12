@@ -679,9 +679,8 @@ def main(args=None):
                         saved = image_path_map.get((p_num, orig_idx))
                         if saved:
                             img_rel = os.path.relpath(saved, output_dir).replace("\\", "/")
-                            img_name = os.path.basename(saved)
                             updated_body.append("")
-                            updated_body.append(f"![{img_name}]({img_rel})")
+                            updated_body.append(f"![]({img_rel}){{width=80%}}")
                             updated_body.append("")
                         elif md_item.strip():
                             updated_body.append(md_item)

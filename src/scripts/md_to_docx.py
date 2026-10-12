@@ -35,6 +35,7 @@ def main():
     parser = argparse.ArgumentParser(description="Convert Markdown to Word Document.")
     parser.add_argument('--files', '--target', nargs='+', help="Specific markdown files to convert")
     parser.add_argument('--template', help="Explicit path to a .docx reference template (overrides auto-detect)")
+    parser.add_argument('--image-width', default='80%', help="Default width for images without width attribute (e.g. '80%', '100%', 'none')")
     args = parser.parse_args()
 
     # Resolve paths relative to the data directory
@@ -237,31 +238,42 @@ def main():
             md_content = re.sub(r'\\\((.*?)\\\)', clean_latex, md_content)
 
             # 將 Markdown 中的相對圖片路徑轉為絕對路徑，確保 Pandoc 在任意工作目錄下都能找到圖檔
+            # 同時支援圖片寬度屬性（如 {width=80%}），並清空圖檔檔名標籤避免 Pandoc 生成多餘圖說
             md_base_dir = os.path.dirname(os.path.abspath(md_path))
+            default_img_width = args.image_width if getattr(args, 'image_width', None) and args.image_width.lower() != 'none' else None
+
             def _resolve_img_path(m):
                 alt_text = m.group(1)
                 img_path_raw = m.group(2)
-                # 若已是絕對路徑或網路 URL，則不處理
+                attrs = m.group(3) or ''
+
+                # 若 alt_text 是內部圖檔名稱（例如以 image_ 開頭或含常見圖片副檔名），清空之
+                if alt_text and (alt_text.startswith('image_') or any(alt_text.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp'])):
+                    alt_text = ''
+
+                # 若尚未指定 width 屬性，且有預設寬度，則自動補上
+                if default_img_width and 'width=' not in attrs:
+                    if attrs.strip():
+                        attrs = attrs.rstrip('}') + f' width={default_img_width}}}'
+                    else:
+                        attrs = f'{{width={default_img_width}}}'
+
+                # 若已是絕對路徑或網路 URL，則不處理路徑
                 if os.path.isabs(img_path_raw) or img_path_raw.startswith(('http://', 'https://')):
-                    return m.group(0)
+                    return f"![{alt_text}]({img_path_raw}){attrs}"
+
                 abs_img = os.path.normpath(os.path.join(md_base_dir, img_path_raw))
                 if os.path.exists(abs_img):
                     # 使用正斜線以確保跨平台相容性
-                    return f"![{alt_text}]({abs_img.replace(os.sep, '/')})"
-                return m.group(0)
-            md_content = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)', _resolve_img_path, md_content)
+                    return f"![{alt_text}]({abs_img.replace(os.sep, '/')}){attrs}"
+                return f"![{alt_text}]({img_path_raw}){attrs}"
+
+            md_content = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)(\{[^}]*\})?', _resolve_img_path, md_content)
             
-            # 確保圖片 Markdown 語法獨立成行（前後各加空行）
-            md_content = re.sub(
-                r'([^\n])(!\[[^\]]*\]\([^)]*\))',
-                r'\1\n\n\2',
-                md_content
-            )
-            md_content = re.sub(
-                r'(!\[[^\]]*\]\([^)]*\))([^\n])',
-                r'\1\n\n\2',
-                md_content
-            )
+            # 確保圖片 Markdown 語法獨立成行（前後各加空行），並相容屬性語法 {...}
+            img_token_pattern = r'!\[[^\]]*\]\([^)]*\)(?:\{[^\n}]*\})?'
+            md_content = re.sub(r'([^\n])\n*(' + img_token_pattern + r')', r'\1\n\n\2', md_content)
+            md_content = re.sub(r'(' + img_token_pattern + r')\n*([^\n])', r'\1\n\n\2', md_content)
 
             temp_md_path = os.path.join(tempfile.gettempdir(), f"temp_{uuid.uuid4().hex}.md")
             with open(temp_md_path, 'w', encoding='utf-8') as f:
@@ -269,6 +281,7 @@ def main():
 
             # Convert MD (including raw HTML tables) directly to DOCX
             # 加入 --resource-path 確保 Pandoc 能解析圖片路徑並嵌入 Word
+            # 使用 markdown-implicit_figures 停用自動將段落圖片視為 Figure Caption 的功能
             pandoc_extra = []
             if template_path:
                 pandoc_extra.append(f'--reference-doc={template_path}')
@@ -277,7 +290,7 @@ def main():
             pypandoc.convert_file(
                 temp_md_path,
                 'docx',
-                format='markdown+raw_html+tex_math_dollars',
+                format='markdown-implicit_figures+raw_html+tex_math_dollars',
                 outputfile=out_path,
                 extra_args=pandoc_extra
             )

@@ -678,8 +678,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
         saved_path = image_path_map.get((p_num, b_idx))
         if saved_path:
             img_rel = os.path.relpath(saved_path, output_dir).replace("\\", "/")
-            img_name = os.path.basename(saved_path)
-            return f"![{img_name}]({img_rel})"
+            return f"![]({img_rel}){{width=80%}}"
         return "" # Remove placeholder if not found
 
     full_markdown = re.sub(r'!\[__IMG_PLACEHOLDER_(\d+)_(\d+)__\]\(\)', _repl_placeholder, full_markdown)
