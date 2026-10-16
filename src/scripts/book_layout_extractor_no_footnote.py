@@ -429,23 +429,36 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             
 
             # ── Priority 0: 人工字體角色對應（優先於規則型 regex）──
+            # 取此 block 第一個命中 font_role_map 的字體角色
             _block_font_role = None
+            _block_docx_style = None
             if font_role_map and not is_toc_line:
                 for _line in lines:
                     for _span in _line.get('spans', []):
                         _raw_fn = (_span.get('font') or '').split('+', 1)[-1]
                         _size = round(_span.get('size', 0) * 2) / 2
-                        _key = f"{_raw_fn}_{_size}"
-                        if _key in font_role_map:
-                            _block_font_role = font_role_map[_key].get('role')
+                        _candidates = [
+                            f"{_raw_fn} ({_size}pt)",
+                            f"{_raw_fn} ({_size:.1f}pt)",
+                            f"{_raw_fn}_{_size}",
+                            _raw_fn
+                        ]
+                        for _cand in _candidates:
+                            if _cand in font_role_map:
+                                _entry = font_role_map[_cand]
+                                _block_font_role = _entry.get('role')
+                                _block_docx_style = _entry.get('docx_style')
+                                break
+                        if _block_font_role or _block_docx_style:
                             break
-                        elif _raw_fn in font_role_map:
-                            _block_font_role = font_role_map[_raw_fn].get('role')
-                            break
-                    if _block_font_role:
+                    if _block_font_role or _block_docx_style:
                         break
 
-            if _block_font_role and not is_toc_line:
+            _is_ignored_font = bool(_block_font_role and str(_block_font_role).strip().lower() in ('忽略', 'ignore', 'none'))
+
+            if _is_ignored_font:
+                heading_level = 0
+            elif _block_font_role and not is_toc_line:
                 _role_upper = _block_font_role.upper()
                 if _role_upper == 'H1':
                     heading_level = 1
@@ -454,7 +467,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 elif _role_upper == 'H3':
                     heading_level = 3
 
-            if not heading_level and not is_toc_line:
+            if not heading_level and not is_toc_line and not _is_ignored_font:
                 # Rule 1: Regex for Major Chapters / Book Sections (H1/H2)
                 if re.match(r'^(?:[上下中]\s*篇(?:\s+[^\n]+)?)$', bb_text) or \
                    re.match(r'^(?:目\s*录|目录|序|后\s*记|后记|结\s*语|结语|主要参考文献)$', bb_text):
@@ -495,21 +508,26 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 
             # ── Regular Body Text ────────────────────────────────────
             # ── 圖說（Caption）判斷：人工字體角色優先 ──
-            is_block_caption = (_block_font_role and _block_font_role.lower() in ('圖說', '图说', 'caption'))
+            is_block_caption = (not _is_ignored_font and _block_font_role and _block_font_role.lower() in ('圖說', '图说', 'caption'))
             if is_block_caption:
                 flush_current_para()
-                _caption_style = None
-                if font_role_map:
+                _caption_style = _block_docx_style
+                if not _caption_style and font_role_map:
                     for line in lines:
                         for span in line.get('spans', []):
                             raw_fn = (span.get('font') or '').split('+', 1)[-1]
                             size_v = round(span.get('size', 0) * 2) / 2
-                            key_v = f"{raw_fn}_{size_v}"
-                            if key_v in font_role_map:
-                                _caption_style = font_role_map[key_v].get('docx_style')
-                                break
-                            elif raw_fn in font_role_map:
-                                _caption_style = font_role_map[raw_fn].get('docx_style')
+                            _candidates = [
+                                f"{raw_fn} ({size_v}pt)",
+                                f"{raw_fn} ({size_v:.1f}pt)",
+                                f"{raw_fn}_{size_v}",
+                                raw_fn
+                            ]
+                            for _cand in _candidates:
+                                if _cand in font_role_map:
+                                    _caption_style = font_role_map[_cand].get('docx_style')
+                                    break
+                            if _caption_style:
                                 break
                         if _caption_style:
                             break
@@ -523,8 +541,6 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             total_chars = 0
             kaiti_chars = 0
             block_font_names = set()  # 收集此 block 的所有 font name
-            kaiti_chars = 0
-            block_font_names = set()  # 收集此 block 的所有 font name
             for line in lines:
                 for span in line.get("spans", []):
                     span_text = span.get("text", "").strip()
@@ -535,10 +551,11 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                         block_font_names.add(font_name)
                     if "kai" in font_name or "楷" in font_name or "kt" in font_name:
                         kaiti_chars += len(span_text)
-            
 
             # ── 人工字體角色：楷體優先 ──
-            if _block_font_role and _block_font_role.lower() in ('楷體', '楷体', 'kaiti', 'blockquote'):
+            if _is_ignored_font:
+                is_block_kaiti = False
+            elif _block_font_role and _block_font_role.lower() in ('楷體', '楷体', 'kaiti', 'blockquote'):
                 is_block_kaiti = True
             else:
                 is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
@@ -549,7 +566,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             #   方正(FZKTK)、Adobe CID、嵌入子集、WPS、任何私有字型...
             # font_names 啟用「字型名稱學習快取」——
             # 一旦 Vision 辨識過某 font name，後續同名 block 全部免呼叫 API
-            if not is_block_kaiti and ai_kaiti_classifier is not None:
+            if not is_block_kaiti and not _is_ignored_font and ai_kaiti_classifier is not None:
                 try:
                     is_block_kaiti = ai_kaiti_classifier.is_block_kaiti(
                         page=page, block_bbox=bbox, block_text=bb_text,

@@ -1332,14 +1332,19 @@
 
         function buildStyleOptions(styleList, roles, currentRole, currentDocxStyle) {
             const allOptions = [];
-            // First option: no assignment
-            allOptions.push('<option value="">— 不指定 —</option>');
+            // First option: 忽略 (不套用任何樣式)
+            const isIgnored = (!currentRole && !currentDocxStyle) || currentRole === '忽略' || currentRole === 'ignore';
+            const defaultSel = isIgnored ? ' selected' : '';
+            allOptions.push(`<option value="role::忽略"${defaultSel}>忽略（不套用任何樣式）</option>`);
+
+            // Filter out '忽略' from roles so it isn't duplicated under 版面角色
+            const filteredRoles = (roles || []).filter(r => r !== '忽略' && r !== 'ignore');
 
             // Role group (fixed roles like H1/H2/H3)
-            if (roles.length) {
+            if (filteredRoles.length) {
                 allOptions.push('<optgroup label="版面角色">');
-                for (const r of roles) {
-                    const sel = (currentRole === r) ? ' selected' : '';
+                for (const r of filteredRoles) {
+                    const sel = (!isIgnored && currentRole === r) ? ' selected' : '';
                     allOptions.push(`<option value="role::${r}"${sel}>${r}</option>`);
                 }
                 allOptions.push('</optgroup>');
@@ -1349,7 +1354,7 @@
             if (styleList.length) {
                 allOptions.push('<optgroup label="Word 樣式">');
                 for (const s of styleList) {
-                    const sel = (currentDocxStyle === s) ? ' selected' : '';
+                    const sel = (!isIgnored && currentDocxStyle === s) ? ' selected' : '';
                     allOptions.push(`<option value="style::${s}"${sel}>${s}</option>`);
                 }
                 allOptions.push('</optgroup>');
@@ -1398,7 +1403,7 @@
 
             selects.forEach(sel => {
                 const fontName = sel.dataset.fontName;
-                const val = sel.value;  // e.g. "role::H2" or "style::標題 2" or ""
+                const val = sel.value;  // e.g. "role::H2", "role::忽略", or "style::標題 2"
                 if (!val) return;
                 if (val.startsWith('role::')) {
                     mapping[fontName] = { role: val.slice(6), docx_style: null };
@@ -1415,8 +1420,8 @@
                 }
             });
 
-            if (!Object.keys(mapping).length) {
-                fontMappingSaveStatus.textContent = '未設定任何對應，請至少選擇一種字體的樣式。';
+            if (!selects.length) {
+                fontMappingSaveStatus.textContent = '未偵測到任何字體，無法儲存。';
                 fontMappingSaveStatus.style.color = '#f59e0b';
                 return;
             }

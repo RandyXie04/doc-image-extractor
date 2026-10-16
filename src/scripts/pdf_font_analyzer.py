@@ -162,12 +162,12 @@ def get_font_role_map(fonts_json_path: str) -> dict[str, dict]:
     """
     供 book_layout_extractor 呼叫：
     回傳 {font_name: {role, docx_style}} 的對應表，
-    僅包含已由人工設定 role 的項目。
+    包含已由人工設定 role 或 docx_style 的項目。
     """
     raw = load_fonts_json(fonts_json_path)
     result = {}
     for name, data in raw.items():
-        if isinstance(data, dict) and data.get("role") and data.get("mapped_by") != "legacy":
+        if isinstance(data, dict) and (data.get("role") or data.get("docx_style")) and data.get("mapped_by") != "legacy":
             result[name] = data
     return result
 
@@ -181,15 +181,17 @@ def analyze_pdf_for_ui(pdf_path: str, template_path: Optional[str], fonts_json_p
     docx_styles = read_docx_styles(template_path) if template_path else []
     existing_mapping = load_fonts_json(fonts_json_path)
 
-    # 合併現有對應（讓已設定過的字體在 UI 中預選）
+    # 合併現有對應（讓已設定過的字體在 UI 中預選，未設定者預設為「忽略」）
     for font in fonts:
         name = font["name"]
         if name in existing_mapping:
             existing = existing_mapping[name]
-            font["current_role"] = existing.get("role") if isinstance(existing, dict) else None
-            font["current_docx_style"] = existing.get("docx_style") if isinstance(existing, dict) else None
+            role = existing.get("role") if isinstance(existing, dict) else None
+            docx_style = existing.get("docx_style") if isinstance(existing, dict) else None
+            font["current_role"] = role if (role or docx_style) else "忽略"
+            font["current_docx_style"] = docx_style
         else:
-            font["current_role"] = None
+            font["current_role"] = "忽略"
             font["current_docx_style"] = None
 
     # 固定預設角色清單（作為 fallback，若 docx 無樣式時使用）
