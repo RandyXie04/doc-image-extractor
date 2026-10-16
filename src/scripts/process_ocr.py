@@ -3,7 +3,8 @@ import glob
 import sys
 import re
 import datetime
-sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding='utf-8')
 from pathlib import Path
 
 # Add project root directory to sys.path
@@ -481,9 +482,6 @@ def main(args=None):
         sys.exit(1)
         
     # 支援離線本地模型載入 (PyTorch版)
-    import sys
-    from pathlib import Path
-    
     # 解析專案根目錄
     if getattr(sys, 'frozen', False):
         _PROJECT_ROOT = Path(sys.executable).parent.resolve()
@@ -563,6 +561,7 @@ def main(args=None):
         print(json.dumps({"progress": 15, "message": f"[INFO] Running Surya OCR on: {os.path.basename(pdf_path)} (this may take a while...)"}))
         sys.stdout.flush()
         pdf_name = os.path.basename(pdf_path)
+        final_md = ""
         try:
             with fitz.open(pdf_path) as doc:
                 total_pages = len(doc)
@@ -577,7 +576,7 @@ def main(args=None):
                     chunk_imgs = []
                     for p_idx in range(chunk_start, chunk_end):
                         pix = doc[p_idx].get_pixmap(dpi=150)
-                        chunk_imgs.append(Image.frombytes("RGB", [pix.width, pix.height], pix.samples))
+                        chunk_imgs.append(Image.frombytes("RGB", (pix.width, pix.height), pix.samples))
 
                     pct = 20 + int(30 * (chunk_start / max(1, total_pages)))
                     print(json.dumps({"progress": pct, "message": f"[INFO] 正在處理第 {chunk_start + 1}~{chunk_end} 頁 (共 {total_pages} 頁)..."}))
@@ -601,7 +600,7 @@ def main(args=None):
                         chunk_bboxes.append(bboxes)
                         chunk_mappings.append(mapping)
 
-                    chunk_langs = [["zh"]] * len(chunk_imgs)
+                    chunk_langs: list[list[str] | None] = [["zh"]] * len(chunk_imgs)
                     chunk_ocrs = run_recognition(
                         chunk_imgs, chunk_langs, rec_model, rec_processor, bboxes=chunk_bboxes
                     )

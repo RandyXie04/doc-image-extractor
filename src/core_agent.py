@@ -21,6 +21,7 @@ import uuid
 import zipfile
 import threading
 from pathlib import Path
+from typing import Optional, Callable, Any
 
 # 集中設定中心：路徑由 pathlib 動態計算，API 金鑰/設定值由 .env 載入
 from config import PATHS, AI, CFG
@@ -31,7 +32,7 @@ warnings.filterwarnings("ignore", message=".*The `fitz` API is deprecated.*")
 import pymupdf as fitz  # type: ignore
 import cv2
 import numpy as np
-from tqdm import tqdm
+from tqdm import tqdm  # type: ignore
 
 # Windows 終端 UTF-8 輸出相容性設定
 if sys.platform == 'win32':
@@ -382,14 +383,14 @@ class PDFConversionAgent:
     """
     PDF 轉換與公式萃取代理核心類別
     """
-    def __init__(self, input_pdf: str, output_docx: str = None,
-                 preview_dir: str = None,
-                 formula_dir: str = None,
-                 header_ratio: float = None,
-                 footer_ratio: float = None,
-                 left_ratio: float = None,
-                 right_ratio: float = None,
-                 extract_inline: bool = None):
+    def __init__(self, input_pdf: str, output_docx: Optional[str] = None,
+                 preview_dir: Optional[str] = None,
+                 formula_dir: Optional[str] = None,
+                 header_ratio: Optional[float] = None,
+                 footer_ratio: Optional[float] = None,
+                 left_ratio: Optional[float] = None,
+                 right_ratio: Optional[float] = None,
+                 extract_inline: Optional[bool] = None):
         if not input_pdf.lower().endswith('.pdf'):
             raise ValueError(f"輸入檔案必須是 PDF 格式，但收到了：'{input_pdf}'")
             
@@ -502,7 +503,7 @@ class PDFConversionAgent:
 
 
 
-    def extract_formulas(self, dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None) -> dict:
+    def extract_formulas(self, dpi: int = 300, start_page_idx: int = 0, end_page_idx: Optional[int] = None, log_fn=print, progress_callback=None) -> dict:
         """
         [任務二核心] 使用 YOLOv8 MFD 模型從原始 PDF 中偵測並擷取獨立公式截圖。
         回傳包含 files, zip_path, bboxes_by_page 的成果字典。
@@ -660,7 +661,7 @@ class PDFConversionAgent:
             "bboxes_by_page": bboxes_by_page
         }
 
-    def execute_pipeline(self, extract_formulas: bool = True, formula_dpi: int = 300, start_page_idx: int = 0, end_page_idx: int = None, log_fn=print, progress_callback=None) -> dict:
+    def execute_pipeline(self, extract_formulas: bool = True, formula_dpi: int = 300, start_page_idx: int = 0, end_page_idx: Optional[int] = None, log_fn=print, progress_callback=None) -> dict:
         """
         端到端執行流程：執行公式偵測與擷取。
         """

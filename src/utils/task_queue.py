@@ -298,9 +298,10 @@ class CeleryTaskQueueAdapter(BaseTaskQueue):
 
     def _init_celery(self):
         try:
-            from celery import Celery  # pyrefly: ignore [missing-import]
-            self._celery_app = Celery("doc_image_extractor", broker=self.broker_url)
-        except ImportError:
+            import importlib
+            celery_mod = importlib.import_module("celery")
+            self._celery_app = celery_mod.Celery("doc_image_extractor", broker=self.broker_url)
+        except (ImportError, Exception):
             self._celery_app = None
 
     def enqueue(self, task: TaskRecord) -> str:
@@ -351,9 +352,10 @@ def get_task_queue() -> BaseTaskQueue:
         broker_url = os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL")
         if broker_url:
             try:
-                import celery
+                import importlib
+                importlib.import_module("celery")
                 _GLOBAL_QUEUE = CeleryTaskQueueAdapter(broker_url, sqlite_q)
-            except ImportError:
+            except (ImportError, Exception):
                 _GLOBAL_QUEUE = sqlite_q
         else:
             _GLOBAL_QUEUE = sqlite_q

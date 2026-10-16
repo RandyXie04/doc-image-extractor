@@ -2,7 +2,8 @@ import os
 import glob
 import sys
 import argparse
-sys.stdout.reconfigure(encoding='utf-8')
+if hasattr(sys.stdout, "reconfigure"):
+    getattr(sys.stdout, "reconfigure")(encoding='utf-8')
 from pathlib import Path
 # pyrefly: ignore [missing-import]
 import pypandoc

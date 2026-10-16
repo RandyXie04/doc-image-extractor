@@ -1,8 +1,10 @@
 {
-  "pythonPath": "C:\\Users\\randy\\AppData\\Local\\Programs\\Python\\Python313\\python.exe",
+  "pythonPlatform": "Windows",
+  "pythonVersion": "3.13",
   "extraPaths": [
     ".",
     "src",
-    "src/scripts"
+    "src/scripts",
+    "C:/Users/randy/AppData/Local/Programs/Python/Python313/Lib/site-packages"
   ]
 }

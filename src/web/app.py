@@ -4,6 +4,7 @@ import sys
 import shutil
 import uuid
 import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Request, Response
@@ -24,22 +25,6 @@ from src.scripts.cleanup_scratch import cleanup_scratch
 # --- Pydantic Data Models / Schemas ---
 class MarkdownUpdate(BaseModel):
     content: str
-
-app = FastAPI(title="PDF AI 公式萃取站")
-
-# 限制重度 OCR / 版面模型之併發執行數為 1，防止區網多人同時上傳爆 VRAM / RAM
-_OCR_SEMAPHORE = asyncio.Semaphore(1)
-# 保留背景 Task 參照，防止 Python 3.10+ 在長任務執行期間因 GC 導致 Task 丟失
-_BACKGROUND_TASKS: set[asyncio.Task] = set()
-
-@app.middleware("http")
-async def add_no_cache_header(request: Request, call_next):
-    response = await call_next(request)
-    if request.url.path.startswith("/static/"):
-        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-        response.headers["Pragma"] = "no-cache"
-        response.headers["Expires"] = "0"
-    return response
 
 def cleanup_old_files():
     """自動清理 03_output 與 formula_dir_v2 超過 24 小時之快取與產出檔案及任務資料夾"""
@@ -70,8 +55,8 @@ def cleanup_old_files():
             except Exception:
                 pass
 
-@app.on_event("startup")
-async def on_startup():
+@asynccontextmanager
+async def lifespan(app_instance: FastAPI):
     # 確保所有需要的目錄已建立
     PATHS.ensure_all()
     
@@ -93,7 +78,6 @@ async def on_startup():
         cleanup_old_files()
     except Exception as e:
         print(f"[Startup Warning] Old files cleanup failed: {e}")
-
     # 啟動時自動檢查並修復異常中斷之佇列任務
     try:
         from src.utils.task_queue import get_task_queue
@@ -102,6 +86,23 @@ async def on_startup():
             print(f"[TaskQueue] 已自動重置/標記 {recovered_count} 個中斷任務")
     except Exception as e:
         print(f"[Startup Warning] Task queue recovery failed: {e}")
+    yield
+
+app = FastAPI(title="PDF AI 公式萃取站", lifespan=lifespan)
+
+# 限制重度 OCR / 版面模型之併發執行數為 1，防止區網多人同時上傳爆 VRAM / RAM
+_OCR_SEMAPHORE = asyncio.Semaphore(1)
+# 保留背景 Task 參照，防止 Python 3.10+ 在長任務執行期間因 GC 導致 Task 丟失
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+@app.middleware("http")
+async def add_no_cache_header(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
 
 app.add_middleware(
     CORSMiddleware,
@@ -141,7 +142,7 @@ async def upload_file(file: UploadFile = File(...)):
 
 @app.post("/api/upload_template")
 async def upload_template(file: UploadFile = File(...)):
-    if not file.filename.endswith('.docx'):
+    if not file.filename or not file.filename.endswith('.docx'):
         raise HTTPException(status_code=400, detail="僅支援上傳 .docx 格式的範本檔案")
     
     template_dir = PATHS.data_dir / "database_text" / "custom_templates"
@@ -284,7 +285,7 @@ async def render_preview(file_id: str, page: int = 1, header: float = 0.1, foote
             
             # 渲染成圖片
             pix = page_obj.get_pixmap(dpi=72)
-            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            img = Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
             
             # 繪製輔助線
             draw = ImageDraw.Draw(img)
@@ -553,7 +554,7 @@ async def api_extract_images(
             }
 
         extracted_image_tasks[task_id] = {
-            "zip_path": str(zip_path),
+            "zip_path": zip_path,
             "filename": output_zip_name,
             "count": actual_files
         }
@@ -629,7 +630,11 @@ async def api_founder_repair(
     from src.founder_tools.fix_founder_fonts import repair_pdf_file, repair_docx_file
     from config import PATHS
     
-    ext = os.path.splitext(file.filename)[1].lower()
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="未提供有效檔案名稱")
+
+    filename = file.filename
+    ext = os.path.splitext(filename)[1].lower()
     if ext not in [".pdf", ".docx"]:
         raise HTTPException(status_code=400, detail="不支援的檔案格式，請上傳 PDF 或 DOCX")
 
@@ -647,7 +652,7 @@ async def api_founder_repair(
     try:
         if ext == ".pdf":
             temp_out_txt = str(PATHS.root / "scratch" / f"founder_repair_{task_id}.txt")
-            output_docx = output_dir / f"repaired_{Path(file.filename).stem}.docx"
+            output_docx = output_dir / f"repaired_{Path(filename).stem}.docx"
             created_temps.append(temp_out_txt)
             
             await asyncio.to_thread(repair_pdf_file, str(temp_input), temp_out_txt, str(output_docx))
@@ -660,7 +665,7 @@ async def api_founder_repair(
             }
             
         elif ext == ".docx":
-            output_docx = output_dir / f"repaired_{Path(file.filename).name}"
+            output_docx = output_dir / f"repaired_{Path(filename).name}"
             
             await asyncio.to_thread(repair_docx_file, str(temp_input), str(output_docx))
             _cleanup_temp_files(*created_temps)
@@ -966,26 +971,27 @@ async def upload_and_run_ocr(
                     cwd=str(PATHS.root)
                 )
                 
-                async for raw_line in proc.stdout:
-                    try:
-                        line = raw_line.decode("utf-8", errors="replace").strip()
-                    except Exception:
-                        line = ""
-                    if line:
-                        if line.startswith("{") and "progress" in line:
-                            try:
-                                data = _json.loads(line)
-                                prog = int(data.get("progress", ocr_progress_dict[stem]["progress"]))
-                                msg = data.get("message", line)
-                                ocr_progress_dict[stem]["progress"] = prog
-                                ocr_progress_dict[stem]["message"] = msg
-                                queue.update_task(tid, progress=prog, message=msg)
-                            except Exception:
-                                pass
-                        else:
-                            short_msg = line[:120]
-                            ocr_progress_dict[stem]["message"] = short_msg
-                            queue.update_task(tid, message=short_msg)
+                if proc.stdout is not None:
+                    async for raw_line in proc.stdout:
+                        try:
+                            line = raw_line.decode("utf-8", errors="replace").strip()
+                        except Exception:
+                            line = ""
+                        if line:
+                            if line.startswith("{") and "progress" in line:
+                                try:
+                                    data = _json.loads(line)
+                                    prog = int(data.get("progress", ocr_progress_dict[stem]["progress"]))
+                                    msg = data.get("message", line)
+                                    ocr_progress_dict[stem]["progress"] = prog
+                                    ocr_progress_dict[stem]["message"] = msg
+                                    queue.update_task(tid, progress=prog, message=msg)
+                                except Exception:
+                                    pass
+                            else:
+                                short_msg = line[:120]
+                                ocr_progress_dict[stem]["message"] = short_msg
+                                queue.update_task(tid, message=short_msg)
                 
                 await proc.wait()
                 
@@ -1028,7 +1034,7 @@ async def upload_and_run_ocr(
 
 
 @app.get("/api/queue/tasks")
-async def list_queue_tasks(limit: int = 50, status: str = None):
+async def list_queue_tasks(limit: int = 50, status: str | None = None):
     """取得分散式/持久化任務佇列之任務清單"""
     from src.utils.task_queue import get_task_queue
     queue = get_task_queue()
@@ -1139,6 +1145,7 @@ async def api_native_save_file(req: NativeSaveRequest, request: Request):
         suggested_filename
     ]
     
+    proc = None
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,
@@ -1158,10 +1165,11 @@ async def api_native_save_file(req: NativeSaveRequest, request: Request):
                 
         return {"status": "cancelled", "message": "對話框已關閉或未選取檔案"}
     except asyncio.TimeoutError:
-        try:
-            proc.kill()
-        except Exception:
-            pass
+        if proc is not None:
+            try:
+                proc.kill()
+            except Exception:
+                pass
         return {"status": "fallback", "message": "操作逾時，請改用瀏覽器直接下載"}
     except Exception as e:
         return {"status": "error", "message": f"原生另存失敗: {str(e)}"}

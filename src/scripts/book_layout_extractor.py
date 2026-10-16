@@ -12,15 +12,38 @@ import sys
 import re
 import json
 from pathlib import Path
+from collections import Counter
 
 # pyrefly: ignore [missing-import]
 import fitz
 
 # Try to import project helpers
 try:
-    from src.founder_tools.core.heading_detector import HeadingDetector
+    from src.founder_tools.core.heading_detector import HeadingDetector, _match_toc_entry
 except ImportError:
-    HeadingDetector = None
+    try:
+        from founder_tools.core.heading_detector import HeadingDetector, _match_toc_entry
+    except ImportError:
+        HeadingDetector = None
+        _match_toc_entry = None
+
+try:
+    from src.founder_tools.core.toc_parser import (
+        find_toc_pages_vector,
+        parse_toc_entries_from_blocks_vector,
+        build_toc_index,
+    )
+except ImportError:
+    try:
+        from founder_tools.core.toc_parser import (
+            find_toc_pages_vector,
+            parse_toc_entries_from_blocks_vector,
+            build_toc_index,
+        )
+    except ImportError:
+        find_toc_pages_vector = None
+        parse_toc_entries_from_blocks_vector = None
+        build_toc_index = None
 
 try:
     from src.founder_tools.core.ai_kaiti_classifier import AIKaitiClassifier
@@ -80,6 +103,144 @@ _H3_SUB_RE2 = re.compile(r'^\d+\.\d+')
 _CHART_TABLE_END_RE = re.compile(r'示意图|表$')
 _CIRCLED_START_RE = re.compile(r'^[①-⑩]')
 _IMG_PLACEHOLDER_RE = re.compile(r'!\[__IMG_PLACEHOLDER_(\d+)_(\d+)__\]\(\)')
+
+
+def _normalize_title(text: str) -> str:
+    """Normalize heading/TOC text for matching: strip whitespace, full-width digits, marker symbols."""
+    text = re.sub(r'[\s①-⑩\u2460-\u2473]+', '', text.strip())
+    text = text.translate(str.maketrans('０１２３４５６７８９．：', '0123456789.:'))
+    return text
+
+
+def _simple_similarity(a: str, b: str) -> float:
+    """Character-level Jaccard similarity between two normalized strings."""
+    if not a or not b:
+        return 0.0
+    set_a = set(a)
+    set_b = set(b)
+    intersection = set_a & set_b
+    union = set_a | set_b
+    return len(intersection) / len(union) if union else 0.0
+
+
+def build_document_profile(doc: fitz.Document) -> dict:
+    """
+    毫秒級全書特徵探勘：
+    1. 統計正文基準字級 (body_size)、主字體 (body_font)
+    2. 結合 PDF 原生書籤 (doc.get_toc()) 與目錄頁解析 (toc_parser) 建立全書標題索引
+    """
+    font_counter = Counter()
+    size_counter = Counter()
+    toc_index = {}
+    is_native_toc = False
+
+    # 1A. 優先提取 PDF 內建書籤 (若有內建書籤，準確率 100% 且耗時 0ms)
+    try:
+        raw_toc = doc.get_toc()
+    except Exception:
+        raw_toc = []
+
+    if raw_toc:
+        for item in raw_toc:
+            if len(item) >= 3:
+                level, title, page_num = item[0], item[1], item[2]
+                norm_t = _normalize_title(str(title))
+                if norm_t:
+                    toc_index[norm_t] = {"level": min(int(level), 3), "page": int(page_num)}
+        if toc_index:
+            is_native_toc = True
+
+    # 1B. 若無內建書籤，呼叫專案既有的 toc_parser 解析目錄頁
+    if not toc_index and find_toc_pages_vector and parse_toc_entries_from_blocks_vector and build_toc_index:
+        try:
+            toc_start, toc_end = find_toc_pages_vector(doc)
+            if toc_start is not None:
+                toc_entries = []
+                for p_idx in range(toc_start, (toc_end or toc_start) + 1):
+                    blocks = doc[p_idx].get_text("dict").get("blocks", [])
+                    toc_entries.extend(parse_toc_entries_from_blocks_vector(blocks))
+                if toc_entries:
+                    parsed_idx = build_toc_index(toc_entries)
+                    if parsed_idx:
+                        toc_index = parsed_idx
+        except Exception:
+            pass
+
+    # 2. 抽樣前 35 頁統計「正文基準字體與字級」
+    sample_indices = range(min(len(doc), 35))
+    for p_idx in sample_indices:
+        try:
+            page_dict = doc[p_idx].get_text("dict")
+        except Exception:
+            continue
+        for b in page_dict.get("blocks", []):
+            if b.get("type") != 0:
+                continue
+            for line in b.get("lines", []):
+                for span in line.get("spans", []):
+                    txt = span.get("text", "").strip()
+                    if len(txt) >= 5:  # 以長句統計正文特徵
+                        sz = round(span.get("size", 10.5) * 2) / 2
+                        fn = (span.get("font") or "").split("+", 1)[-1].lower()
+                        size_counter[sz] += len(txt)
+                        font_counter[fn] += len(txt)
+
+    body_size = size_counter.most_common(1)[0][0] if size_counter else 10.5
+    body_font = font_counter.most_common(1)[0][0] if font_counter else ""
+
+    return {
+        "body_size": body_size,
+        "body_font": body_font,
+        "toc_index": toc_index,
+        "is_native_toc": is_native_toc,
+    }
+
+
+def _match_toc_heading(text: str, page_num: int, toc_index: dict, offset_holder: list) -> int:
+    """
+    將候選標題文字與 TOC 索引表做匹配，支援動態頁碼偏移量校準。
+    offset_holder: [calibrated_offset] (None or int)
+    """
+    if not toc_index:
+        return 0
+    norm_t = _normalize_title(text)
+    if not norm_t or len(norm_t) < 2:
+        return 0
+
+    # 1. 精確匹配
+    if norm_t in toc_index:
+        entry = toc_index[norm_t]
+        expected_p = entry.get("page", 0)
+        lvl = entry.get("level", 2)
+
+        if offset_holder[0] is not None:
+            if abs((expected_p + offset_holder[0]) - page_num) <= 3:
+                return lvl
+        else:
+            if abs(expected_p - page_num) <= 2:
+                offset_holder[0] = 0
+                return lvl
+            elif page_num >= expected_p:
+                offset_holder[0] = page_num - expected_p
+                return lvl
+
+    # 2. Fuzzy 匹配 (針對標題有微小空白或符號差異)
+    for toc_title, entry in toc_index.items():
+        expected_p = entry.get("page", 0)
+        lvl = entry.get("level", 2)
+        if offset_holder[0] is not None:
+            if abs((expected_p + offset_holder[0]) - page_num) > 3:
+                continue
+        elif abs(expected_p - page_num) > 3 and page_num < expected_p:
+            continue
+
+        sim = _simple_similarity(norm_t, toc_title)
+        if sim >= 0.82:
+            if offset_holder[0] is None and page_num >= expected_p:
+                offset_holder[0] = page_num - expected_p
+            return lvl
+
+    return 0
 
 
 def _circled_to_int(marker_str: str) -> int:
@@ -234,6 +395,15 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
     
     os.makedirs(output_dir, exist_ok=True)
 
+    # ── 全書特徵探勘與目錄索引建立 ──
+    doc_profile = build_document_profile(doc)
+    body_size = doc_profile.get("body_size", 10.5)
+    body_font = doc_profile.get("body_font", "")
+    toc_index = doc_profile.get("toc_index", {})
+    toc_page_offset = [0 if doc_profile.get("is_native_toc") else None]
+    if toc_index:
+        print(f"[DocProfile] 成功建立標題索引共 {len(toc_index)} 筆 (原生書籤: {doc_profile.get('is_native_toc')})，正文基準: {body_size}pt / '{body_font}'")
+
     # ── AI Kaiti Classifier 初始化（若啟用且可用）──
     ai_kaiti_classifier = None
     try:
@@ -242,7 +412,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
         if should_enable and AIKaitiClassifier is not None:
             threshold = float(ai_kaiti_threshold if ai_kaiti_threshold is not None else getattr(CFG, "ai_kaiti_threshold", 0.65))
             ai_kaiti_classifier = AIKaitiClassifier(
-                api_key=AI.gemini_key,
+                api_key=AI.gemini_key or "",
                 model=CFG.ai_kaiti_model,
                 min_confidence=threshold,
             )
@@ -264,7 +434,13 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
         "footnotes_matched": 0,
         "footnotes_fallback": 0,
         "footnotes_detail": [],
-        "paragraphs_reflowed": 0
+        "paragraphs_reflowed": 0,
+        "doc_profile": {
+            "body_size": body_size,
+            "body_font": body_font,
+            "toc_entries": len(toc_index),
+            "is_native_toc": doc_profile.get("is_native_toc", False),
+        }
     }
     
     final_md_pages = []
@@ -302,7 +478,9 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                     inter = b & tr
                     if inter.is_empty:
                         continue
-                    if inter.get_area() / max(b.get_area(), 1.0) > 0.30:
+                    inter_area = inter.width * inter.height
+                    b_area = b.width * b.height
+                    if inter_area / max(b_area, 1.0) > 0.30:
                         return True
                 return False
     
@@ -390,7 +568,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                     # Plain continuation text before any marker
                     if current_fn_entry:
                         sep = " " if current_fn_entry["content"] else ""
-                        current_fn_entry["content"] += sep + prefix.strip()
+                        current_fn_entry["content"] = str(current_fn_entry["content"]) + sep + prefix.strip()
                     else:
                         # Orphaned text — treat as footnote #1 continuation
                         current_fn_entry = {"id": 1, "marker": "", "content": prefix.strip()}
@@ -410,8 +588,9 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             if current_fn_entry:
                 page_footnotes.append(current_fn_entry)
     
-            # Step 3: Determine base_x0 for body paragraphs on this page
+            # Step 3: Determine base_x0 and max_x1 for body paragraphs on this page
             normal_x0s = []
+            normal_x1s = []
             for bb in body_blocks:
                 lines = bb.get("lines", [])
                 bb_text = "".join(s.get("text", "") for l in lines for s in l.get("spans", [])).strip()
@@ -420,13 +599,18 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 is_centered = abs(center_x - (page_w / 2.0)) < (page_w * 0.12)
                 if not is_centered and len(bb_text) > 10:
                     normal_x0s.append(bbox[0])
+                    normal_x1s.append(bbox[2])
             base_x0 = min(normal_x0s) if normal_x0s else 65.0
+            max_x1 = max(normal_x1s) if normal_x1s else (page_w - base_x0)
     
             page_paragraphs = []
             current_para_lines = []
             current_para_is_kaiti = False
             current_para_custom_style = None
             last_block_x0 = 0.0
+            last_block_x1 = 0.0
+            last_block_y1 = 0.0
+            last_block_last_line_x1 = 0.0
             last_heading_text = ""
     
             def flush_current_para():
@@ -533,28 +717,62 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                     elif _STYLE_HEADING3_RE.search(_block_docx_style):
                         heading_level = 3
     
+                cur_last_line_x1 = lines[-1].get("bbox", bbox)[2] if lines else bbox[2]
+
                 # ── 啟發式標題判定（Fallback）：僅在字體未在字體分析中指定時才執行 ──
                 if not heading_level and not is_toc_line and not _has_font_mapping and not _is_ignored_font:
-                    # Rule 1: Regex for Major Chapters / Book Sections (H1/H2)
-                    if _H1_PART_RE.match(bb_text) or _H1_SPECIAL_RE.match(bb_text):
-                        heading_level = 1
-                    elif _H1_CHAPTER_RE.match(bb_text):
-                        heading_level = 2
-                    elif _H2_SECTION_RE.match(bb_text):
-                        heading_level = 2
-                    # Rule 2: Chinese numbered sections (e.g. 一、天人合一与预防医学)
-                    elif _H2_NUM_RE.match(bb_text) and not has_sentence_punct:
-                        heading_level = 3
-                    # Rule 3: Sub-sections by bracket or decimal (e.g. （一）案例, 1.1 背景)
-                    elif (_H3_SUB_RE1.match(bb_text) or _H3_SUB_RE2.match(bb_text)) and 2 <= len(clean_for_heading) <= 30 and not has_sentence_punct:
-                        heading_level = 3
-                    # Rule 4: Section titles (H2) - Must be short and without sentence punctuation
-                    elif (is_centered or avg_size >= 10.8) and 2 <= len(clean_for_heading) <= 20 and not has_sentence_punct:
-                        if not _CHART_TABLE_END_RE.search(bb_text) and not _CIRCLED_START_RE.search(bb_text):
+                    is_candidate_heading = (len(lines) <= 2 and 2 <= len(clean_for_heading) <= 35 and not has_sentence_punct)
+
+                    # Priority 1: 目錄索引 / PDF 原生書籤直接命中（100% 命中無規則標題）
+                    if is_candidate_heading and toc_index:
+                        toc_lvl = _match_toc_heading(clean_for_heading, page_num, toc_index, toc_page_offset)
+                        if not toc_lvl:
+                            toc_lvl = _match_toc_heading(bb_text, page_num, toc_index, toc_page_offset)
+                        if toc_lvl > 0:
+                            heading_level = toc_lvl
+
+                    # Priority 2: 原有標準 Regex 規則
+                    if not heading_level:
+                        if _H1_PART_RE.match(bb_text) or _H1_SPECIAL_RE.match(bb_text):
+                            heading_level = 1
+                        elif _H1_CHAPTER_RE.match(bb_text):
                             heading_level = 2
-                    
+                        elif _H2_SECTION_RE.match(bb_text):
+                            heading_level = 2
+                        elif _H2_NUM_RE.match(bb_text) and not has_sentence_punct:
+                            heading_level = 3
+                        elif (_H3_SUB_RE1.match(bb_text) or _H3_SUB_RE2.match(bb_text)) and 2 <= len(clean_for_heading) <= 30 and not has_sentence_punct:
+                            heading_level = 3
+
+                    # Priority 3: 相對字級與黑體/粗體幾何特徵判定（取代死板的 avg_size >= 10.8）
+                    if not heading_level and is_candidate_heading:
+                        if not _CHART_TABLE_END_RE.search(bb_text) and not _CIRCLED_START_RE.search(bb_text):
+                            span_fonts = [(s.get("font") or "").split("+", 1)[-1].lower() for l in lines for s in l.get("spans", [])]
+                            is_heiti_or_bold = any(
+                                ("hei" in fn or "黑" in fn or "bold" in fn or "bd" in fn or "heavy" in fn or (s.get("flags", 0) & 16))
+                                for l in lines for s in l.get("spans", [])
+                                for fn in [(s.get("font") or "").lower()]
+                            )
+                            body_font_clean = body_font.lower() if body_font else ""
+                            is_different_font_from_body = bool(body_font_clean and any(fn and fn != body_font_clean for fn in span_fonts))
+
+                            if avg_size >= body_size + 1.5:
+                                heading_level = 2  # 字級明顯大於正文基準
+                            elif is_centered or avg_size >= body_size + 0.5:
+                                heading_level = 2  # 居中或字級微大於正文
+                            elif is_heiti_or_bold and (is_different_font_from_body or avg_size >= body_size):
+                                # 與正文同字級但換成黑體/粗體的短句標題（排除以助詞結尾的普通句）
+                                if not re.search(r'[的了在]$', clean_content):
+                                    heading_level = 3
+                            elif is_centered and avg_size >= body_size - 0.5:
+                                heading_level = 2
+
                 if heading_level > 0:
                     flush_current_para()
+                    last_block_x0 = bbox[0]
+                    last_block_x1 = bbox[2]
+                    last_block_y1 = bbox[3]
+                    last_block_last_line_x1 = cur_last_line_x1
                     # Deduplicate identical consecutive headings on the same page
                     if bb_text == last_heading_text:
                         continue
@@ -609,6 +827,10 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                         page_paragraphs.append(f'::: {{custom-style="{_caption_style}"}}\n{bb_text}\n:::')
                     else:
                         page_paragraphs.append(f'*{bb_text}*')  # fallback: 斜體
+                    last_block_x0 = bbox[0]
+                    last_block_x1 = bbox[2]
+                    last_block_y1 = bbox[3]
+                    last_block_last_line_x1 = cur_last_line_x1
                     continue
     
                 # Check font for KaiTi (Rule-based + AI Vision fallback)
@@ -654,7 +876,12 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
     
                 # Check indentation to determine whether this block starts a new paragraph
                 is_indented = (bbox[0] - base_x0) >= 12.0
-                
+
+                vertical_gap = (bbox[1] - last_block_y1) if last_block_y1 > 0 else 0.0
+                prev_ref_x1 = last_block_last_line_x1 if last_block_last_line_x1 > 0 else last_block_x1
+                prev_block_was_short_line = bool(prev_ref_x1 > 0 and prev_ref_x1 < max_x1 - max(avg_size * 2.0, 20.0))
+                is_large_vertical_gap = bool(vertical_gap > avg_size * 1.45)
+
                 if current_para_lines:
                     should_flush = False
                     if is_block_kaiti != current_para_is_kaiti:
@@ -665,14 +892,20 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                     # or a large jump in indent. We use > 5.0 instead of abs() to avoid breaking on hanging indents
                     elif is_indented and (bbox[0] - last_block_x0) >= 5.0:
                         should_flush = True
-                        
+                    # ✅ 防黏連 1：垂直段距跳躍（段前距/空行），強制獨立成段
+                    elif is_large_vertical_gap:
+                        should_flush = True
+                    # ✅ 防黏連 2：前一區塊未滿行（提早換行），代表上一段已結束或是獨立小標，絕不硬接！
+                    elif prev_block_was_short_line:
+                        should_flush = True
+
                     if should_flush:
                         flush_current_para()
-                
+
                 if not current_para_lines:
                     current_para_is_kaiti = is_block_kaiti
                     current_para_custom_style = block_custom_style
-                    
+
                 # Process lines in this block, replacing footnote anchors
                 for line in lines:
                     line_str = "".join(s.get("text", "") for s in line.get("spans", [])).strip()
@@ -680,8 +913,11 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                         continue
                     line_str = _replace_fn_markers_in_text(line_str, page_footnotes, page_num)
                     current_para_lines.append(line_str)
-                    
+
                 last_block_x0 = bbox[0]
+                last_block_x1 = bbox[2]
+                last_block_y1 = bbox[3]
+                last_block_last_line_x1 = cur_last_line_x1
                     
             # Flush any remaining body text
             flush_current_para()

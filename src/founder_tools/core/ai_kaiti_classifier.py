@@ -13,7 +13,7 @@ import hashlib
 import base64
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
 # pyrefly: ignore [missing-import]
 import fitz
@@ -61,9 +61,9 @@ class AIKaitiClassifier:
 
     def __init__(
         self,
-        api_key: str = None,
-        model: str = None,
-        cache_dir: str = None,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+        cache_dir: Optional[str] = None,
         timeout: float = 15.0,
         screenshot_dpi: int = 150,
         min_confidence: float = 0.65,
@@ -115,7 +115,7 @@ class AIKaitiClassifier:
         """Lazy-initialize the google-genai client."""
         if self._client is None:
             try:
-                from google import genai  # pyrefly: ignore [missing-import]
+                from google import genai  # type: ignore
 
                 self._client = genai.Client(api_key=self.api_key)
             except ImportError:
@@ -196,10 +196,10 @@ class AIKaitiClassifier:
         # ── Step 2: 磁碟快取檢查 ──
         cache_key = self._compute_hash(f"vision:{block_text}:{list(block_bbox)}")
         cached = self._load_cache(cache_key)
-        if cached is not None:
+        if isinstance(cached, dict):
             self.stats["vision_cache_hits"] += 1
             conf = float(cached.get("confidence", 1.0))
-            raw_tag = cached.get("font", "unknown")
+            raw_tag = str(cached.get("font", "unknown"))
             font_tag = raw_tag if conf >= self.min_confidence else "other"
             # 回填學習快取 (僅於信心度足夠時學習)
             if font_names and conf >= self.min_confidence:
@@ -254,7 +254,7 @@ class AIKaitiClassifier:
         return font == "kaiti"
 
     def _render_block_screenshot(
-        self, page: fitz.Page, bbox: list | tuple
+        self, page: Any, bbox: list | tuple
     ) -> bytes:
         """
         渲染指定 block 區域的截圖（PNG bytes）。
@@ -287,8 +287,8 @@ class AIKaitiClassifier:
         if client is None:
             return None
 
-        from google import genai  # pyrefly: ignore [missing-import]
-        from google.genai import types  # pyrefly: ignore [missing-import]
+        from google import genai  # type: ignore
+        from google.genai import types  # type: ignore
 
         b64_image = base64.b64encode(image_bytes).decode("utf-8")
 
@@ -363,7 +363,7 @@ class AIKaitiClassifier:
         texts = [b.get("text", "")[:100] for b in blocks_data]
         cache_key = self._compute_hash(f"para:{json.dumps(texts, ensure_ascii=False)}")
         cached = self._load_cache(cache_key)
-        if cached is not None:
+        if isinstance(cached, list):
             self.stats["paragraph_cache_hits"] += 1
             return cached
 
