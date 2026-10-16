@@ -1,7 +1,10 @@
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from core.document_model import UnifiedDocument, SectionNode, ParagraphNode, RunNode, FootnoteRecord
+try:
+    from src.founder_tools.core.document_model import UnifiedDocument, SectionNode, ParagraphNode, RunNode, FootnoteRecord
+except ImportError:
+    from core.document_model import UnifiedDocument, SectionNode, ParagraphNode, RunNode, FootnoteRecord
 
 class DocxParser:
     """

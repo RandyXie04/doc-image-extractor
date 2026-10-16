@@ -27,6 +27,11 @@ class MarkdownUpdate(BaseModel):
 
 app = FastAPI(title="PDF AI 公式萃取站")
 
+# 限制重度 OCR / 版面模型之併發執行數為 1，防止區網多人同時上傳爆 VRAM / RAM
+_OCR_SEMAPHORE = asyncio.Semaphore(1)
+# 保留背景 Task 參照，防止 Python 3.10+ 在長任務執行期間因 GC 導致 Task 丟失
+_BACKGROUND_TASKS: set[asyncio.Task] = set()
+
 @app.middleware("http")
 async def add_no_cache_header(request: Request, call_next):
     response = await call_next(request)
@@ -37,16 +42,31 @@ async def add_no_cache_header(request: Request, call_next):
     return response
 
 def cleanup_old_files():
-    """自動清理 03_output 超過 24 小時之快取與產出檔案"""
-    output_dir = PATHS.root / 'data' / '03_output'
-    if not output_dir.exists():
-        return
+    """自動清理 03_output 與 formula_dir_v2 超過 24 小時之快取與產出檔案及任務資料夾"""
     import time
+    import shutil
     now = time.time()
-    for f in output_dir.glob('*'):
-        if f.is_file() and (now - f.stat().st_mtime > 86400):
+    
+    # 1. 清理 data/03_output
+    output_dir = PATHS.root / 'data' / '03_output'
+    if output_dir.exists():
+        for item in output_dir.glob('*'):
             try:
-                f.unlink()
+                if (now - item.stat().st_mtime) > 86400:
+                    if item.is_file():
+                        item.unlink(missing_ok=True)
+                    elif item.is_dir() and item.name != "backup_originals":
+                        shutil.rmtree(item, ignore_errors=True)
+            except Exception:
+                pass
+
+    # 2. 清理 data/formula_dir_v2/task_* 隔離目錄
+    formula_dir = PATHS.formula_dir_v2
+    if formula_dir.exists():
+        for item in formula_dir.glob('task_*'):
+            try:
+                if item.is_dir() and (now - item.stat().st_mtime) > 86400:
+                    shutil.rmtree(item, ignore_errors=True)
             except Exception:
                 pass
 
@@ -73,6 +93,15 @@ async def on_startup():
         cleanup_old_files()
     except Exception as e:
         print(f"[Startup Warning] Old files cleanup failed: {e}")
+
+    # 啟動時自動檢查並修復異常中斷之佇列任務
+    try:
+        from src.utils.task_queue import get_task_queue
+        recovered_count = get_task_queue().recover_interrupted_tasks()
+        if recovered_count > 0:
+            print(f"[TaskQueue] 已自動重置/標記 {recovered_count} 個中斷任務")
+    except Exception as e:
+        print(f"[Startup Warning] Task queue recovery failed: {e}")
 
 app.add_middleware(
     CORSMiddleware,
@@ -213,10 +242,21 @@ async def check_update():
 
 @app.post("/api/apply_update")
 async def apply_update(request: Request):
+    # 1. 僅允許本機操作更新，防止區網未授權遠端觸發更新或重啟
+    client_host = request.client.host if request.client else ""
+    if client_host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+        raise HTTPException(status_code=403, detail="安全限制：系統更新僅允許伺服器本機操作")
+
     data = await request.json()
     download_url = data.get('download_url')
     if not download_url:
         return {"status": "error", "msg": "No download URL provided."}
+
+    # 2. 嚴格驗證更新來源網址
+    import urllib.parse
+    parsed = urllib.parse.urlparse(download_url)
+    if parsed.scheme != 'https' or parsed.netloc not in ('github.com', 'objects.githubusercontent.com'):
+        raise HTTPException(status_code=400, detail="不合法的更新下載來源網址")
         
     from src.scripts.updater_service import perform_update
     import threading
@@ -549,8 +589,12 @@ async def download_extracted_images(task_id: str):
 
 
 @app.post("/api/open_folder/{task_id}")
-async def open_folder(task_id: str):
+async def open_folder(task_id: str, request: Request):
     """在 Windows 檔案總管中開啟成果所在資料夾並選取檔案"""
+    client_host = request.client.host if request.client else ""
+    if client_host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+        return {"status": "fallback", "message": "伺服器本機資料夾僅限本機瀏覽，遠端區網連線請使用瀏覽器下載"}
+
     if task_id in tasks:
         target = tasks[task_id].get("zip_file") or tasks[task_id].get("result_file")
         if target and os.path.exists(target):
@@ -759,7 +803,24 @@ async def api_save_font_mapping(request: Request):
 
 @app.get("/api/ocr_progress/{filename_stem}")
 async def get_ocr_progress(filename_stem: str):
-    progress = ocr_progress_dict.get(filename_stem, {"progress": 0, "message": "Waiting...", "status": "processing"})
+    progress = ocr_progress_dict.get(filename_stem)
+    if progress is None:
+        try:
+            from src.utils.task_queue import get_task_queue
+            queue = get_task_queue()
+            rec = queue.get_task_by_stem(filename_stem)
+            if rec:
+                progress = {
+                    "task_id": rec.task_id,
+                    "progress": rec.progress,
+                    "message": rec.message,
+                    "status": rec.status,
+                    "error": rec.error
+                }
+        except Exception:
+            pass
+    if progress is None:
+        progress = {"progress": 0, "message": "Waiting...", "status": "processing"}
     return progress
 
 
@@ -777,12 +838,15 @@ async def upload_and_run_ocr(
     right_ratio: float = Form(0.0),
     start_page: int = Form(0),
     end_page: int = Form(0),
-    no_footnote: bool = Form(False)
+    no_footnote: bool = Form(False),
+    ai_kaiti: bool = Form(False),
+    ai_kaiti_threshold: float = Form(0.65)
 ):
     import sys
     import shutil
     import os
     from config import PATHS
+    from src.utils.task_queue import get_task_queue, TaskRecord, TaskStatus
     
     pdf_dir = PATHS.root / 'data' / 'database_text'
     pdf_dir.mkdir(parents=True, exist_ok=True)
@@ -833,92 +897,152 @@ async def upload_and_run_ocr(
             print(f"[Warning] PDF pre-crop/page-range failed: {crop_err}")
             input_pdf_path = raw_pdf_path
 
-    ocr_progress_dict[filename_stem] = {"progress": 0, "message": "正在初始化任務...", "status": "processing"}
+    task_id = str(uuid.uuid4())
+    queue = get_task_queue()
+    queue.enqueue(
+        TaskRecord(
+            task_id=task_id,
+            stem=filename_stem,
+            status=TaskStatus.QUEUED.value,
+            progress=0,
+            message="正在初始化任務並排入佇列...",
+            engine=engine,
+            payload={
+                "file_path": str(input_pdf_path),
+                "ai_kaiti": ai_kaiti,
+                "ai_kaiti_threshold": ai_kaiti_threshold,
+                "no_footnote": no_footnote
+            }
+        )
+    )
 
-    async def run_scripts_async(pdf_path_str, stem, style_map_json, eng, skip_footnotes):
+    ocr_progress_dict[filename_stem] = {
+        "task_id": task_id,
+        "progress": 0,
+        "message": "正在初始化任務...",
+        "status": "processing"
+    }
+
+    async def run_scripts_async(tid, pdf_path_str, stem, style_map_json, eng, skip_footnotes, ai_kaiti_on, ai_kaiti_thresh):
         import asyncio
         import json as _json
         try:
-            output_dir = PATHS.root / 'data' / '03_output'
-            backup_dir = output_dir / 'backup_originals'
-            output_dir.mkdir(parents=True, exist_ok=True)
-            
-            md_file = output_dir / f"{stem}.md"
-            docx_file = output_dir / f"{stem}.docx"
-            
-            for f_path in [md_file, docx_file]:
-                if f_path.exists():
-                    backup_dir.mkdir(parents=True, exist_ok=True)
-                    backup_path = backup_dir / f_path.name
-                    try: shutil.move(str(f_path), str(backup_path))
-                    except: pass
-
-            cmd = [
-                sys.executable, "-m", "src.scripts.pdf_engine_dispatcher",
-                "--file", pdf_path_str,
-                "--output_dir", str(output_dir),  # absolute path
-                "--output_stem", stem,
-                "--engine", eng
-            ]
-            if skip_footnotes:
-                cmd.append("--no_footnote")
-            if style_map_json:
-                cmd.extend(["--style_mapping", style_map_json])
+            ocr_progress_dict[stem]["message"] = "已排入轉檔佇列，等待運算資源..."
+            queue.update_task(tid, status=TaskStatus.RUNNING.value, message="已排入轉檔佇列，等待運算資源...")
+            async with _OCR_SEMAPHORE:
+                output_dir = PATHS.root / 'data' / '03_output'
+                backup_dir = output_dir / 'backup_originals'
+                output_dir.mkdir(parents=True, exist_ok=True)
                 
-            # Use asyncio subprocess to avoid blocking the event loop
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.STDOUT,
-                cwd=str(PATHS.root)
-            )
-            
-            async for raw_line in proc.stdout:
-                try:
-                    line = raw_line.decode("utf-8", errors="replace").strip()
-                except Exception:
-                    line = ""
-                if line:
-                    if line.startswith("{") and "progress" in line:
-                        try:
-                            data = _json.loads(line)
-                            ocr_progress_dict[stem]["progress"] = data.get("progress", ocr_progress_dict[stem]["progress"])
-                            ocr_progress_dict[stem]["message"] = data.get("message", line)
-                        except Exception:
-                            pass
-                    else:
-                        ocr_progress_dict[stem]["message"] = line[:120]
-            
-            await proc.wait()
-            
-            if proc.returncode != 0:
-                ocr_progress_dict[stem]["status"] = "failed"
-                ocr_progress_dict[stem]["message"] = f"轉檔程序執行失敗 (代碼: {proc.returncode})"
-                return
+                md_file = output_dir / f"{stem}.md"
+                docx_file = output_dir / f"{stem}.docx"
+                
+                for f_path in [md_file, docx_file]:
+                    if f_path.exists():
+                        backup_dir.mkdir(parents=True, exist_ok=True)
+                        backup_path = backup_dir / f_path.name
+                        try: shutil.move(str(f_path), str(backup_path))
+                        except: pass
 
-            ocr_progress_dict[stem]["progress"] = 92
-            ocr_progress_dict[stem]["message"] = "正在套用樣式並產生 Word (.docx) 文件..."
-            
-            if md_file.exists():
-                md_proc = await asyncio.create_subprocess_exec(
-                    sys.executable, "-m", "src.scripts.md_to_docx",
-                    "--files", str(md_file),
-                    cwd=str(PATHS.root),
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL
+                cmd = [
+                    sys.executable, "-m", "src.scripts.pdf_engine_dispatcher",
+                    "--file", pdf_path_str,
+                    "--output_dir", str(output_dir),  # absolute path
+                    "--output_stem", stem,
+                    "--engine", eng
+                ]
+                if skip_footnotes:
+                    cmd.append("--no_footnote")
+                if ai_kaiti_on:
+                    cmd.extend(["--ai_kaiti", "--ai_kaiti_threshold", str(ai_kaiti_thresh)])
+                if style_map_json:
+                    cmd.extend(["--style_mapping", style_map_json])
+                    
+                # Use asyncio subprocess to avoid blocking the event loop
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.STDOUT,
+                    cwd=str(PATHS.root)
                 )
-                await md_proc.wait()
                 
-            ocr_progress_dict[stem]["progress"] = 100
-            ocr_progress_dict[stem]["message"] = "轉檔完成！"
-            ocr_progress_dict[stem]["status"] = "completed"
-        except Exception as err:
-            ocr_progress_dict[stem]["status"] = "failed"
-            ocr_progress_dict[stem]["message"] = f"處理過程異常: {str(err)}"
+                async for raw_line in proc.stdout:
+                    try:
+                        line = raw_line.decode("utf-8", errors="replace").strip()
+                    except Exception:
+                        line = ""
+                    if line:
+                        if line.startswith("{") and "progress" in line:
+                            try:
+                                data = _json.loads(line)
+                                prog = int(data.get("progress", ocr_progress_dict[stem]["progress"]))
+                                msg = data.get("message", line)
+                                ocr_progress_dict[stem]["progress"] = prog
+                                ocr_progress_dict[stem]["message"] = msg
+                                queue.update_task(tid, progress=prog, message=msg)
+                            except Exception:
+                                pass
+                        else:
+                            short_msg = line[:120]
+                            ocr_progress_dict[stem]["message"] = short_msg
+                            queue.update_task(tid, message=short_msg)
+                
+                await proc.wait()
+                
+                if proc.returncode != 0:
+                    fail_msg = f"轉檔程序執行失敗 (代碼: {proc.returncode})"
+                    ocr_progress_dict[stem]["status"] = "failed"
+                    ocr_progress_dict[stem]["message"] = fail_msg
+                    queue.update_task(tid, status=TaskStatus.FAILED.value, message=fail_msg, error=f"Process exited with {proc.returncode}")
+                    return
 
-    import asyncio
-    asyncio.ensure_future(run_scripts_async(str(input_pdf_path), filename_stem, style_mapping, engine, no_footnote))
-    return {"message": "OCR 管道已成功啟動", "filename_stem": filename_stem}
+                docx_msg = "正在套用樣式並產生 Word (.docx) 文件..."
+                ocr_progress_dict[stem]["progress"] = 92
+                ocr_progress_dict[stem]["message"] = docx_msg
+                queue.update_task(tid, progress=92, message=docx_msg)
+                
+                if md_file.exists():
+                    md_proc = await asyncio.create_subprocess_exec(
+                        sys.executable, "-m", "src.scripts.md_to_docx",
+                        "--files", str(md_file),
+                        cwd=str(PATHS.root),
+                        stdout=asyncio.subprocess.DEVNULL,
+                        stderr=asyncio.subprocess.DEVNULL
+                    )
+                    await md_proc.wait()
+                    
+                ocr_progress_dict[stem]["progress"] = 100
+                ocr_progress_dict[stem]["message"] = "轉檔完成！"
+                ocr_progress_dict[stem]["status"] = "completed"
+                queue.update_task(tid, status=TaskStatus.COMPLETED.value, progress=100, message="轉檔完成！")
+        except Exception as err:
+            err_msg = f"處理過程異常: {str(err)}"
+            ocr_progress_dict[stem]["status"] = "failed"
+            ocr_progress_dict[stem]["message"] = err_msg
+            queue.update_task(tid, status=TaskStatus.FAILED.value, message=err_msg, error=str(err))
+
+    task = asyncio.create_task(run_scripts_async(task_id, str(input_pdf_path), filename_stem, style_mapping, engine, no_footnote, ai_kaiti, ai_kaiti_threshold))
+    _BACKGROUND_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_TASKS.discard)
+    return {"message": "OCR 管道已成功啟動", "filename_stem": filename_stem, "task_id": task_id}
+
+
+@app.get("/api/queue/tasks")
+async def list_queue_tasks(limit: int = 50, status: str = None):
+    """取得分散式/持久化任務佇列之任務清單"""
+    from src.utils.task_queue import get_task_queue
+    queue = get_task_queue()
+    records = queue.list_tasks(limit=limit, status=status)
+    return {"tasks": [r.to_dict() for r in records]}
+
+
+@app.post("/api/queue/cancel/{task_id}")
+async def cancel_queue_task(task_id: str):
+    """取消佇列中的任務"""
+    from src.utils.task_queue import get_task_queue
+    queue = get_task_queue()
+    success = queue.cancel_task(task_id)
+    return {"success": success, "task_id": task_id}
 
 
 @app.get("/api/download_ocr_result/{filename_stem}/{ext}")
@@ -969,18 +1093,23 @@ class NativeSaveRequest(BaseModel):
     suggested_filename: str = ""
 
 @app.post("/api/native_save_file")
-async def api_native_save_file(req: NativeSaveRequest):
+async def api_native_save_file(req: NativeSaveRequest, request: Request):
     """
     [出版社編輯專用] 呼叫 Windows 原生檔案總管『另存新檔』視窗，
     具備嚴格路徑白名單校驗 (Path Traversal 防禦 - NIST PR.DS / ISO 27001 A.8.28)
     與非同步子進程防阻塞 (NIST PR.IP)。
     """
+    # 0. 阻擋區網遠端客戶端在伺服器主機上彈出原生視窗
+    client_host = request.client.host if request.client else ""
+    if client_host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+        return {"status": "fallback", "message": "遠端區網連線請直接使用瀏覽器下載"}
+
     import asyncio
     import json
     import sys
     from config import PATHS
     
-    # 1. 嚴格路徑校驗 (Path Traversal 防禦)
+    # 1. 嚴格路徑校驗 (Path Traversal 防禦 - 使用 is_relative_to 防範前綴繞過)
     allowed_dirs = [
         (PATHS.root / "data" / "03_output").resolve(),
         (PATHS.root / "data" / "02_intermediate").resolve(),
@@ -993,9 +1122,7 @@ async def api_native_save_file(req: NativeSaveRequest):
     else:
         target_path = target_path.resolve()
         
-    is_safe = any(
-        str(target_path).startswith(str(d)) for d in allowed_dirs
-    )
+    is_safe = any(target_path.is_relative_to(d) for d in allowed_dirs)
     if not is_safe:
         raise HTTPException(status_code=403, detail="存取受限：路徑超出允許之專案輸出目錄")
         
@@ -1043,19 +1170,23 @@ class OpenFileFolderRequest(BaseModel):
     file_path: str
 
 @app.post("/api/open_file_folder")
-def api_open_file_folder(req: OpenFileFolderRequest):
+def api_open_file_folder(req: OpenFileFolderRequest, request: Request):
     """在 Windows 檔案總管中定位並選取已儲存之檔案"""
+    client_host = request.client.host if request.client else ""
+    if client_host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+        return {"status": "fallback", "message": "伺服器本機資料夾僅限本機瀏覽，遠端區網連線請使用瀏覽器下載"}
+
     import subprocess
     from config import PATHS
     
-    # 嚴格路徑校驗 (Path Traversal 防禦)
+    # 嚴格路徑校驗 (Path Traversal 防禦 - 使用 is_relative_to 防範前綴繞過)
     allowed_dirs = [
         (PATHS.root / "data").resolve(),
         PATHS.data_dir.resolve()
     ]
     
     target = Path(req.file_path).resolve()
-    is_safe = any(str(target).startswith(str(d)) for d in allowed_dirs)
+    is_safe = any(target.is_relative_to(d) for d in allowed_dirs)
     
     if not is_safe:
         raise HTTPException(status_code=403, detail="存取受限：路徑超出允許之專案資料目錄")

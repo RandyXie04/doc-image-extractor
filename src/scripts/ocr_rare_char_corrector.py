@@ -60,11 +60,7 @@ def apply_founder_cleanup(text: str) -> str:
         from src.founder_tools.fix_founder_fonts import clean_founder_text
         return clean_founder_text(text)
     except ImportError:
-        try:
-            from founder_tools.fix_founder_fonts import clean_founder_text
-            return clean_founder_text(text)
-        except ImportError:
-            return text
+        return text
 
 
 # ────────────────────────────────────────────────────────────────

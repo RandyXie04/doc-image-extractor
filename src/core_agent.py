@@ -100,9 +100,10 @@ _onnx_input_name = None
 
 _engine_type = None
 _pt_model = None
+_pt_device = "cpu"
 
 def _init_mfd_worker(use_gpu=False):
-    global _onnx_session, _onnx_input_name, _engine_type, _pt_model
+    global _onnx_session, _onnx_input_name, _engine_type, _pt_model, _pt_device
     if _onnx_session is None and _engine_type is None:
         try:
             import os
@@ -117,18 +118,25 @@ def _init_mfd_worker(use_gpu=False):
                 import onnxruntime as ort
                 options = ort.SessionOptions()
                 options.intra_op_num_threads = 2
-                from src.scripts.hardware_probe import get_best_providers
-                _onnx_session = ort.InferenceSession(str(model_path), sess_options=options, providers=get_best_providers())
+                if use_gpu:
+                    from src.scripts.hardware_probe import get_best_providers
+                    providers = get_best_providers()
+                else:
+                    providers = ['CPUExecutionProvider']
+                _onnx_session = ort.InferenceSession(str(model_path), sess_options=options, providers=providers)
                 _onnx_input_name = _onnx_session.get_inputs()[0].name
             elif _engine_type == "pt" and model_path:
                 from ultralytics import YOLO
                 _pt_model = YOLO(str(model_path))
-                _onnx_session = "MOCK"  # To bypass the old check
+                _pt_device = 0 if use_gpu else "cpu"
+                _onnx_session = None
             else:
-                _onnx_session = "MOCK"
+                _onnx_session = None
+                _engine_type = "none"
         except Exception as e:
             print(f"[Model Loader Error] {e}")
-            _onnx_session = "MOCK"
+            _onnx_session = None
+            _pt_model = None
             _engine_type = "none"
 
 def _process_single_page(args):
@@ -139,8 +147,8 @@ def _process_single_page(args):
         page_idx, input_pdf, formula_dir, dpi, max_safe_width = args[:5]
         extract_inline = False
         
-    global _onnx_session, _onnx_input_name
-    if _onnx_session is None:
+    global _onnx_session, _onnx_input_name, _engine_type, _pt_model, _pt_device
+    if _onnx_session is None and _engine_type is None:
         _init_mfd_worker()
     
     import pymupdf as fitz, cv2, numpy as np, os, re
@@ -179,13 +187,14 @@ def _process_single_page(args):
         # ---------------------------------------------------------
         detections = []
         try:
-            if _onnx_session != "MOCK":
+            if _engine_type == "onnx" and _onnx_session is not None:
                 try:
                     from src.scripts import yolo_onnx_utils
                 except ImportError:
                     try:
                         from scripts import yolo_onnx_utils
                     except ImportError:
+                        # pyrefly: ignore [missing-import]
                         import yolo_onnx_utils
                 
                 # Preprocess (Dynamic Input Resolution Support)
@@ -219,8 +228,8 @@ def _process_single_page(args):
                         'box': np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
                     })
             elif _engine_type == "pt" and _pt_model is not None:
-                # PyTorch Inference
-                results = _pt_model.predict(img, conf=0.15, iou=0.45, verbose=False)
+                # PyTorch Inference with explicit device selection
+                results = _pt_model.predict(img, conf=0.15, iou=0.45, device=_pt_device, verbose=False)
                 if results and len(results) > 0:
                     r = results[0]
                     boxes = r.boxes
@@ -391,9 +400,9 @@ class PDFConversionAgent:
             base_name = os.path.splitext(os.path.basename(input_pdf))[0]
             self.output_docx = str(PATHS.data_dir / "02_intermediate" / f"{base_name}_已轉檔.docx")
 
-        # ✅ 所有目錄預設由 PATHS 提供，不再使用裸字串相對路徑
+        # ✅ 所有目錄預設由 PATHS 提供，公式萃取預設加上任務專屬 UUID 子目錄防止多工污染 (Race Condition)
         self.preview_dir = preview_dir if preview_dir else str(PATHS.preview_dir)
-        self.formula_dir = formula_dir if formula_dir else str(PATHS.formula_dir_v2)
+        self.formula_dir = formula_dir if formula_dir else str(PATHS.formula_dir_v2 / f"task_{uuid.uuid4().hex[:8]}")
 
         # ✅ 臨時 PDF 錨定至專案中間層，並加上 UUID 防止多工作業互相覆蓋 (Race Condition)
         self.temp_cropped_pdf = str(PATHS.data_dir / "02_intermediate" / f"temp_cropped_{uuid.uuid4().hex[:8]}.pdf")

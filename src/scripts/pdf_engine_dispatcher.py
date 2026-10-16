@@ -41,7 +41,7 @@ def is_vector_pdf(pdf_path, text_threshold=100):
         print(f"Error checking PDF type: {e}")
         return False
 
-def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None, no_footnote=False):
+def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None, no_footnote=False, ai_kaiti=False, ai_kaiti_threshold=0.65):
     """
     High-precision extraction using book_layout_extractor:
     - Header & footer removal
@@ -49,10 +49,7 @@ def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None, 
     - Heading style detection (H1, H2, H3)
     - Paragraph line-wrap reflow
     """
-    if no_footnote:
-        from src.scripts.book_layout_extractor_no_footnote import process_book_vector_pdf
-    else:
-        from src.scripts.book_layout_extractor import process_book_vector_pdf
+    from src.scripts.book_layout_extractor import process_book_vector_pdf
     
     def on_progress(percent, msg):
         print(json.dumps({"progress": percent, "message": msg}))
@@ -63,7 +60,10 @@ def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None, 
         output_dir=output_dir,
         output_stem=output_stem,
         style_mapping=style_mapping,
-        progress_callback=on_progress
+        progress_callback=on_progress,
+        no_footnote=no_footnote,
+        ai_kaiti=ai_kaiti,
+        ai_kaiti_threshold=ai_kaiti_threshold
     )
     
     # Save structured audit tracking file
@@ -87,6 +87,8 @@ def main():
     parser.add_argument("--left_ratio", type=float, default=0.0)
     parser.add_argument("--right_ratio", type=float, default=0.0)
     parser.add_argument("--no_footnote", action="store_true", help="Disable footnote extraction and matching")
+    parser.add_argument("--ai_kaiti", action="store_true", help="Enable Gemini Vision AI Kaiti detection")
+    parser.add_argument("--ai_kaiti_threshold", type=float, default=0.65, help="Confidence threshold for AI Kaiti detection")
     args = parser.parse_args()
 
     engine_choice = "suryaocr" if args.engine == "rapiddoc" else args.engine
@@ -104,19 +106,21 @@ def main():
     sys.stdout.flush()
 
     if engine_choice == "pymupdf":
-        extract_with_pymupdf(args.file, args.output_dir, args.style_mapping, output_stem=args.output_stem, no_footnote=args.no_footnote)
+        extract_with_pymupdf(
+            args.file, args.output_dir, args.style_mapping,
+            output_stem=args.output_stem, no_footnote=args.no_footnote,
+            ai_kaiti=args.ai_kaiti, ai_kaiti_threshold=args.ai_kaiti_threshold
+        )
     else:
         # v2.1 修正：避免使用 subprocess 啟動不存在於 _MEIPASS 的 process_ocr.py
         try:
-            if args.no_footnote:
-                from src.scripts import process_ocr_no_footnote as process_ocr
-            else:
-                from src.scripts import process_ocr
+            from src.scripts import process_ocr
             # 優先嘗試透過 module import 執行
             ocr_args = argparse.Namespace(
                 file=args.file,
                 output_dir=args.output_dir,
-                style_mapping=args.style_mapping
+                style_mapping=args.style_mapping,
+                no_footnote=args.no_footnote
             )
             if hasattr(process_ocr, "main"):
                 process_ocr.main(ocr_args)
@@ -126,14 +130,15 @@ def main():
             # 開發環境下，若仍需 subprocess，則作為 Fallback
             from src.utils.path_helper import is_frozen, get_project_dir
             if not is_frozen():
-                script_name = "process_ocr_no_footnote.py" if args.no_footnote else "process_ocr.py"
-                process_ocr_path = str(get_project_dir() / "src" / "scripts" / script_name)
+                process_ocr_path = str(get_project_dir() / "src" / "scripts" / "process_ocr.py")
                 cmd = [
                     sys.executable, process_ocr_path, 
                     "--file", args.file, 
                     "--output_dir", args.output_dir, 
                     "--style_mapping", args.style_mapping
                 ]
+                if args.no_footnote:
+                    cmd.append("--no_footnote")
                 import subprocess
                 proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
                 for line in proc.stdout:

@@ -1,5 +1,11 @@
 import re
 
+_HEADING_RE = re.compile(r'^(#{1,3})\s+(.+)$')
+_CUSTOM_STYLE_SUFFIX_RE = re.compile(r'\s*\{custom-style=".*?"\}$')
+_SENTENCE_PUNCT_RE = re.compile(r'[。，；？！""\'\'：:、]')
+_STRUCTURAL_HEADING_RE = re.compile(r'^(第[一二三四五六七八九十百]+[章篇]|目\s*录|附\s*录|索\s*引|后\s*记|前\s*言)$')
+_CITATION_MARKER_RE = re.compile(r'^([〔\[【]|"[^"\n]*出处[^"\n]*"|《.*?》)')
+
 
 def postprocess_dictionary_markdown(md_text: str, style_mapping: dict = None) -> str:
     """
@@ -38,16 +44,16 @@ def postprocess_dictionary_markdown(md_text: str, style_mapping: dict = None) ->
         # 1. Fix Term Headings
         # If line is a heading (e.g. "# 詞條") but very short and no punctuation,
         # it's likely a dictionary term, not a chapter heading.
-        m_heading = re.match(r'^(#{1,3})\s+(.+)$', clean_line)
+        m_heading = _HEADING_RE.match(clean_line)
         if m_heading:
             text = m_heading.group(2).strip()
             # Remove custom-style if present for analysis
-            text_no_style = re.sub(r'\s*\{custom-style=".*?"\}$', '', text).strip()
+            text_no_style = _CUSTOM_STYLE_SUFFIX_RE.sub('', text).strip()
 
             # Dictionary term heuristic: short (<=10 chars), no sentence punctuation
             # Exceptions: Chapter titles (e.g., "第一章") or structural headings
-            if len(text_no_style) <= 10 and not re.search(r'[。，；？！""''：:、]', text_no_style):
-                if not re.match(r'^(第[一二三四五六七八九十百]+[章篇]|目\s*录|附\s*录|索\s*引|后\s*记|前\s*言)$', text_no_style):
+            if len(text_no_style) <= 10 and not _SENTENCE_PUNCT_RE.search(text_no_style):
+                if not _STRUCTURAL_HEADING_RE.match(text_no_style):
                     # It's a dictionary term — convert to bold plain text
                     line = f"**{text_no_style}**"
                     processed_lines.append(line)
@@ -56,7 +62,7 @@ def postprocess_dictionary_markdown(md_text: str, style_mapping: dict = None) ->
         # 2. Heuristic KaiTi (Quotes/Citations)
         # Detect lines that start with typical citation/quote markers.
         if clean_line and not clean_line.startswith('> ') and not clean_line.startswith('!['):
-            if re.match(r'^([〔\[【]|".*?出处.*?"|《.*?》)', clean_line):
+            if _CITATION_MARKER_RE.match(clean_line):
                 if kaiti_style:
                     # Use Pandoc custom-style div syntax for block-level custom style
                     # Wrap in a fenced div so Pandoc maps it to the correct Word style

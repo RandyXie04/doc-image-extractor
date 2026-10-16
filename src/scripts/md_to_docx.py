@@ -152,11 +152,7 @@ def main():
                 from src.founder_tools.fix_founder_fonts import clean_founder_text
                 md_content = clean_founder_text(md_content)
             except ImportError:
-                try:
-                    from founder_tools.fix_founder_fonts import clean_founder_text
-                    md_content = clean_founder_text(md_content)
-                except ImportError:
-                    pass
+                pass
             
             # 偵測並記錄可疑的未登錄亂碼 (擴展偵測範圍)
             # PUA 區 + 彝文音節區 + CJK 相容區 + 替換字元 + 零寬字元

@@ -121,8 +121,27 @@ def clean_founder_text(text: str) -> str:
     return text
 
 
+def _repair_paragraph_runs(p) -> bool:
+    """修復段落中各個 Run 的方正字庫字元，完整保留粗體、字級、字體等排版樣式"""
+    changed = False
+    if p.runs:
+        for run in p.runs:
+            if run.text:
+                cleaned = clean_founder_text(run.text)
+                if cleaned != run.text:
+                    run.text = cleaned
+                    changed = True
+    else:
+        old_text = p.text
+        cleaned = clean_founder_text(old_text)
+        if cleaned != old_text:
+            p.text = cleaned
+            changed = True
+    return changed
+
+
 def repair_docx_file(input_path: str, output_path: str = None) -> str:
-    """修復 Word (.docx) 檔案中的所有段落與表格文字"""
+    """修復 Word (.docx) 檔案中的所有段落與表格文字 (保留所有樣式與 Runs)"""
     try:
         import docx
     except ImportError:
@@ -137,20 +156,14 @@ def repair_docx_file(input_path: str, output_path: str = None) -> str:
     repaired_count = 0
 
     for p in doc.paragraphs:
-        old_text = p.text
-        new_text = clean_founder_text(old_text)
-        if new_text != old_text:
-            p.text = new_text
+        if _repair_paragraph_runs(p):
             repaired_count += 1
 
     for table in doc.tables:
         for row in table.rows:
             for cell in row.cells:
                 for p in cell.paragraphs:
-                    old_text = p.text
-                    new_text = clean_founder_text(old_text)
-                    if new_text != old_text:
-                        p.text = new_text
+                    if _repair_paragraph_runs(p):
                         repaired_count += 1
 
     doc.save(output_path)

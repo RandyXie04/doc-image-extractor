@@ -14,8 +14,12 @@ except ImportError:
 if not is_frozen():
     sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from fix_founder_fonts import clean_founder_text
-from core.document_model import UnifiedDocument, SectionNode, ParagraphNode, RunNode
+try:
+    from src.founder_tools.fix_founder_fonts import clean_founder_text
+    from src.founder_tools.core.document_model import UnifiedDocument, SectionNode, ParagraphNode, RunNode
+except ImportError:
+    from fix_founder_fonts import clean_founder_text
+    from core.document_model import UnifiedDocument, SectionNode, ParagraphNode, RunNode
 
 class PdfParser:
     """

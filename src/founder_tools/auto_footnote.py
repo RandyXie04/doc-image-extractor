@@ -2,14 +2,24 @@ import os
 import logging
 from typing import Optional, Dict, Any
 
-from core.annotation_profile import AnnotationProfile
-from core.annotation_analyzer import AnnotationAnalyzer
-from core.footnote_matcher import FootnoteMatcher
-from core.preflight_auditor import PreflightAuditor
-from core.openxml_builder import OpenXMLBuilder
-from core.postflight_validator import PostflightValidator
-from parsers.docx_parser import DocxParser
-from parsers.pdf_parser import PdfParser
+try:
+    from src.founder_tools.core.annotation_profile import AnnotationProfile
+    from src.founder_tools.core.annotation_analyzer import AnnotationAnalyzer
+    from src.founder_tools.core.footnote_matcher import FootnoteMatcher
+    from src.founder_tools.core.preflight_auditor import PreflightAuditor
+    from src.founder_tools.core.openxml_builder import OpenXMLBuilder
+    from src.founder_tools.core.postflight_validator import PostflightValidator
+    from src.founder_tools.parsers.docx_parser import DocxParser
+    from src.founder_tools.parsers.pdf_parser import PdfParser
+except ImportError:
+    from core.annotation_profile import AnnotationProfile
+    from core.annotation_analyzer import AnnotationAnalyzer
+    from core.footnote_matcher import FootnoteMatcher
+    from core.preflight_auditor import PreflightAuditor
+    from core.openxml_builder import OpenXMLBuilder
+    from core.postflight_validator import PostflightValidator
+    from parsers.docx_parser import DocxParser
+    from parsers.pdf_parser import PdfParser
 
 logger = logging.getLogger(__name__)
 

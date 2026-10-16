@@ -66,12 +66,14 @@ class AIKaitiClassifier:
         cache_dir: str = None,
         timeout: float = 15.0,
         screenshot_dpi: int = 150,
+        min_confidence: float = 0.65,
     ):
         # Resolve API key
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
         self.model = model or os.getenv("AI_KAITI_MODEL", "gemini-3.1-pro-preview")
         self.timeout = timeout
         self.screenshot_dpi = screenshot_dpi
+        self.min_confidence = float(min_confidence if min_confidence is not None else os.getenv("AI_KAITI_THRESHOLD", 0.65))
 
         # Cache directory
         if cache_dir:
@@ -196,9 +198,11 @@ class AIKaitiClassifier:
         cached = self._load_cache(cache_key)
         if cached is not None:
             self.stats["vision_cache_hits"] += 1
-            font_tag = cached.get("font", "unknown")
-            # 回填學習快取
-            if font_names:
+            conf = float(cached.get("confidence", 1.0))
+            raw_tag = cached.get("font", "unknown")
+            font_tag = raw_tag if conf >= self.min_confidence else "other"
+            # 回填學習快取 (僅於信心度足夠時學習)
+            if font_names and conf >= self.min_confidence:
                 for fn in font_names:
                     self._learn_font_name(fn, font_tag)
             return font_tag
@@ -217,9 +221,11 @@ class AIKaitiClassifier:
             if result:
                 self._save_cache(cache_key, result)
                 self.stats["vision_calls"] += 1
-                font_tag = result.get("font", "unknown")
-                # 寫入學習快取
-                if font_names:
+                conf = float(result.get("confidence", 1.0))
+                raw_tag = result.get("font", "unknown")
+                font_tag = raw_tag if conf >= self.min_confidence else "other"
+                # 寫入學習快取 (僅於信心度足夠時學習)
+                if font_names and conf >= self.min_confidence:
                     for fn in font_names:
                         self._learn_font_name(fn, font_tag)
                 return font_tag

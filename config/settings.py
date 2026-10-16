@@ -175,8 +175,9 @@ class _Config:
     ai_heading_model:    str  = field(default_factory=lambda: os.getenv("AI_HEADING_MODEL", "deepseek-chat"))
     
     # // AI Kaiti Paragraph Classifier Settings (Gemini Vision)
-    ai_kaiti_enabled:    bool = field(default_factory=lambda: os.getenv("AI_KAITI_ENABLED", "false").lower() == "true")
-    ai_kaiti_model:      str  = field(default_factory=lambda: os.getenv("AI_KAITI_MODEL", "gemini-3.1-pro-preview"))
+    ai_kaiti_enabled:    bool  = field(default_factory=lambda: os.getenv("AI_KAITI_ENABLED", "false").lower() == "true")
+    ai_kaiti_model:      str   = field(default_factory=lambda: os.getenv("AI_KAITI_MODEL", "gemini-3.1-pro-preview"))
+    ai_kaiti_threshold:  float = field(default_factory=lambda: float(os.getenv("AI_KAITI_THRESHOLD", "0.65")))
     
     # // Operation Mode: 'editor' (default for publishing house) or 'dev' (for engineers)
     app_mode:       str   = field(default_factory=lambda: os.getenv("APP_MODE", "editor").lower())
