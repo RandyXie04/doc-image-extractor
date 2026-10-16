@@ -1428,7 +1428,7 @@
 
             fontModalConfirmBtn.disabled = true;
             fontMappingSaveStatus.textContent = '正在儲存...';
-            fontMappingSaveStatus.style.color = '#94a3b8';
+            fontMappingSaveStatus.style.color = 'var(--text-muted, #475569)';
 
             try {
                 const resp = await fetch('/api/save_font_mapping', {

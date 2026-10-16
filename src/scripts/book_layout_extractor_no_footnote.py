@@ -375,11 +375,12 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
         page_paragraphs = []
         current_para_lines = []
         current_para_is_kaiti = False
+        current_para_custom_style = None
         last_block_x0 = 0.0
         last_heading_text = ""
 
         def flush_current_para():
-            nonlocal current_para_lines, current_para_is_kaiti
+            nonlocal current_para_lines, current_para_is_kaiti, current_para_custom_style
             if current_para_lines:
                 # Splice lines smoothly
                 para_text = ""
@@ -394,12 +395,17 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                             audit_data["paragraphs_reflowed"] += 1
                         else:
                             para_text += " " + line_txt
-                if current_para_is_kaiti:
+                if current_para_custom_style:
+                    # Apply specific custom Word style from font mapping
+                    para_text = f'::: {{custom-style="{current_para_custom_style}"}}\n{para_text}\n:::'
+                elif current_para_is_kaiti:
                     # Apply custom Word style instead of basic blockquote
-                    para_text = '::: {custom-style="楷體2"}\n' + para_text + '\n:::'
+                    kaiti_style = style_mapping.get("kaiti") or "楷體2"
+                    para_text = f'::: {{custom-style="{kaiti_style}"}}\n{para_text}\n:::'
                 page_paragraphs.append(para_text)
                 current_para_lines = []
                 current_para_is_kaiti = False
+                current_para_custom_style = None
         
         for bb in body_blocks:
             lines = bb.get("lines", [])
@@ -427,8 +433,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             clean_for_heading = re.sub(r'[①-⑩\u2460-\u2473\s]', '', bb_text)
             has_sentence_punct = bool(re.search(r'[。，；？！“”‘’：:、]', clean_for_heading))
             
-
-            # ── Priority 0: 人工字體角色對應（優先於規則型 regex）──
+            # ── Priority 0: 人工字體角色對應（優先權最高，直接覆蓋規則型判定）──
             # 取此 block 第一個命中 font_role_map 的字體角色
             _block_font_role = None
             _block_docx_style = None
@@ -455,6 +460,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                         break
 
             _is_ignored_font = bool(_block_font_role and str(_block_font_role).strip().lower() in ('忽略', 'ignore', 'none'))
+            _has_font_mapping = bool((_block_font_role or _block_docx_style) and not _is_ignored_font)
 
             if _is_ignored_font:
                 heading_level = 0
@@ -466,8 +472,17 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                     heading_level = 2
                 elif _role_upper == 'H3':
                     heading_level = 3
+                # 「圖說」、「楷體」、「正文」等不轉為標題
+            elif _block_docx_style and not is_toc_line:
+                if re.search(r'標題\s*1|heading\s*1', _block_docx_style, re.I):
+                    heading_level = 1
+                elif re.search(r'標題\s*2|heading\s*2', _block_docx_style, re.I):
+                    heading_level = 2
+                elif re.search(r'標題\s*3|heading\s*3', _block_docx_style, re.I):
+                    heading_level = 3
 
-            if not heading_level and not is_toc_line and not _is_ignored_font:
+            # ── 啟發式標題判定（Fallback）：僅在字體未在字體分析中指定時才執行 ──
+            if not heading_level and not is_toc_line and not _has_font_mapping and not _is_ignored_font:
                 # Rule 1: Regex for Major Chapters / Book Sections (H1/H2)
                 if re.match(r'^(?:[上下中]\s*篇(?:\s+[^\n]+)?)$', bb_text) or \
                    re.match(r'^(?:目\s*录|目录|序|后\s*记|后记|结\s*语|结语|主要参考文献)$', bb_text):
@@ -494,9 +509,8 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                     "level": f"H{heading_level}",
                     "text": bb_text
                 })
-                # Custom style annotation if configured
-                style_key = f"h{heading_level}"
-                custom_style = style_mapping.get(style_key)
+                # Custom style annotation: font mapping docx_style takes highest priority
+                custom_style = _block_docx_style or style_mapping.get(f"h{heading_level}")
                 if custom_style:
                     formatted_heading = f"{'#' * heading_level} {bb_text} {{custom-style=\"{custom_style}\"}}"
                 else:
@@ -508,10 +522,13 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 
             # ── Regular Body Text ────────────────────────────────────
             # ── 圖說（Caption）判斷：人工字體角色優先 ──
-            is_block_caption = (not _is_ignored_font and _block_font_role and _block_font_role.lower() in ('圖說', '图说', 'caption'))
+            is_block_caption = (not _is_ignored_font and (
+                (_block_font_role and _block_font_role.lower() in ('圖說', '图说', 'caption')) or
+                (_block_docx_style and bool(re.search(r'圖說|图说|caption', _block_docx_style, re.I)))
+            ))
             if is_block_caption:
                 flush_current_para()
-                _caption_style = _block_docx_style
+                _caption_style = _block_docx_style or style_mapping.get("image_caption")
                 if not _caption_style and font_role_map:
                     for line in lines:
                         for span in line.get('spans', []):
@@ -557,16 +574,16 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 is_block_kaiti = False
             elif _block_font_role and _block_font_role.lower() in ('楷體', '楷体', 'kaiti', 'blockquote'):
                 is_block_kaiti = True
+            elif _block_docx_style and bool(re.search(r'楷|kai', _block_docx_style, re.I)):
+                is_block_kaiti = True
+            elif _has_font_mapping:
+                # 已明確映射為其他樣式者，不再觸發楷體規則
+                is_block_kaiti = False
             else:
                 is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
             
-            # AI Vision fallback: 若規則型判定失敗且 AI 可用，
-            # 觸發 Gemini Vision 從 PDF 截圖辨識字型。
-            # 適用於所有 font name 無法用關鍵字匹配的情境：
-            #   方正(FZKTK)、Adobe CID、嵌入子集、WPS、任何私有字型...
-            # font_names 啟用「字型名稱學習快取」——
-            # 一旦 Vision 辨識過某 font name，後續同名 block 全部免呼叫 API
-            if not is_block_kaiti and not _is_ignored_font and ai_kaiti_classifier is not None:
+            # AI Vision fallback: 若規則型判定失敗且 AI 可用，且該字型未人工指定
+            if not is_block_kaiti and not _has_font_mapping and not _is_ignored_font and ai_kaiti_classifier is not None:
                 try:
                     is_block_kaiti = ai_kaiti_classifier.is_block_kaiti(
                         page=page, block_bbox=bbox, block_text=bb_text,
@@ -575,12 +592,17 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 except Exception:
                     pass  # AI 失敗時靜默降級，使用規則型結果
 
+            # Determine custom style for regular paragraph (if not caption)
+            block_custom_style = _block_docx_style if (_has_font_mapping and not _is_ignored_font and not is_block_caption) else None
+
             # Check indentation to determine whether this block starts a new paragraph
             is_indented = (bbox[0] - base_x0) >= 12.0
             
             if current_para_lines:
                 should_flush = False
                 if is_block_kaiti != current_para_is_kaiti:
+                    should_flush = True
+                elif block_custom_style != current_para_custom_style:
                     should_flush = True
                 # A new paragraph is indicated by an increase in indentation (e.g. from 2 chars to 4 chars)
                 # or a large jump in indent. We use > 5.0 instead of abs() to avoid breaking on hanging indents
@@ -592,6 +614,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             
             if not current_para_lines:
                 current_para_is_kaiti = is_block_kaiti
+                current_para_custom_style = block_custom_style
                 
             # Process lines in this block, replacing footnote anchors
             for line in lines:

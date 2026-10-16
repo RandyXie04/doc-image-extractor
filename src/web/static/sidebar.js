@@ -37,20 +37,20 @@ document.addEventListener("DOMContentLoaded", () => {
                 <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg></span> 自動 OCR
             </a>
         </nav>
-        <div style="padding: 1.5rem; margin-top: auto; display: flex; flex-direction: column; gap: 8px;">
-            <div id="hardwareDisplay" style="font-size: 0.72rem; color: #64748b; text-align: center; background: rgba(0,0,0,0.03); border: 1px solid var(--border); border-radius: 6px; padding: 4px 6px; line-height: 1.3;">
+        <div class="sidebar-footer">
+            <div id="hardwareDisplay" class="sidebar-info-box">
                 <span style="display:inline-flex; align-items:center; justify-content:center; gap:4px;">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> 硬體加速: 偵測中...
                 </span>
             </div>
-            <div id="versionDisplay" style="font-size: 0.8rem; color: #64748b; text-align: center;">版本: 讀取中...</div>
-            <button id="modeToggleBtn" style="width: 100%; background: #f1f5f9; color: #475569; border: 1px dashed #cbd5e1; padding: 6px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; display: flex; align-items: center; justify-content: center; gap: 6px;">
+            <div id="versionDisplay" class="sidebar-version-text">版本: 讀取中...</div>
+            <button id="modeToggleBtn" class="sidebar-mode-btn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> 編輯專用 (點擊切換)
             </button>
-            <button id="checkUpdateBtn" style="width: 100%; background: #0284c7; color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <button id="checkUpdateBtn" class="sidebar-btn btn-primary">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> 檢查更新
             </button>
-            <button id="globalReportBtn" style="width: 100%; background: #334155; color: white; border: none; padding: 10px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+            <button id="globalReportBtn" class="sidebar-btn btn-secondary">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg> 前往 GitHub 回報 ↗
             </button>
         </div>
@@ -144,7 +144,7 @@ document.addEventListener("DOMContentLoaded", () => {
             hardwareDisplay.style.borderColor = 'rgba(16, 185, 129, 0.25)';
             hardwareDisplay.innerHTML = `<span style="display:inline-flex; align-items:center; justify-content:center; gap:4px; font-weight:600;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg> 加速: ${shortGpu}</span><br><span style="font-size:0.68rem; opacity:0.85;">(${accel})</span>`;
         } else {
-            hardwareDisplay.style.color = '#64748b';
+            hardwareDisplay.style.color = 'var(--text-muted, #475569)';
             hardwareDisplay.style.background = 'rgba(0, 0, 0, 0.03)';
             hardwareDisplay.style.borderColor = 'var(--border, #e2e8f0)';
             hardwareDisplay.innerHTML = `<span style="display:inline-flex; align-items:center; justify-content:center; gap:4px; font-weight:600;"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg> 運算: CPU 相容模式</span>`;
@@ -229,9 +229,9 @@ document.addEventListener("DOMContentLoaded", () => {
                 modeToggleBtn.style.background = 'rgba(2, 132, 199, 0.08)';
             } else {
                 modeToggleBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> 編輯專用 (切換)';
-                modeToggleBtn.style.color = '#475569';
-                modeToggleBtn.style.borderColor = '#cbd5e1';
-                modeToggleBtn.style.background = '#f1f5f9';
+                modeToggleBtn.style.color = '';
+                modeToggleBtn.style.borderColor = '';
+                modeToggleBtn.style.background = '';
             }
         }
 
