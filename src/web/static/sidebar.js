@@ -20,6 +20,20 @@ document.addEventListener("DOMContentLoaded", () => {
     
     const sidebarHtml = `
     <div id="sidebar">
+        <style>
+            #sidebar { background: var(--sidebar-bg, #ffffff) !important; color: var(--text-main, #0f172a) !important; }
+            #sidebar .brand { color: var(--text-main, #0f172a) !important; }
+            :root[data-theme="dark"] #sidebar .brand { color: #f8fafc !important; }
+            #sidebar a.nav-link { color: #334155 !important; font-weight: 500 !important; }
+            #sidebar a.nav-link:hover { background: #f1f5f9 !important; color: #0f172a !important; }
+            #sidebar a.nav-link.active { background: rgba(234, 88, 12, 0.1) !important; color: #c2410c !important; border: 1px solid rgba(234, 88, 12, 0.25) !important; font-weight: 600 !important; }
+            :root[data-theme="dark"] #sidebar a.nav-link { color: #94a3b8 !important; }
+            :root[data-theme="dark"] #sidebar a.nav-link:hover { background: rgba(255, 255, 255, 0.06) !important; color: #f8fafc !important; }
+            #main-content { background-color: var(--bg-color, #f8fafc) !important; }
+            :root[data-theme="dark"] html, :root[data-theme="dark"] body { background-color: #0f172a !important; color: #f8fafc !important; }
+            .container { background-color: var(--card-bg, #ffffff) !important; border: 1px solid var(--border, #e2e8f0) !important; border-radius: 20px !important; padding: clamp(1.5rem, 3vw, 3rem) !important; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06) !important; box-sizing: border-box !important; }
+            :root[data-theme="dark"] .container { background-color: #1e293b !important; border-color: rgba(255, 255, 255, 0.12) !important; color: #f8fafc !important; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4) !important; border-radius: 20px !important; padding: clamp(1.5rem, 3vw, 3rem) !important; }
+        </style>
         <a href="/" class="brand">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg> 轉檔工具箱
         </a>
@@ -82,12 +96,15 @@ document.addEventListener("DOMContentLoaded", () => {
     document.body.appendChild(mainContent);
     document.body.insertAdjacentHTML('afterbegin', sidebarHtml);
 
-    // Inject sidebar CSS if not already there
-    if (!document.querySelector('link[href*="sidebar.css"]')) {
+    // Inject sidebar CSS with cache-busting
+    let existingLink = document.querySelector('link[href*="sidebar.css"]');
+    if (!existingLink) {
         const link = document.createElement('link');
         link.rel = 'stylesheet';
-        link.href = '/static/sidebar.css';
+        link.href = '/static/sidebar.css?v=' + Date.now();
         document.head.appendChild(link);
+    } else if (!existingLink.href.includes('?v=')) {
+        existingLink.href = '/static/sidebar.css?v=' + Date.now();
     }
 
     // Direct GitHub Issue Reporting Button logic

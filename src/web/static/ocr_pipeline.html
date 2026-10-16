@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>書籍 PDF 全自動整稿與排版</title>
+    <link rel="stylesheet" href="/static/sidebar.css?v=20261016_v5">
     <style>
         :root {
             color-scheme: light;
@@ -21,9 +22,8 @@
             color-scheme: dark;
             --primary: #ea580c;
             --primary-hover: #c2410c;
-            --bg: transparent;
-            --card: rgba(255, 255, 255, 0.03);
-            --border: rgba(255, 255, 255, 0.08);
+            --card: #1e293b;
+            --border: rgba(255, 255, 255, 0.12);
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
         }
@@ -75,9 +75,6 @@
 
         body {
             font-family: 'Inter', system-ui, sans-serif;
-            display: flex;
-            justify-content: center;
-            padding: 3rem 1rem;
             color: var(--text-main);
         }
 
@@ -85,10 +82,9 @@
             background: var(--card);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            padding: 3rem;
+            padding: clamp(1.5rem, 3vw, 3rem);
             border-radius: 20px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
-            max-width: 720px;
             width: 100%;
             border: 1px solid var(--border);
             animation: fadeIn 0.4s ease-out forwards;
@@ -133,7 +129,7 @@
         .upload-area {
             border: 2px dashed var(--border);
             border-radius: 16px;
-            padding: 3.5rem 2rem;
+            padding: clamp(2rem, 4vw, 3.5rem) clamp(1.5rem, 3vw, 2rem);
             text-align: center;
             cursor: pointer;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -187,10 +183,16 @@
         }
 
         .btn:disabled {
-            background: #cbd5e1;
+            background: #e2e8f0;
+            color: #475569;
             cursor: not-allowed;
             box-shadow: none;
             transform: none;
+        }
+
+        :root[data-theme="dark"] .btn:disabled {
+            background: rgba(255, 255, 255, 0.08);
+            color: #94a3b8;
         }
 
         #status {
@@ -202,18 +204,68 @@
 
         .card-section {
             background: rgba(255, 255, 255, 0.02);
-            padding: 1.5rem;
+            padding: clamp(1rem, 2.5vw, 2rem);
             border-radius: 16px;
             margin-bottom: 1.5rem;
             border: 1px solid var(--border);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
         }
 
+        .options-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.2rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .options-grid .card-section {
+            margin-bottom: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
         .slider-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
             gap: 1.2rem;
             text-align: left;
+        }
+
+        /* ── 樣式對應 Grid ── */
+        .style-mapping-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 0.8rem 1.2rem;
+            align-items: end;
+        }
+
+        .style-mapping-grid .mapping-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .style-mapping-grid .mapping-item label {
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        .style-mapping-grid .mapping-item select {
+            width: 100%;
+            padding: 6px 8px;
+            border-radius: 6px;
+            border: 1px solid var(--border);
+            font-size: 0.88rem;
+        }
+
+        .style-mapping-separator {
+            grid-column: 1 / -1;
+            border-top: 1px solid var(--border);
+            padding-top: 0.6rem;
+            margin-top: 0.2rem;
         }
 
         .slider-item {
@@ -293,8 +345,8 @@
             background: #ffffff;
             border: 1px solid var(--border);
             border-radius: 12px;
-            padding: 2rem;
-            width: min(92vw, 780px);
+            padding: clamp(1.2rem, 2.5vw, 2rem);
+            width: min(94vw, 960px);
             max-height: 85vh;
             display: flex;
             flex-direction: column;
@@ -364,7 +416,7 @@
         .font-table .sample-text {
             font-size: 0.78rem;
             color: var(--text-muted);
-            max-width: 260px;
+            max-width: min(45vw, 420px);
             white-space: pre-wrap;
             word-break: break-all;
         }
@@ -393,9 +445,15 @@
         }
 
         .btn-analyze:disabled {
-            background: #94a3b8;
+            background: #e2e8f0;
+            color: #475569;
             cursor: not-allowed;
             transform: none;
+        }
+
+        :root[data-theme="dark"] .btn-analyze:disabled {
+            background: rgba(255, 255, 255, 0.08);
+            color: #94a3b8;
         }
 
         .btn-confirm {
@@ -484,85 +542,88 @@
 
         <!-- 樣式範本設定 -->
         <div class="card-section">
-            <h3 style="margin-top: 0; color: var(--text-main); font-size: 1.05rem;">樣式範本設定</h3>
-            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 0.8rem;">
-                目前使用範本: <strong id="currentTemplateName">載入中...</strong>
-            </p>
-            <div style="display: flex; gap: 10px;">
-                <input type="file" id="templateInput" accept=".docx" style="display: none;">
-                <button type="button" class="btn"
-                    style="background: #475569; width: auto; font-size: 0.9rem; padding: 6px 14px;"
-                    onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
-                <span id="templateUploadStatus"
-                    style="align-self: center; color: #16a34a; font-weight: bold; font-size: 0.85rem;"></span>
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 0.8rem;">
+                <div>
+                    <h3 style="margin: 0 0 4px 0; color: var(--text-main); font-size: 1.05rem;">樣式範本設定</h3>
+                    <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0;">
+                        目前使用範本: <strong id="currentTemplateName">載入中...</strong>
+                    </p>
+                </div>
+                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                    <input type="file" id="templateInput" accept=".docx" style="display: none;">
+                    <button type="button" class="btn"
+                        style="background: #475569; width: auto; font-size: 0.9rem; padding: 6px 14px; white-space: nowrap;"
+                        onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
+                    <span id="templateUploadStatus"
+                        style="color: #16a34a; font-weight: bold; font-size: 0.85rem;"></span>
+                </div>
             </div>
 
             <div id="styleMappingSection" style="margin-top: 0.8rem; display: none;">
                 <h4 style="margin: 0 0 0.5rem 0; color: var(--text-muted); font-size: 0.9rem;">自訂階層樣式對應 (可選)</h4>
-                <div style="display: flex; gap: 0.8rem; align-items: center; font-size: 0.85rem; flex-wrap: wrap;">
-                    <div>
-                        <label for="h1Style">一級標題 (#): </label>
-                        <select id="h1Style" style="padding: 4px; border-radius: 4px; border: 1px solid var(--border);">
+                <div class="style-mapping-grid">
+                    <div class="mapping-item">
+                        <label for="h1Style">一級標題 (#)</label>
+                        <select id="h1Style">
                             <option value="">(預設 Heading 1)</option>
                         </select>
                     </div>
-                    <div>
-                        <label for="h2Style">二級標題 (##): </label>
-                        <select id="h2Style" style="padding: 4px; border-radius: 4px; border: 1px solid var(--border);">
+                    <div class="mapping-item">
+                        <label for="h2Style">二級標題 (##)</label>
+                        <select id="h2Style">
                             <option value="">(預設 Heading 2)</option>
                         </select>
                     </div>
-                    <div>
-                        <label for="h3Style">三級標題 (###): </label>
-                        <select id="h3Style" style="padding: 4px; border-radius: 4px; border: 1px solid var(--border);">
+                    <div class="mapping-item">
+                        <label for="h3Style">三級標題 (###)</label>
+                        <select id="h3Style">
                             <option value="">(預設 Heading 3)</option>
                         </select>
                     </div>
-                    <div
-                        style="border-top: 1px solid var(--border); margin-top: 0.5rem; padding-top: 0.5rem; width: 100%; display: flex; gap: 0.8rem; flex-wrap: wrap;">
-                        <div>
-                            <label for="imageCaptionStyle">圖片標籤: </label>
-                            <select id="imageCaptionStyle"
-                                style="padding: 4px; border-radius: 4px; border: 1px solid var(--border);">
-                                <option value="">(不套用自訂樣式)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label for="kaitiStyle">楷體 / 引言: </label>
-                            <select id="kaitiStyle"
-                                style="padding: 4px; border-radius: 4px; border: 1px solid var(--border);">
-                                <option value="">(不套用自訂樣式)</option>
-                            </select>
-                        </div>
+                    <div class="style-mapping-separator"></div>
+                    <div class="mapping-item">
+                        <label for="imageCaptionStyle">圖片標籤</label>
+                        <select id="imageCaptionStyle">
+                            <option value="">(不套用自訂樣式)</option>
+                        </select>
+                    </div>
+                    <div class="mapping-item">
+                        <label for="kaitiStyle">楷體 / 引言</label>
+                        <select id="kaitiStyle">
+                            <option value="">(不套用自訂樣式)</option>
+                        </select>
                     </div>
                 </div>
             </div>
         </div>
 
         <form id="uploadForm">
-            <!-- 引擎選擇 -->
-            <div class="card-section">
-                <label
-                    style="display:block; margin-bottom: 6px; font-weight:bold; font-size: 0.95rem; color: var(--text-main);">
-                    PDF 處理引擎選擇</label>
-                <select name="engine" id="engineSelect"
-                    style="padding: 8px 12px; width: 100%; border: 1px solid var(--border); border-radius: 6px; font-size: 0.92rem; background: var(--bg-card); color: var(--text-main);">
-                    <option value="auto">自動偵測 (推薦) - 向量 PDF 啟用 PyMuPDF 高速解析；掃描 PDF 啟用 Surya OCR 深度辨識</option>
-                    <option value="pymupdf">高速提取 (PyMuPDF) - 適用原生向量 PDF，秒級解析且記憶體輕量</option>
-                    <option value="suryaocr">深度識別 (Surya OCR) - 適用掃描書、圖片轉曲 PDF，支援中文 OCR 與複雜版面</option>
-                </select>
-            </div>
+            <!-- 執行選項群組 (響應式雙欄/單欄) -->
+            <div class="options-grid">
+                <!-- 引擎選擇 -->
+                <div class="card-section">
+                    <label for="engineSelect"
+                        style="display:block; margin-bottom: 6px; font-weight:bold; font-size: 0.95rem; color: var(--text-main);">
+                        PDF 處理引擎選擇</label>
+                    <select name="engine" id="engineSelect"
+                        style="padding: 8px 12px; width: 100%; border: 1px solid var(--border); border-radius: 6px; font-size: 0.92rem; background: var(--bg-card); color: var(--text-main);">
+                        <option value="auto">自動偵測 (推薦) - 向量 PDF 啟用 PyMuPDF 高速解析；掃描 PDF 啟用 Surya OCR 深度辨識</option>
+                        <option value="pymupdf">高速提取 (PyMuPDF) - 適用原生向量 PDF，秒級解析且記憶體輕量</option>
+                        <option value="suryaocr">深度識別 (Surya OCR) - 適用掃描書、圖片轉曲 PDF，支援中文 OCR 與複雜版面</option>
+                    </select>
+                </div>
 
-            <!-- 無腳注模式 -->
-            <div class="card-section" style="margin-top: 1rem;">
-                <label style="display:flex; align-items:center; cursor:pointer;">
-                    <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true"
-                        style="width:18px; height:18px; margin-right:8px; cursor:pointer;">
-                    <span style="font-weight:bold; font-size: 0.95rem; color: var(--text-main);">無腳注模式
-                        (純粹內文，無任何腳注標記)</span>
-                </label>
-                <p style="color: var(--text-muted); font-size: 0.85rem; margin: 4px 0 0 26px;">
-                    開啟後，將載入專屬的無腳注腳本處理，避免內文圓圈數字被誤判為腳注。</p>
+                <!-- 無腳注模式 -->
+                <div class="card-section">
+                    <label style="display:flex; align-items:center; cursor:pointer;">
+                        <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true"
+                            style="width:18px; height:18px; margin-right:8px; cursor:pointer;">
+                        <span style="font-weight:bold; font-size: 0.95rem; color: var(--text-main);">無腳注模式
+                            (純粹內文，無任何腳注標記)</span>
+                    </label>
+                    <p style="color: var(--text-muted); font-size: 0.85rem; margin: 4px 0 0 26px;">
+                        開啟後，將載入專屬的無腳注腳本處理，避免內文圓圈數字被誤判為腳注。</p>
+                </div>
             </div>
 
             <!-- PDF 上傳區 -->
@@ -660,10 +721,10 @@
             </div>
 
             <div id="fileInfo" style="text-align: center; margin-bottom: 1rem; font-weight: bold;"></div>
-            <div style="display: flex; gap: 10px; margin-top: 0;">
+            <div style="display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap;">
                 <button type="button" class="btn-analyze" id="analyzeFontsBtn" disabled
                     title="先上傳 PDF，再點此分析字體並手動指定各字體的樣式角色（H1/H2/H3/圖說/楷體等）"
-                    style="display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
+                    style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 12px 20px; font-size: 0.95rem;">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
                         stroke-linecap="round" stroke-linejoin="round">
                         <polyline points="4 7 4 4 20 4 20 7" />
@@ -672,7 +733,7 @@
                     </svg>
                     分析字體
                 </button>
-                <button type="submit" class="btn" id="submitBtn" disabled style="flex: 1;">開始執行 OCR / 轉檔</button>
+                <button type="submit" class="btn" id="submitBtn" disabled style="flex: 1; min-width: 220px;">開始執行 OCR / 轉檔</button>
             </div>
         </form>
 
@@ -1453,7 +1514,7 @@
         });
 
     </script>
-    <script src="/static/sidebar.js"></script>
+    <script src="/static/sidebar.js?v=20261016_v5"></script>
 </body>
 
 </html>

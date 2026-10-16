@@ -27,6 +27,15 @@ class MarkdownUpdate(BaseModel):
 
 app = FastAPI(title="PDF AI 公式萃取站")
 
+@app.middleware("http")
+async def add_no_cache_header(request: Request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+    return response
+
 def cleanup_old_files():
     """自動清理 03_output 超過 24 小時之快取與產出檔案"""
     output_dir = PATHS.root / 'data' / '03_output'

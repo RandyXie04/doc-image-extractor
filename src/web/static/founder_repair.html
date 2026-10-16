@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>方正排版標點修復</title>
+    <link rel="stylesheet" href="/static/sidebar.css?v=20261016_v5">
     <style>
         :root {
             --primary: #16a34a;
@@ -16,25 +17,25 @@
         }
         
         :root[data-theme="dark"] {
+            color-scheme: dark;
             --primary: #22c55e;
             --primary-hover: #16a34a;
-            --bg: transparent;
-            --card: rgba(255, 255, 255, 0.03);
-            --border: rgba(255, 255, 255, 0.08);
+            --card: #1e293b;
+            --border: rgba(255, 255, 255, 0.12);
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
         }
         .upload-area { background-color: rgba(0, 0, 0, 0.02); }
         :root[data-theme="dark"] .upload-area { background-color: rgba(255, 255, 255, 0.02); }
-        body { font-family: 'Inter', system-ui, sans-serif; display: flex; justify-content: center; padding: 3rem; color: var(--text-main); }
+        body { font-family: 'Inter', system-ui, sans-serif; color: var(--text-main); }
         .container { 
             background: var(--card); 
             backdrop-filter: blur(20px); 
             -webkit-backdrop-filter: blur(20px);
-            padding: 3rem; 
+            padding: clamp(1.5rem, 3vw, 3rem); 
             border-radius: 20px; 
             box-shadow: 0 10px 30px rgba(0,0,0,0.06); 
-            max-width: 600px; width: 100%; 
+            width: 100%; 
             border: 1px solid var(--border);
             animation: fadeIn 0.4s ease-out forwards;
         }
@@ -64,7 +65,8 @@
         .upload-area input[type="file"] { display: none; }
         .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 600; cursor: pointer; width: 100%; font-size: 1rem; box-shadow: 0 2px 6px rgba(22, 163, 74, 0.2); transition: all 0.2s; letter-spacing: 0.02em; }
         .btn:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3); }
-        .btn:disabled { background: #cbd5e1; cursor: not-allowed; box-shadow: none; transform: none; }
+        .btn:disabled { background: #e2e8f0; color: #475569; cursor: not-allowed; box-shadow: none; transform: none; }
+        :root[data-theme="dark"] .btn:disabled { background: rgba(255, 255, 255, 0.08); color: #94a3b8; }
         #status { margin-top: 1.5rem; text-align: center; font-weight: 500; color: var(--text-muted); }
         #downloadBtn { display: none; margin-top: 1rem; text-align: center; text-decoration: none; background: #0284c7; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.2); }
         #downloadBtn:hover { background: #0369a1; }
@@ -265,6 +267,6 @@
             }
         }
     </script>
-<script src="/static/sidebar.js"></script>
+<script src="/static/sidebar.js?v=20261016_v5"></script>
 </body>
 </html>

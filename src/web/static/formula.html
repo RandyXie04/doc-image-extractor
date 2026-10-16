@@ -4,35 +4,29 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PDF AI 公式萃取站</title>
+    <link rel="stylesheet" href="/static/sidebar.css?v=20261016_v5">
     <style>
         :root {
+            color-scheme: light;
             --primary-color: #2563eb;
             --primary-hover: #1d4ed8;
-            --bg-color: transparent;
+            --bg-color: #f8fafc;
             --card-bg: #ffffff;
             --text-main: #0f172a;
-            --text-muted: #64748b;
+            --text-muted: #475569;
             --border-color: #e2e8f0;
         }
         
         :root[data-theme="dark"] {
+            color-scheme: dark;
             --primary-color: #3b82f6;
             --primary-hover: #2563eb;
-            --bg-color: transparent;
-            --card-bg: rgba(255, 255, 255, 0.03);
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
-            --border-color: rgba(255, 255, 255, 0.08);
+            --border-color: rgba(255, 255, 255, 0.12);
         }
-        .upload-area { background-color: rgba(0, 0, 0, 0.02); }
-        .option-card { background: rgba(0, 0, 0, 0.02); }
-        .input-group input[type="number"] { background: rgba(0, 0, 0, 0.02); }
-        #previewContainer { background: rgba(0, 0, 0, 0.02); }
-
-        :root[data-theme="dark"] .upload-area { background-color: rgba(255, 255, 255, 0.02); }
-        :root[data-theme="dark"] .option-card { background: rgba(255, 255, 255, 0.02); }
-        :root[data-theme="dark"] .input-group input[type="number"] { background: rgba(255, 255, 255, 0.02); }
-        :root[data-theme="dark"] #previewContainer { background: rgba(255, 255, 255, 0.02); }
 
         * {
             box-sizing: border-box;
@@ -44,24 +38,25 @@
             /* Handled globally by sidebar.css */
             font-family: 'Inter', system-ui, sans-serif;
             color: var(--text-main);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            padding: 3rem;
         }
 
         .container {
             background: var(--card-bg);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
-            padding: 3rem;
+            padding: clamp(1.5rem, 3vw, 3rem);
             border-radius: 20px;
             box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
             border: 1px solid var(--border-color);
             width: 100%;
-            max-width: 680px;
             animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        :root[data-theme="dark"] .container {
+            background: #1e293b !important;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+            border: 1px solid rgba(255, 255, 255, 0.12) !important;
+            color: #f8fafc !important;
         }
         
         @keyframes fadeIn {
@@ -84,6 +79,10 @@
             font-size: 1.05rem;
         }
 
+        :root[data-theme="dark"] p.subtitle {
+            color: #94a3b8;
+        }
+
         .upload-area {
             border: 2px dashed var(--border-color);
             border-radius: 16px;
@@ -92,15 +91,25 @@
             cursor: pointer;
             transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
             margin-bottom: 2rem;
-            background-color: rgba(255, 255, 255, 0.02);
+            background-color: rgba(0, 0, 0, 0.02);
             position: relative;
             overflow: hidden;
         }
 
         .upload-area:hover, .upload-area.dragover {
             border-color: var(--primary-color);
-            background-color: rgba(255, 255, 255, 0.05);
+            background-color: rgba(37, 99, 235, 0.04);
             transform: scale(1.01);
+        }
+
+        :root[data-theme="dark"] .upload-area {
+            background-color: rgba(15, 23, 42, 0.6) !important;
+            border-color: rgba(255, 255, 255, 0.18) !important;
+        }
+
+        :root[data-theme="dark"] .upload-area:hover, :root[data-theme="dark"] .upload-area.dragover {
+            border-color: #3b82f6 !important;
+            background-color: rgba(59, 130, 246, 0.12) !important;
         }
 
         .upload-area input[type="file"] {
@@ -113,6 +122,10 @@
             color: var(--primary-color);
             margin-bottom: 1.2rem;
             transition: transform 0.3s;
+        }
+
+        :root[data-theme="dark"] .upload-area svg {
+            color: #60a5fa;
         }
         
         .upload-area:hover svg {
@@ -128,7 +141,7 @@
 
         .option-card {
             border: 1px solid var(--border-color);
-            background: rgba(255, 255, 255, 0.02);
+            background: rgba(0, 0, 0, 0.02);
             padding: 1.2rem;
             border-radius: 12px;
             display: flex;
@@ -137,11 +150,22 @@
             transition: all 0.2s;
             box-shadow: 0 2px 4px rgba(0,0,0,0.02);
             cursor: pointer;
+            color: var(--text-main);
         }
         
         .option-card:hover {
             border-color: var(--primary-color);
             box-shadow: 0 4px 12px rgba(99, 102, 241, 0.1);
+        }
+
+        :root[data-theme="dark"] .option-card {
+            background: rgba(15, 23, 42, 0.5) !important;
+            border-color: rgba(255, 255, 255, 0.12) !important;
+            color: #f8fafc !important;
+        }
+
+        :root[data-theme="dark"] .option-card:hover {
+            border-color: #3b82f6 !important;
         }
         
         .option-card input[type="checkbox"] {
@@ -171,6 +195,10 @@
             color: var(--text-main);
         }
 
+        :root[data-theme="dark"] .input-group label {
+            color: #f8fafc !important;
+        }
+
         .input-group input[type="number"] {
             width: 100%;
             padding: 0.8rem 1rem;
@@ -179,13 +207,23 @@
             outline: none;
             transition: all 0.2s;
             font-size: 1rem;
-            background: rgba(255, 255, 255, 0.02);
+            background: #ffffff;
             color: var(--text-main);
         }
 
         .input-group input[type="number"]:focus {
             border-color: var(--primary-color);
             box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+        }
+
+        :root[data-theme="dark"] .input-group input[type="number"] {
+            background: #0f172a !important;
+            color: #f8fafc !important;
+            border-color: rgba(255, 255, 255, 0.18) !important;
+        }
+
+        :root[data-theme="dark"] input::placeholder {
+            color: #64748b !important;
         }
 
         button.submit-btn {
@@ -209,10 +247,16 @@
         }
 
         button.submit-btn:disabled {
-            background: #cbd5e1;
+            background: #e2e8f0;
+            color: #475569;
             box-shadow: none;
             cursor: not-allowed;
             transform: none;
+        }
+
+        :root[data-theme="dark"] button.submit-btn:disabled {
+            background: #334155 !important;
+            color: #94a3b8 !important;
         }
 
         .progress-container {
@@ -276,26 +320,80 @@
             align-items: center;
             margin-bottom: 1.5rem;
         }
+        .header-bar span {
+            color: var(--text-muted);
+        }
+        :root[data-theme="dark"] .header-bar span {
+            color: #94a3b8 !important;
+        }
         .header-bar a {
             color: var(--primary-color);
             text-decoration: none;
             font-size: 0.9rem;
             font-weight: 600;
-            background: rgba(99, 102, 241, 0.1);
+            background: rgba(37, 99, 235, 0.08);
             padding: 6px 12px;
             border-radius: 6px;
             transition: all 0.2s;
         }
         .header-bar a:hover {
-            background: rgba(99, 102, 241, 0.2);
+            background: rgba(37, 99, 235, 0.16);
+        }
+        :root[data-theme="dark"] .header-bar a {
+            background: rgba(59, 130, 246, 0.15) !important;
+            color: #60a5fa !important;
+        }
+        .back-link {
+            text-decoration: none;
+            color: var(--primary-color);
+            font-weight: 500;
+            font-size: 0.9rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            transition: color 0.2s;
+        }
+        :root[data-theme="dark"] .back-link {
+            color: #60a5fa !important;
         }
         
         #previewContainer {
-            background: rgba(255, 255, 255, 0.02);
+            background: rgba(0, 0, 0, 0.02);
             padding: 1.5rem;
             border-radius: 16px;
             border: 1px solid var(--border-color);
             box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+        }
+
+        :root[data-theme="dark"] #previewContainer {
+            background: rgba(15, 23, 42, 0.6) !important;
+            border-color: rgba(255, 255, 255, 0.12) !important;
+            color: #f8fafc !important;
+        }
+
+        :root[data-theme="dark"] #previewContainer label {
+            color: #cbd5e1 !important;
+        }
+
+        :root[data-theme="dark"] #previewContainer button.btn {
+            background: #334155 !important;
+            color: #f8fafc !important;
+            border: 1px solid rgba(255, 255, 255, 0.15) !important;
+        }
+
+        footer {
+            margin-top: 2.5rem;
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        :root[data-theme="dark"] footer {
+            color: #94a3b8 !important;
+        }
+
+        :root[data-theme="dark"] footer a {
+            color: #60a5fa !important;
         }
     </style>
 </head>
@@ -303,7 +401,7 @@
 
     <div class="container">
         <div class="header-bar">
-            <span style="font-size: 0.875rem; color: var(--text-muted); display:inline-flex; align-items:center; gap:4px;">
+            <span style="font-size: 0.875rem; font-weight: 500; display:inline-flex; align-items:center; gap:4px;">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
                 v2.1 Web Edition
             </span>
@@ -313,7 +411,7 @@
             </a>
         </div>
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-            <a href="/" class="back-link" style="text-decoration: none; color: var(--primary-color); font-weight: 500; font-size: 0.9rem; display:inline-flex; align-items:center; gap:4px;">
+            <a href="/" class="back-link">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
                 返回首頁
             </a>
@@ -327,7 +425,7 @@
                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                <h3 id="fileNameDisplay" style="margin: 0; font-size: 1.1rem; color: var(--text-muted); font-weight: 500;">點擊或拖曳 PDF 檔案至此</h3>
+                <h3 id="fileNameDisplay" style="margin: 0; font-size: 1.1rem; color: var(--text-main); font-weight: 600;">點擊或拖曳 PDF 檔案至此</h3>
                 <input type="file" id="fileInput" name="file" accept=".pdf" required>
             </div>
             
@@ -344,7 +442,7 @@
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
                     </button>
                 </div>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; text-align: left;">
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; margin-top: 1rem; text-align: left;">
                     <label>頂部裁切 (0~0.5): <span id="headerVal">0.10</span>
                         <input type="range" id="headerSlider" min="0" max="0.5" step="0.01" value="0.10" style="width: 100%;">
                     </label>
@@ -761,6 +859,6 @@ ${lastErrorLog || '未取得詳細錯誤日誌'}
             }
         }
     </script>
-<script src="/static/sidebar.js"></script>
+<script src="/static/sidebar.js?v=20261016_v5"></script>
 </body>
 </html>

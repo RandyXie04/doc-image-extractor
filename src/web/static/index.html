@@ -5,21 +5,24 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>書籍轉檔與文檔數位化工具箱</title>
+    <link rel="stylesheet" href="/static/sidebar.css?v=20261016_v5">
     <style>
         :root {
+            color-scheme: light;
             --primary: #2563eb;
             --primary-hover: #1d4ed8;
             --bg-color: #f8fafc;
-            --surface: #ffffff;
+            --surface: rgba(0, 0, 0, 0.02);
             --text-main: #0f172a;
             --text-muted: #64748b;
             --border: #e2e8f0;
             --card-bg: #ffffff;
             --card-hover-border: #cbd5e1;
-            --card-hover-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            --card-hover-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
         }
 
         :root[data-theme="dark"] {
+            color-scheme: dark;
             --primary: #3b82f6;
             --primary-hover: #2563eb;
             --bg-color: #0f172a;
@@ -27,23 +30,50 @@
             --text-main: #f8fafc;
             --text-muted: #94a3b8;
             --border: rgba(255, 255, 255, 0.08);
-            --card-bg: rgba(255, 255, 255, 0.03);
+            --card-bg: #1e293b;
             --card-hover-border: rgba(255, 255, 255, 0.2);
-            --card-hover-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            --card-hover-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
         }
 
         body {
-            /* Handled globally by sidebar.css */
+            font-family: 'Inter', system-ui, sans-serif;
+            color: var(--text-main);
         }
 
         .container {
-            max-width: 960px;
+            background: var(--card-bg);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            padding: clamp(1.5rem, 3vw, 3rem);
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
             width: 100%;
+            border: 1px solid var(--border);
+            animation: fadeIn 0.4s ease-out forwards;
+            box-sizing: border-box;
+        }
+
+        :root[data-theme="dark"] .container {
+            background: #1e293b;
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #f8fafc;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(8px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
 
         .header {
-            margin-bottom: 3rem;
-            padding-bottom: 2rem;
+            margin-bottom: 2.5rem;
+            padding-bottom: 1.5rem;
             border-bottom: 1px solid var(--border);
         }
 
@@ -65,8 +95,8 @@
         .guide-box {
             background: var(--surface);
             padding: 1.5rem;
-            border-radius: 8px;
-            margin-bottom: 3rem;
+            border-radius: 14px;
+            margin-bottom: 2.5rem;
             border: 1px solid var(--border);
         }
 
@@ -85,7 +115,7 @@
         }
 
         .section-title {
-            margin-bottom: 1.5rem;
+            margin-bottom: 1.2rem;
             font-weight: 600;
             color: var(--text-main);
             font-size: 1.125rem;
@@ -96,13 +126,13 @@
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
             gap: 1.5rem;
-            margin-bottom: 3rem;
+            margin-bottom: 2.5rem;
         }
 
         .card {
-            background: var(--card-bg);
+            background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 8px;
+            border-radius: 14px;
             padding: 1.5rem;
             display: flex;
             flex-direction: column;
@@ -112,7 +142,7 @@
         }
 
         .card:hover {
-            border-color: var(--card-hover-border);
+            border-color: var(--primary);
             box-shadow: var(--card-hover-shadow);
             transform: translateY(-2px);
         }
@@ -210,7 +240,7 @@
             </a>
         </div>
     </div>
-    <script src="/static/sidebar.js"></script>
+    <script src="/static/sidebar.js?v=20261016_v5"></script>
 </body>
 
 </html>

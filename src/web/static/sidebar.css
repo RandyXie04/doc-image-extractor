@@ -26,8 +26,8 @@
     --sidebar-border: rgba(255, 255, 255, 0.08);
     --text-main: #f8fafc;
     --text-muted: #94a3b8;
-    --card-bg: rgba(255, 255, 255, 0.03);
-    --border: rgba(255, 255, 255, 0.08);
+    --card-bg: #1e293b;
+    --border: rgba(255, 255, 255, 0.12);
     --nav-link-color: #94a3b8;
     --nav-link-hover-bg: rgba(255, 255, 255, 0.06);
     --nav-link-hover-color: #f8fafc;
@@ -228,24 +228,52 @@ body {
     color: #ffffff;
 }
 
+html {
+    background-color: var(--bg-color);
+}
+
+:root[data-theme="dark"] html {
+    background-color: #0f172a;
+}
+
 #main-content {
     flex: 1 1 auto !important;
     min-width: 0 !important;
     height: 100vh !important;
     overflow-y: auto !important;
-    padding: 3rem !important;
+    padding: clamp(1.5rem, 3vw, 3rem) !important;
     box-sizing: border-box !important;
     display: flex !important;
     flex-direction: column !important;
     align-items: center !important;
     justify-content: flex-start !important;
-    background: var(--bg-color);
+    background-color: var(--bg-color) !important;
+}
+
+:root[data-theme="dark"] #main-content {
+    background-color: #0f172a !important;
 }
 
 .container {
     margin: 0 auto !important;
     width: 100% !important;
-    max-width: 1024px;
+    box-sizing: border-box !important;
+    background: var(--card-bg, #ffffff) !important;
+    border: 1px solid var(--border, #e2e8f0) !important;
+    border-radius: 20px !important;
+    padding: clamp(1.5rem, 3vw, 3rem) !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06) !important;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+}
+
+:root[data-theme="dark"] .container {
+    background: #1e293b !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    color: #f8fafc !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4) !important;
+    border-radius: 20px !important;
+    padding: clamp(1.5rem, 3vw, 3rem) !important;
 }
 
 button, .btn {
