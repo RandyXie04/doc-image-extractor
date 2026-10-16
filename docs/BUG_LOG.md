@@ -33,3 +33,27 @@ No new design decision is required.
 
 ## Resolution
 - 在 `src/scripts/native_dialog.py` 中，於 `root.lift()` 與 `root.attributes('-topmost', True)` 後加入 `root.update()` 與 `root.attributes('-topmost', False)`，解除永久置頂鎖定。
+
+---
+
+## Bug Description
+1. 圖片提取通道在提取 Word (.docx) 文件時，會將歷史已被使用者刪除的圖片一併提取下載。
+2. 提取圖片若勾選「轉為灰階」，含 Alpha 透明通道的圖片（如透明 PNG）其透明區域會被填充為純黑底色。
+
+## Status
+CLOSED
+
+## Root Cause
+1. Word (.docx) 在使用者刪除圖片後，僅會自 `word/document.xml`（及相關 `.rels`）中解除引用，但 OpenXML 打包引擎並不會主動自 ZIP 內部的 `word/media/` 目錄清除實體圖片檔案。原實作直接遍歷 `word/media/` 下的所有檔案，導致歷史孤立圖片被全數提取。
+2. 原實作在轉灰階時直接呼叫 Pillow 的 `img.convert("L")`，該操作會直接丟棄 Alpha 透明通道。由於多數透明圖片的透明像素 RGB 初始值為 `(0, 0, 0)`，移除 Alpha 通道後直接換算為亮度 0，導致原本透明的背景區域全數變成黑色實心區塊。
+
+## Decision Gate
+No new design decision is required.
+此修復維持原模組責任、對外介面與 API 不變，僅在內部實作層加入活躍引用關係解析及安全的灰階透明度轉換輔助邏輯。
+
+## Resolution
+- 在 `src/scripts/extract_images.py` 中新增 `get_active_docx_media_entries(z)`：透過動態解析 `word/document.xml`、頁首、頁尾、註腳等活躍 XML 部件及其對應 `.rels` 關聯表，僅提取在文件中真正被引用的圖片，過濾已刪除孤立檔案；並保留 XML 解析異常時的回退機制。
+- 新增 `convert_to_grayscale_helper(img, ext)`：
+  - 支援透明度的格式（如 `.png`、`.webp`、`.tif`）：保留 Alpha 通道（轉為 `LA` 模式），並將完全透明像素（`A==0`）的底色亮度清理為純白（255），徹底防止透明區域變黑。
+  - 不支援透明度的格式（如 `.jpg`、`.bmp`）：先行與純白底色進行 Alpha 合成，再轉為 `L` 模式，確保透明背景轉化為乾淨白底而非黑底。
+- 同步更新 `extract_from_docx` 與 `extract_from_pdf` 使用該灰階轉換邏輯。

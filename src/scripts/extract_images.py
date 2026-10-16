@@ -7,10 +7,12 @@
 
 import io
 import os
+import posixpath
 import sys
+import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Set, Tuple
 
 import pymupdf as fitz
 from PIL import Image, ImageOps
@@ -28,10 +30,141 @@ CASE1_OUTPUT_MODE = "WHITE_BG"
 # =================================================
 
 
+def convert_to_grayscale_helper(img: Image.Image, ext: str = ".png") -> Image.Image:
+    """
+    將圖片轉為灰階，若含有透明度 (Alpha 通道)：
+    - 若輸出格式支援透明度 (.png, .webp, .tif, .tiff)，保留 Alpha 通道 (LA 模式)，
+      並清理完全透明像素 (A==0) 的亮度為純白 (255)，避免不支援 Alpha 的檢視器或解碼器顯示為黑底。
+    - 若輸出格式不支援透明度 (.jpg, .jpeg, .bmp)，先將圖片與純白底色合成，
+      再轉為灰階 L 模式，避免透明區域填充為黑色。
+    若無透明度，直接轉為 L 模式。
+    """
+    ext = ext.lower()
+    has_alpha = (
+        img.mode in ("RGBA", "LA", "PA") or
+        (img.mode == "P" and "transparency" in img.info) or
+        ("A" in img.getbands())
+    )
+    supports_alpha = ext in {".png", ".webp", ".tif", ".tiff"}
+
+    if has_alpha:
+        if supports_alpha:
+            if img.mode != "RGBA":
+                rgba = img.convert("RGBA")
+            else:
+                rgba = img
+            r, g, b, a = rgba.split()
+            gray = Image.merge("RGB", (r, g, b)).convert("L")
+            # 完全透明處 (a == 0) 底色設為純白 (255)，避免 Alpha 被忽略時顯示為黑底
+            white = Image.new("L", img.size, 255)
+            mask_transparent = a.point(lambda p: 255 if p == 0 else 0)
+            gray_cleaned = Image.composite(white, gray, mask_transparent)
+            return Image.merge("LA", (gray_cleaned, a))
+        else:
+            # 不支援透明度的格式，先與純白背景合成
+            if img.mode != "RGBA":
+                rgba = img.convert("RGBA")
+            else:
+                rgba = img
+            white_bg = Image.new("RGBA", img.size, (255, 255, 255, 255))
+            composited = Image.alpha_composite(white_bg, rgba)
+            return composited.convert("L")
+    else:
+        return img.convert("L")
+
+
+def get_active_docx_media_entries(z: zipfile.ZipFile) -> List[str]:
+    """
+    從 Word (.docx) ZIP 結構中解析所有被實際引用的圖片檔案路徑。
+    Word 在使用者刪除圖片後，往往不會自 word/media/ 目錄物理刪除檔案；
+    本函式透過解析 document.xml、頁首、頁尾、註腳等活躍 XML 部件及其 .rels 關聯，
+    僅提取正文中真正被引用的圖片，排除已刪除的孤立圖片。
+    回傳按文件出現順序排列的 ZIP 內路徑列表 (例: ['word/media/image1.png', ...])。
+    """
+    namelist = set(z.namelist())
+    active_images: List[str] = []
+    seen: Set[str] = set()
+
+    # 主要正文優先，隨後為頁首、頁尾、註腳、附註、留言等
+    doc_parts: List[str] = []
+    if "word/document.xml" in namelist:
+        doc_parts.append("word/document.xml")
+
+    other_parts: List[str] = []
+    for name in sorted(namelist):
+        if name == "word/document.xml":
+            continue
+        if name.startswith("word/") and name.endswith(".xml") and "/_rels/" not in name:
+            basename = posixpath.basename(name)
+            # 排除非內容/版面結構的 XML 部件
+            if not basename.startswith(("styles", "settings", "webSettings", "fontTable", "theme", "numbering")):
+                other_parts.append(name)
+
+    all_parts = doc_parts + other_parts
+    parsed_any_xml = False
+
+    for part_name in all_parts:
+        rels_name = posixpath.join(
+            posixpath.dirname(part_name),
+            "_rels",
+            posixpath.basename(part_name) + ".rels"
+        )
+        if rels_name not in namelist:
+            continue
+
+        try:
+            rels_root = ET.fromstring(z.read(rels_name))
+        except Exception:
+            continue
+
+        rel_map = {}
+        for rel in rels_root.findall("{http://schemas.openxmlformats.org/package/2006/relationships}Relationship"):
+            r_id = rel.get("Id")
+            target = rel.get("Target")
+            if not r_id or not target:
+                continue
+
+            if target.startswith("/"):
+                resolved = target.lstrip("/")
+            else:
+                resolved = posixpath.normpath(posixpath.join(posixpath.dirname(part_name), target))
+
+            ext = posixpath.splitext(resolved)[1].lower()
+            if ext in IMAGE_EXTENSIONS and resolved in namelist:
+                rel_map[r_id] = resolved
+
+        if not rel_map:
+            continue
+
+        try:
+            part_root = ET.fromstring(z.read(part_name))
+            parsed_any_xml = True
+        except Exception:
+            continue
+
+        for elem in part_root.iter():
+            for attr_val in elem.attrib.values():
+                if attr_val in rel_map:
+                    img_path = rel_map[attr_val]
+                    if img_path not in seen:
+                        seen.add(img_path)
+                        active_images.append(img_path)
+
+    # 降級保護：若未成功解析任何 XML 或非標準結構，但 word/media/ 存在，才作為最後備用回退
+    if not parsed_any_xml and not active_images:
+        media_entries = [
+            name for name in z.namelist()
+            if name.lower().startswith("word/media/") and not name.endswith("/")
+        ]
+        return sorted(media_entries)
+
+    return active_images
+
+
 def extract_from_docx(docx_path: str, output_dir: str, to_grayscale: bool = False) -> int:
     """
     從 Word (.docx) 文件中無損提取所有內嵌圖片。
-    .docx 本質為 OpenXML ZIP 封裝，圖片存儲於 word/media/ 目錄。
+    .docx 本質為 OpenXML ZIP 封裝，透過解析正文與關聯表過濾已被刪除的孤立圖片。
     """
     if not zipfile.is_zipfile(docx_path):
         raise ValueError(f"檔案不是有效的 DOCX 或 ZIP 格式: {docx_path}")
@@ -40,12 +173,9 @@ def extract_from_docx(docx_path: str, output_dir: str, to_grayscale: bool = Fals
     count = 0
 
     with zipfile.ZipFile(docx_path, "r") as z:
-        media_entries = [
-            name for name in z.namelist()
-            if name.lower().startswith("word/media/") and not name.endswith("/")
-        ]
+        media_entries = get_active_docx_media_entries(z)
 
-        for entry in sorted(media_entries):
+        for entry in media_entries:
             filename = os.path.basename(entry)
             ext = os.path.splitext(filename)[1].lower()
 
@@ -67,7 +197,7 @@ def extract_from_docx(docx_path: str, output_dir: str, to_grayscale: bool = Fals
             if to_grayscale and ext in {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}:
                 try:
                     img = Image.open(io.BytesIO(raw_data))
-                    img = img.convert("L")
+                    img = convert_to_grayscale_helper(img, ext)
                     save_format = "PNG" if ext == ".png" else ("JPEG" if ext in {".jpg", ".jpeg"} else None)
                     if save_format:
                         img.save(save_path, format=save_format)
@@ -159,8 +289,8 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False,
                             # 反轉負片：0 變純白底，255 變純黑線
                             final_img = ImageOps.invert(mask_img)
 
-                        if to_grayscale and final_img.mode != "L":
-                            final_img = final_img.convert("L")
+                        if to_grayscale:
+                            final_img = convert_to_grayscale_helper(final_img, ".tif")
 
                         final_img.save(img_filepath, format="TIFF", compression="tiff_lzw")
                         count += 1
@@ -183,7 +313,7 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False,
                             
                             if to_grayscale:
                                 img = Image.frombytes("RGBA", [pix_combined.width, pix_combined.height], pix_combined.samples)
-                                img = img.convert("LA")
+                                img = convert_to_grayscale_helper(img, ".png")
                                 img.save(img_filepath, format="PNG")
                             else:
                                 pix_combined.save(img_filepath)
@@ -206,7 +336,7 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False,
                         if to_grayscale:
                             mode = "RGBA" if pix.alpha else "RGB"
                             img = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
-                            img = img.convert("L")
+                            img = convert_to_grayscale_helper(img, ".png")
                             img.save(img_filepath, format="PNG")
                         else:
                             pix.save(img_filepath)
