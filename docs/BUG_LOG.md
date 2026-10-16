@@ -57,3 +57,32 @@ No new design decision is required.
   - 支援透明度的格式（如 `.png`、`.webp`、`.tif`）：保留 Alpha 通道（轉為 `LA` 模式），並將完全透明像素（`A==0`）的底色亮度清理為純白（255），徹底防止透明區域變黑。
   - 不支援透明度的格式（如 `.jpg`、`.bmp`）：先行與純白底色進行 Alpha 合成，再轉為 `L` 模式，確保透明背景轉化為乾淨白底而非黑底。
 - 同步更新 `extract_from_docx` 與 `extract_from_pdf` 使用該灰階轉換邏輯。
+
+---
+
+## Bug Description
+書籍全自動整稿管線中，在 PDF → MD 階段未識別章節標題，所有段落均退化為普通段落，導致轉為 Word 時全部套用同一種正文字型與樣式，階層完全喪失。
+
+## Status
+CLOSED
+
+## Root Cause
+1. UI 字體審閱 Modal 將未設定字體預設為「忽略」，使用者點擊套用時將全書字體以 `{"role": "忽略"}` 全域寫入 `config/fonts.json`；後端 `book_layout_extractor.py` 將其判定為 `_is_ignored_font` 並阻斷所有 Fallback 啟發式與正則標題規則，導致標題辨識數直接歸零。
+2. `HeadingDetector.detect_block_level` 僅讀取 `block.get("lines", [])`，而 Surya OCR 模組輸出的 block 物件使用 `surya_text`，導致掃描版 OCR 書籍之標題辨識率 100% 為 0。
+3. 章節正則缺少「節/講/回/阿拉伯數字編號」覆蓋，且未過濾含特殊前導點之目錄行（TOC leader dots）。
+
+## Decision Gate
+ADR-003：
+1. 前端 Modal 預設選項改為「自動（依規則辨識）」，儲存時不將未變更項目以「忽略」寫入全域 `fonts.json`。
+2. 後端支援 `remove_keys` 允許重置字體對應。
+3. `HeadingDetector` 支援 Surya OCR 的 `surya_text` 與頂層 `bbox`。
+4. 擴充章節正則並強化目錄前導點識別，雙通道（標準版與 `*_no_footnote.py`）同步實作。
+
+## Resolution
+- `src/founder_tools/core/heading_detector.py`：新增 `block.get("surya_text")` 回退與擴展章節正則。
+- `src/scripts/book_layout_extractor.py` & `src/scripts/book_layout_extractor_no_footnote.py`：擴充章節正則支援 `[节節回讲講]`、`Chapter` 與阿拉伯數字；增強 `is_toc_line` 過濾。
+- `src/scripts/pdf_font_analyzer.py` & `src/web/app.py`：`analyze_pdf_for_ui` 預設角色改為 `auto`，`save_fonts_json` 與 API 支援 `remove_keys`。
+- `src/web/static/ocr_pipeline.html`：預設選單改為「自動（依版面與章節規則辨識）」，避免無意識全域寫入「忽略」。
+- 清理 `config/fonts.json` 殘留的 25 筆全域「忽略」標記。
+- 新增 `tests/test_heading_detector.py` 並維護 `tests/test_font_analyzer_ignore.py` 全數綠燈通過。
+

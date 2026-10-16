@@ -103,14 +103,14 @@
     "docx_style": "heading 1",
     "mapped_by": "user"
   },
-  "FZHTK--GBK1-0 (10.5pt)": {
-    "role": null,
-    "docx_style": "表說",
-    "mapped_by": "user"
-  },
   "FZSKBXKK--GBK1-0 (10.5pt)": {
     "role": null,
     "docx_style": "知識連結（參考pdf）",
+    "mapped_by": "user"
+  },
+  "FZHTK--GBK1-0 (14.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 2",
     "mapped_by": "user"
   }
 }

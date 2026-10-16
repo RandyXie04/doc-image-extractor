@@ -438,10 +438,12 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
             
             # Heading Detection
             heading_level = 0
-            is_toc_line = bool(re.search(r'[…\.]{2,}\s*\d+$', bb_text))
+            is_toc_line = bool(re.search(r'[\.…·\u0107\x08\-_]{2,}\s*\d+$', bb_text))
             
             clean_for_heading = re.sub(r'[①-⑩\u2460-\u2473\s]', '', bb_text)
-            has_sentence_punct = bool(re.search(r'[。，；？！“”‘’：:、]', clean_for_heading))
+            # 排除前端編號（如「一、」、「1、」、「（一）」）後的純文字內容，避免「、」誤判為句中標點
+            clean_content = re.sub(r'^(?:第[一二三四五六七八九十百零\d]+[章节條条回讲講篇卷]|(?:Chapter|Part)\s*\d+|[一二三四五六七八九十百\d]+[、. ]|[（(][一二三四五六七八九十\d]+[)）]|\d+\.\d+(?:\.\d+)?)\s*', '', clean_for_heading, flags=re.I)
+            has_sentence_punct = bool(re.search(r'[。，；？！“”‘’：:]', clean_content))
             
             # ── Priority 0: 人工字體角色對應（優先權最高，直接覆蓋規則型判定）──
             # 取此 block 第一個命中 font_role_map 的字體角色
@@ -497,15 +499,20 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 if re.match(r'^(?:[上下中]\s*篇(?:\s+[^\n]+)?)$', bb_text) or \
                    re.match(r'^(?:目\s*录|目录|序|后\s*记|后记|结\s*语|结语|主要参考文献)$', bb_text):
                     heading_level = 1
-                elif re.match(r'^第[一二三四五六七八九十百]+章(?:\s+[^\n]+)?$', bb_text):
+                elif re.match(r'^(?:第[一二三四五六七八九十百零\d]+[章卷篇]|(?:Chapter|Part)\s*\d+)(?:\s+[^\n]+)?$', bb_text, re.IGNORECASE):
                     heading_level = 2
-                # Rule 2: Section titles (H2) - Must be short and without sentence punctuation
+                elif re.match(r'^第[一二三四五六七八九十百零\d]+[节節回讲講](?:\s+[^\n]+)?$', bb_text):
+                    heading_level = 2
+                # Rule 2: Chinese numbered sections (e.g. 一、天人合一与预防医学)
+                elif re.match(r'^[一二三四五六七八九十百\d]+[、. ][^\n]{2,30}$', bb_text) and not has_sentence_punct:
+                    heading_level = 3
+                # Rule 3: Sub-sections by bracket or decimal (e.g. （一）案例, 1.1 背景)
+                elif (re.match(r'^[（(][一二三四五六七八九十\d]+[)）]', bb_text) or re.match(r'^\d+\.\d+', bb_text)) and 2 <= len(clean_for_heading) <= 30 and not has_sentence_punct:
+                    heading_level = 3
+                # Rule 4: Section titles (H2) - Must be short and without sentence punctuation
                 elif (is_centered or avg_size >= 10.8) and 2 <= len(clean_for_heading) <= 20 and not has_sentence_punct:
                     if not re.search(r'示意图|表$', bb_text) and not re.search(r'^[①-⑩]', bb_text):
                         heading_level = 2
-                # Rule 3: Sub-sections (H3)
-                elif (re.match(r'^[（(][一二三四五六七八九十\d]+[)）]', bb_text) or re.match(r'^\d+\.\d+', bb_text)) and not has_sentence_punct:
-                    heading_level = 3
                 
             if heading_level > 0:
                 flush_current_para()

@@ -74,7 +74,16 @@ class HeadingDetector:
 
         text = "".join(text_parts).strip()
         if not text:
-            return 0
+            # Fallback for OCR blocks (e.g. Surya OCR) that contain 'surya_text' instead of 'lines'
+            if "surya_text" in block and block["surya_text"]:
+                text = block["surya_text"].strip()
+                if "bbox" in block and not bboxes:
+                    bboxes.append(block["bbox"])
+                total_lines = 1
+                if block.get("original_label") in ("title", "section-header", "heading"):
+                    is_bold = True
+            else:
+                return 0
 
         # ── 2. 長度門檻（收緊至 25 字） ──
         if len(text) > 25:
@@ -95,14 +104,15 @@ class HeadingDetector:
 
         # ── 5. 正則規則偵測（最高優先級） ──
         level_by_regex = 0
-        if (re.match(r'^第[一二三四五六七八九十百零]+[章卷編篇]', text) or
-                re.match(r'^(Chapter|Part)\s*\d+', text) or
+        if (re.match(r'^第[一二三四五六七八九十百零\d]+[章卷編篇]', text) or
+                re.match(r'^(?:Chapter|Part)\s*\d+', text, re.IGNORECASE) or
                 re.match(r'^(?:附錄|附录|參考文獻|参考文献|前言|序言|楔子|跋|後記|后记|目錄|目录|序|结语|主要参考文献)$', text)):
             level_by_regex = 1
-        elif (re.match(r'^第[一二三四五六七八九十百零]+[節条條]', text) or
+        elif (re.match(r'^第[一二三四五六七八九十百零\d]+[節条條节讲講回]', text) or
               re.match(r'^\d+\.\d+(?!\.)', text)):
             level_by_regex = 2
-        elif (re.match(r'^\d+\.\d+\.\d+', text) or
+        elif (re.match(r'^[一二三四五六七八九十百\d]+[、. ]', text) or
+              re.match(r'^\d+\.\d+\.\d+', text) or
               re.match(r'^[(（][一二三四五六七八九十\d]+[)）]', text) or
               re.match(r'^[①-⑩]', text)):
             level_by_regex = 3

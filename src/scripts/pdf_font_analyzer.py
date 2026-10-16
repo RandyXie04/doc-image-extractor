@@ -150,9 +150,12 @@ def load_fonts_json(fonts_json_path: str) -> dict:
     return normalized
 
 
-def save_fonts_json(fonts_json_path: str, mapping: dict) -> None:
-    """將字體角色對應表寫入 fonts.json（保留現有未更動的 key）。"""
+def save_fonts_json(fonts_json_path: str, mapping: dict, remove_keys: Optional[list] = None) -> None:
+    """將字體角色對應表寫入 fonts.json（保留現有未更動的 key，可選移除 remove_keys）。"""
     existing = load_fonts_json(fonts_json_path)
+    if remove_keys:
+        for k in remove_keys:
+            existing.pop(k, None)
     existing.update(mapping)
     with open(fonts_json_path, "w", encoding="utf-8") as f:
         json.dump(existing, f, ensure_ascii=False, indent=2)
@@ -181,17 +184,17 @@ def analyze_pdf_for_ui(pdf_path: str, template_path: Optional[str], fonts_json_p
     docx_styles = read_docx_styles(template_path) if template_path else []
     existing_mapping = load_fonts_json(fonts_json_path)
 
-    # 合併現有對應（讓已設定過的字體在 UI 中預選，未設定者預設為「忽略」）
+    # 合併現有對應（讓已設定過的字體在 UI 中預選，未設定者預設為「auto」）
     for font in fonts:
         name = font["name"]
         if name in existing_mapping:
             existing = existing_mapping[name]
             role = existing.get("role") if isinstance(existing, dict) else None
             docx_style = existing.get("docx_style") if isinstance(existing, dict) else None
-            font["current_role"] = role if (role or docx_style) else "忽略"
+            font["current_role"] = role if (role or docx_style) else "auto"
             font["current_docx_style"] = docx_style
         else:
-            font["current_role"] = "忽略"
+            font["current_role"] = "auto"
             font["current_docx_style"] = None
 
     # 固定預設角色清單（作為 fallback，若 docx 無樣式時使用）

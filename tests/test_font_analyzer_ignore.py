@@ -43,7 +43,7 @@ class TestFontAnalyzerIgnore(unittest.TestCase):
         self.assertIn("CustomFontC (10.5pt)", res)
         self.assertNotIn("LegacyFont", res)
 
-    def test_analyze_pdf_defaults_to_ignore(self):
+    def test_analyze_pdf_defaults_to_auto(self):
         pdf_path = os.path.join(self.temp_dir, "sample.pdf")
         doc = fitz.open()
         page = doc.new_page()
@@ -57,7 +57,7 @@ class TestFontAnalyzerIgnore(unittest.TestCase):
         data = analyze_pdf_for_ui(pdf_path, template_path=None, fonts_json_path=self.fonts_json)
         self.assertTrue(len(data["fonts"]) > 0)
         for font_info in data["fonts"]:
-            self.assertEqual(font_info["current_role"], "忽略")
+            self.assertEqual(font_info["current_role"], "auto")
             self.assertIsNone(font_info["current_docx_style"])
 
     def test_ignored_font_prevents_heading_and_kaiti_in_extractors(self):

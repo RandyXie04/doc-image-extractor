@@ -1393,20 +1393,23 @@
 
         function buildStyleOptions(styleList, roles, currentRole, currentDocxStyle) {
             const allOptions = [];
-            // First option: 忽略 (不套用任何樣式)
-            const isIgnored = (!currentRole && !currentDocxStyle) || currentRole === '忽略' || currentRole === 'ignore';
-            const defaultSel = isIgnored ? ' selected' : '';
-            allOptions.push(`<option value="role::忽略"${defaultSel}>忽略（不套用任何樣式）</option>`);
+            // First option: 自動 / 依規則辨識 (預設)
+            const isAuto = (!currentRole && !currentDocxStyle) || currentRole === 'auto' || currentRole === '自動';
+            const defaultSel = isAuto ? ' selected' : '';
+            allOptions.push(`<option value="auto"${defaultSel}>自動（依版面與章節規則辨識）</option>`);
 
-            // Filter out '忽略' from roles so it isn't duplicated under 版面角色
-            const filteredRoles = (roles || []).filter(r => r !== '忽略' && r !== 'ignore');
+            // Filter out 'auto' and '自動' from roles
+            const filteredRoles = (roles || []).filter(r => r !== 'auto' && r !== '自動');
 
-            // Role group (fixed roles like H1/H2/H3)
+            // Role group (fixed roles like H1/H2/H3/正文/圖說/楷體/忽略)
             if (filteredRoles.length) {
                 allOptions.push('<optgroup label="版面角色">');
                 for (const r of filteredRoles) {
-                    const sel = (!isIgnored && currentRole === r) ? ' selected' : '';
-                    allOptions.push(`<option value="role::${r}"${sel}>${r}</option>`);
+                    const sel = (!isAuto && currentRole === r) ? ' selected' : '';
+                    let label = r;
+                    if (r === '忽略') label = '忽略（強制排除，不作為標題/楷體）';
+                    else if (r === '正文') label = '正文（強制為內文段落）';
+                    allOptions.push(`<option value="role::${r}"${sel}>${label}</option>`);
                 }
                 allOptions.push('</optgroup>');
             }
@@ -1415,7 +1418,7 @@
             if (styleList.length) {
                 allOptions.push('<optgroup label="Word 樣式">');
                 for (const s of styleList) {
-                    const sel = (!isIgnored && currentDocxStyle === s) ? ' selected' : '';
+                    const sel = (!isAuto && currentDocxStyle === s) ? ' selected' : '';
                     allOptions.push(`<option value="style::${s}"${sel}>${s}</option>`);
                 }
                 allOptions.push('</optgroup>');
@@ -1461,11 +1464,15 @@
         fontModalConfirmBtn.addEventListener('click', async () => {
             const selects = fontTableBody.querySelectorAll('.font-role-select');
             const mapping = {};
+            const removeKeys = [];
 
             selects.forEach(sel => {
                 const fontName = sel.dataset.fontName;
-                const val = sel.value;  // e.g. "role::H2", "role::忽略", or "style::標題 2"
-                if (!val) return;
+                const val = sel.value;  // e.g. "role::H2", "auto", or "style::標題 2"
+                if (!val || val === 'auto') {
+                    removeKeys.push(fontName);
+                    return;
+                }
                 if (val.startsWith('role::')) {
                     mapping[fontName] = { role: val.slice(6), docx_style: null };
                 } else if (val.startsWith('style::')) {
@@ -1495,7 +1502,7 @@
                 const resp = await fetch('/api/save_font_mapping', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ mapping })
+                    body: JSON.stringify({ mapping, remove_keys: removeKeys })
                 });
                 const result = await resp.json();
                 if (resp.ok) {

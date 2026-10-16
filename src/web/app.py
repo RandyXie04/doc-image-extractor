@@ -723,15 +723,16 @@ async def api_scan_fonts(request: Request):
 async def api_save_font_mapping(request: Request):
     """
     儲存人工審閱後的字體 → 樣式對應表至 fonts.json。
-    Body JSON: { "mapping": { "FontName": {"role": "H2", "docx_style": "標題 2"}, ... } }
+    Body JSON: { "mapping": { "FontName": {"role": "H2", "docx_style": "標題 2"}, ... }, "remove_keys": ["FontName", ...] }
     """
     from src.scripts.pdf_font_analyzer import save_fonts_json
 
     data = await request.json()
     mapping_raw: dict = data.get("mapping", {})
+    remove_keys: list = data.get("remove_keys", [])
 
-    if not mapping_raw:
-        raise HTTPException(status_code=400, detail="mapping 不可為空")
+    if not mapping_raw and not remove_keys:
+        return {"status": "success", "saved": 0, "message": "無變更項目需要儲存"}
 
     # 標記每筆為人工設定
     mapping = {}
@@ -744,11 +745,16 @@ async def api_save_font_mapping(request: Request):
 
     fonts_json_path = str(PATHS.fonts_json_path)
     try:
-        save_fonts_json(fonts_json_path, mapping)
+        save_fonts_json(fonts_json_path, mapping, remove_keys=remove_keys)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"儲存 fonts.json 失敗: {str(e)}")
 
-    return {"status": "success", "saved": len(mapping), "message": f"已儲存 {len(mapping)} 筆字體對應"}
+    return {
+        "status": "success",
+        "saved": len(mapping),
+        "removed": len(remove_keys),
+        "message": f"已儲存字體樣式對應設定（更新 {len(mapping)} 筆，重置 {len(remove_keys)} 筆）"
+    }
 
 
 @app.get("/api/ocr_progress/{filename_stem}")
