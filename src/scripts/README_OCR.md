@@ -18,8 +18,6 @@
 | 腳本 | 說明 |
 |------|------|
 | `pdf_engine_dispatcher.py` | 雙引擎排程與派發 |
-| `process_ocr.py` | Surya OCR 版面分析與辨識 |
-| `process_ocr_no_footnote.py` | 無腳注模式 OCR |
-| `book_layout_extractor.py` | 版面結構提取 |
-| `book_layout_extractor_no_footnote.py` | 無腳注模式版面提取 |
+| `process_ocr.py` | Surya OCR 版面分析與辨識（支援 `--no_footnote`） |
+| `book_layout_extractor.py` | 版面結構提取（支援 `enable_footnotes=False`） |
 | `md_to_docx.py` | Markdown 轉 Word |

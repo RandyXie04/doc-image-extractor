@@ -55,6 +55,16 @@ def cleanup_old_files():
             except Exception:
                 pass
 
+    # 3. 清理 preview_dir/task_* 隔離目錄
+    preview_dir = PATHS.preview_dir
+    if preview_dir.exists():
+        for item in preview_dir.glob('task_*'):
+            try:
+                if item.is_dir() and (now - item.stat().st_mtime) > 86400:
+                    shutil.rmtree(item, ignore_errors=True)
+            except Exception:
+                pass
+
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
     # 確保所有需要的目錄已建立
@@ -652,7 +662,7 @@ async def api_founder_repair(
     try:
         if ext == ".pdf":
             temp_out_txt = str(PATHS.root / "scratch" / f"founder_repair_{task_id}.txt")
-            output_docx = output_dir / f"repaired_{Path(filename).stem}.docx"
+            output_docx = output_dir / f"repaired_{Path(filename).stem}_{task_id[:8]}.docx"
             created_temps.append(temp_out_txt)
             
             await asyncio.to_thread(repair_pdf_file, str(temp_input), temp_out_txt, str(output_docx))
@@ -665,7 +675,7 @@ async def api_founder_repair(
             }
             
         elif ext == ".docx":
-            output_docx = output_dir / f"repaired_{Path(filename).name}"
+            output_docx = output_dir / f"repaired_{Path(filename).stem}_{task_id[:8]}.docx"
             
             await asyncio.to_thread(repair_docx_file, str(temp_input), str(output_docx))
             _cleanup_temp_files(*created_temps)
@@ -872,10 +882,11 @@ async def upload_and_run_ocr(
     else:
         raise HTTPException(status_code=400, detail="請提供 PDF 檔案或檔案代碼")
 
+    task_id = str(uuid.uuid4())
     # WYSIWYG pre-crop and page range selection using fitz
     input_pdf_path = raw_pdf_path
     if header_ratio > 0 or footer_ratio > 0 or left_ratio > 0 or right_ratio > 0 or start_page > 0 or end_page > 0:
-        cropped_pdf_path = pdf_dir / f"cropped_{filename_stem}.pdf"
+        cropped_pdf_path = pdf_dir / f"cropped_{filename_stem}_{task_id[:8]}.pdf"
         try:
             with fitz.open(raw_pdf_path) as doc:
                 total_pages = len(doc)
@@ -901,8 +912,6 @@ async def upload_and_run_ocr(
         except Exception as crop_err:
             print(f"[Warning] PDF pre-crop/page-range failed: {crop_err}")
             input_pdf_path = raw_pdf_path
-
-    task_id = str(uuid.uuid4())
     queue = get_task_queue()
     queue.enqueue(
         TaskRecord(
@@ -942,10 +951,11 @@ async def upload_and_run_ocr(
                 md_file = output_dir / f"{stem}.md"
                 docx_file = output_dir / f"{stem}.docx"
                 
+                import time as _time
                 for f_path in [md_file, docx_file]:
                     if f_path.exists():
                         backup_dir.mkdir(parents=True, exist_ok=True)
-                        backup_path = backup_dir / f_path.name
+                        backup_path = backup_dir / f"{f_path.stem}_{int(_time.time())}_{tid[:6]}{f_path.suffix}"
                         try: shutil.move(str(f_path), str(backup_path))
                         except: pass
 
@@ -1026,6 +1036,12 @@ async def upload_and_run_ocr(
             ocr_progress_dict[stem]["status"] = "failed"
             ocr_progress_dict[stem]["message"] = err_msg
             queue.update_task(tid, status=TaskStatus.FAILED.value, message=err_msg, error=str(err))
+        finally:
+            if "cropped_" in os.path.basename(pdf_path_str) and os.path.exists(pdf_path_str):
+                try:
+                    os.unlink(pdf_path_str)
+                except Exception:
+                    pass
 
     task = asyncio.create_task(run_scripts_async(task_id, str(input_pdf_path), filename_stem, style_mapping, engine, no_footnote, ai_kaiti, ai_kaiti_threshold))
     _BACKGROUND_TASKS.add(task)

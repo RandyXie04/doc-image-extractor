@@ -183,7 +183,15 @@ def parse_footnote_entries(text):
     return entries
 
 
-def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_records, style_mapping=None, no_footnote=False):
+def process_page_footnotes(
+    page_info,
+    page_num,
+    previous_open_footnote,
+    audit_records,
+    style_mapping=None,
+    no_footnote=False,
+    enable_footnotes: bool = True
+):
     """
     Process layout blocks of a single page (text & footnotes ONLY):
     1. Separate candidate footnote blocks from definite body blocks while tracking indices.
@@ -193,6 +201,11 @@ def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_re
     5. Render page markdown with Pandoc footnotes [^n].
     Image extraction is handled separately by pdf_image_extractor.py.
     """
+    if not enable_footnotes:
+        no_footnote = True
+    elif no_footnote:
+        enable_footnotes = False
+
     if style_mapping is None:
         style_mapping = {}
 
@@ -209,14 +222,14 @@ def process_page_footnotes(page_info, page_num, previous_open_footnote, audit_re
         bbox = block.get("bbox", [0, 0, 0, 0])
         y0 = bbox[1] if len(bbox) >= 2 else 0
 
-        # Criterion A: Explicit footnote tag from layout model
-        is_fn = False if no_footnote else (orig_label in ["footnote", "vision_footnote"])
-
-        # Criterion B: Heuristic fallback in lower 28% of page with footnote prefix
-        if not no_footnote and not is_fn and y0 > (page_h * 0.72) and b_type not in ["Title", "Table", "Figure"]:
-            blk_txt = extract_block_text(block)
-            if _FOOTNOTE_PREFIX_RE.search(blk_txt):
-                is_fn = True
+        is_fn = False
+        # ✅ 僅在啟用註腳時才將區塊標記為候選註腳；否則一律視為正文
+        if enable_footnotes:
+            is_fn = orig_label in ["footnote", "vision_footnote"]
+            if not is_fn and y0 > (page_h * 0.72) and b_type not in ["Title", "Table", "Figure"]:
+                blk_txt = extract_block_text(block)
+                if _FOOTNOTE_PREFIX_RE.search(blk_txt):
+                    is_fn = True
 
         indexed_blocks.append({
             "block": block,
@@ -466,10 +479,11 @@ def main(args=None):
         parser.add_argument("--output_dir", type=str, default=str(PATHS.root / "data" / "03_output"), help="Output directory")
         parser.add_argument("--style_mapping", type=str, default="{}", help="JSON string for heading style mapping")
         parser.add_argument("--image_dir", type=str, default=None, help="Directory containing pre-extracted images")
-        parser.add_argument("--no_footnote", action="store_true", help="Disable footnote extraction and matching")
+        parser.add_argument("--no_footnote", action="store_true", help="Disable footnote extraction and keep all blocks as body text")
         args = parser.parse_args()
     
-    no_footnote = getattr(args, "no_footnote", False)
+    enable_footnotes = not getattr(args, "no_footnote", False)
+    no_footnote = not enable_footnotes
     style_mapping = {}
     try:
         style_mapping = json.loads(args.style_mapping)
@@ -650,7 +664,13 @@ def main(args=None):
                     page_num = page_idx + 1
 
                     body_list, parsed_entries, previous_open_footnote = process_page_footnotes(
-                        page_info, page_num, previous_open_footnote, audit_records, style_mapping, no_footnote=no_footnote
+                        page_info,
+                        page_num,
+                        previous_open_footnote,
+                        audit_records,
+                        style_mapping,
+                        enable_footnotes=enable_footnotes,
+                        no_footnote=no_footnote,
                     )
                     pages_data.append({
                         "page_num": page_num,
@@ -736,9 +756,9 @@ def main(args=None):
 
             # Generate footnote review audit report
             if not no_footnote:
-                report_path = os.path.join(output_dir, "footnote_review.txt")
+                report_path = os.path.join(output_dir, f"{Path(pdf_path).stem}_footnote_review.txt")
                 generate_audit_report(pdf_name, total_pages, audit_records, report_path)
-                print(json.dumps({"progress": 90, "message": "[INFO] Footnote audit report generated."}))
+                print(json.dumps({"progress": 90, "message": f"[INFO] Footnote audit report generated: {os.path.basename(report_path)}"}))
                 sys.stdout.flush()
 
         except Exception as e:

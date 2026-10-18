@@ -61,7 +61,7 @@ def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None, 
         output_stem=output_stem,
         style_mapping=style_mapping,
         progress_callback=on_progress,
-        no_footnote=no_footnote,
+        enable_footnotes=not no_footnote,
         ai_kaiti=ai_kaiti,
         ai_kaiti_threshold=ai_kaiti_threshold
     )

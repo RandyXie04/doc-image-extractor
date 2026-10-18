@@ -14,7 +14,8 @@ from src.scripts.pdf_font_analyzer import (
     load_fonts_json,
 )
 from src.scripts.book_layout_extractor import process_book_vector_pdf as process_normal
-from src.scripts.book_layout_extractor_no_footnote import process_book_vector_pdf as process_no_fn
+import functools
+process_no_fn = functools.partial(process_normal, enable_footnotes=False)
 
 
 class TestFontAnalyzerIgnore(unittest.TestCase):

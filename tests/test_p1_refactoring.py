@@ -8,9 +8,7 @@ import shutil
 
 from src.scripts.dictionary_post_processor import postprocess_dictionary_markdown
 import src.scripts.book_layout_extractor as ble
-import src.scripts.book_layout_extractor_no_footnote as ble_no_fn
 import src.scripts.process_ocr as p_ocr
-import src.scripts.process_ocr_no_footnote as p_ocr_no_fn
 from src.web.app import _OCR_SEMAPHORE, _BACKGROUND_TASKS, cleanup_old_files
 
 
@@ -40,23 +38,19 @@ class TestP1Refactoring(unittest.TestCase):
         elapsed = time.perf_counter() - start
         self.assertLess(elapsed, 0.5)
 
-    def test_book_layout_extractor_shim(self):
-        """Test that book_layout_extractor_no_footnote exists and forwards seamlessly."""
-        self.assertTrue(hasattr(ble_no_fn, "process_book_vector_pdf"))
-        # Signature inspectable
+    def test_book_layout_extractor_enable_footnotes_param(self):
+        """Test that book_layout_extractor supports enable_footnotes parameter."""
         import inspect
         sig = inspect.signature(ble.process_book_vector_pdf)
-        self.assertIn("no_footnote", sig.parameters)
-        self.assertEqual(sig.parameters["no_footnote"].default, False)
+        self.assertIn("enable_footnotes", sig.parameters)
+        self.assertEqual(sig.parameters["enable_footnotes"].default, True)
 
-    def test_process_ocr_shim(self):
-        """Test that process_ocr_no_footnote exists and forwards seamlessly."""
-        self.assertTrue(hasattr(p_ocr_no_fn, "process_page_footnotes"))
-        self.assertTrue(hasattr(p_ocr_no_fn, "main"))
+    def test_process_ocr_enable_footnotes_param(self):
+        """Test that process_ocr supports enable_footnotes parameter."""
         import inspect
         sig = inspect.signature(p_ocr.process_page_footnotes)
-        self.assertIn("no_footnote", sig.parameters)
-        self.assertEqual(sig.parameters["no_footnote"].default, False)
+        self.assertIn("enable_footnotes", sig.parameters)
+        self.assertEqual(sig.parameters["enable_footnotes"].default, True)
 
     def test_app_concurrency_lock_and_tasks(self):
         """Verify _OCR_SEMAPHORE exists and has single-slot capacity."""

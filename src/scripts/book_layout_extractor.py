@@ -354,7 +354,17 @@ def parse_footnote_marker(text):
         return num, marker_str, text[m.end():].strip()
     return None, None, text
 
-def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mapping=None, progress_callback=None, no_footnote=False, ai_kaiti=None, ai_kaiti_threshold=None):
+def process_book_vector_pdf(
+    pdf_path,
+    output_dir,
+    output_stem=None,
+    style_mapping=None,
+    progress_callback=None,
+    no_footnote: bool = False,
+    ai_kaiti=None,
+    ai_kaiti_threshold=None,
+    enable_footnotes: bool = True,
+):
     """
     Extract vector PDF with:
     1. Header / footer removal
@@ -363,6 +373,11 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
     4. Paragraph reflow (eliminating PDF line-wrap broken sentences)
     5. Returns audit report data dict
     """
+    if not enable_footnotes:
+        no_footnote = True
+    elif no_footnote:
+        enable_footnotes = False
+
     if style_mapping is None:
         style_mapping = {}
     if isinstance(style_mapping, str):
@@ -529,7 +544,7 @@ def process_book_vector_pdf(pdf_path, output_dir, output_stem=None, style_mappin
                 avg_size = sum(sizes) / len(sizes) if sizes else 10.0
     
                 is_fn = False
-                if not no_footnote:
+                if enable_footnotes:
                     starts_with_fn_marker = bool(_STARTS_WITH_FN_MARKER_RE.match(block_text))
                     if bbox[1] >= page_h * 0.65:
                         if starts_with_fn_marker:

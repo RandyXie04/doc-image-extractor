@@ -41,7 +41,7 @@
 ### 2. 無腳注模式雙通道架構 (No-Footnote Architecture)
 為根治包含大量帶圈序號（①②③）、編號公式的書籍在 OCR 時將正文誤判為腳注標記之痛點，本專案依據架構決策執行完全解耦：
 - **標準管線 (`process_ocr.py`, `book_layout_extractor.py`)**：具備完整的腳注偵測、尾注關聯與交叉引用分析。
-- **無腳注管線 (`process_ocr_no_footnote.py`, `book_layout_extractor_no_footnote.py`)**：完全移除所有腳注判定邏輯，100% 保留內文完整流向，避免誤殺內文數字。前端提供即時切換開關。
+- **無腳注參數模式 (`--no_footnote` / `enable_footnotes=False`)**：完全移除所有腳注判定邏輯，100% 保留內文完整流向，避免誤殺內文數字。前端提供即時切換開關。
 
 ### 3. 硬體加速與優雅降級 (Hardware Acceleration & Fallback)
 - **ONNX Runtime DirectML**：公式識別通道支援所有支援 DirectX 12 之 GPU（含 AMD, Intel, NVIDIA），無須配置 CUDA 環境。
@@ -138,10 +138,8 @@ doc-image-extractor/
 │   ├── founder_tools/          # 方正書版非標準編碼與 CMap 修復模組
 │   ├── scripts/
 │   │   ├── pdf_engine_dispatcher.py    # 雙引擎分流排程器
-│   │   ├── process_ocr.py              # Surya OCR 版面分析（標準版）
-│   │   ├── process_ocr_no_footnote.py  # Surya OCR 版面分析（無腳注獨立版）
-│   │   ├── book_layout_extractor.py    # 幾何流結構解析（標準版）
-│   │   ├── book_layout_extractor_no_footnote.py # 幾何流結構解析（無腳注版）
+│   │   ├── process_ocr.py              # Surya OCR 版面分析（支援 --no_footnote）
+│   │   ├── book_layout_extractor.py    # 幾何流結構解析（支援 enable_footnotes=False）
 │   │   ├── md_to_docx.py               # Markdown 轉換 DOCX 排版模組
 │   │   ├── extract_images.py           # 圖片批次無損提取
 │   │   ├── pdf_image_extractor.py      # PDF 向量與點陣圖片分離

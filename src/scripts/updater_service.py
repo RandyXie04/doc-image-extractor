@@ -5,6 +5,8 @@ import urllib.error
 import urllib.parse
 import json
 import subprocess
+import tempfile
+import uuid
 from pathlib import Path
 from typing import Dict, Any, Optional
 
@@ -89,7 +91,9 @@ def perform_update(download_url: str) -> Dict[str, Any]:
         return {'status': 'error', 'msg': '不合法的更新下載來源。'}
 
     current_exe = Path(sys.executable).resolve()
-    new_exe = current_exe.with_suffix('.exe.new')
+    unique_suffix = uuid.uuid4().hex[:8]
+    new_exe = current_exe.parent / f"{current_exe.stem}_update_{unique_suffix}.exe"
+    bat_file_path: Optional[Path] = None
     
     try:
         req = urllib.request.Request(
@@ -102,25 +106,32 @@ def perform_update(download_url: str) -> Dict[str, Any]:
                     f.write(chunk)
         
         pid = str(os.getpid())
-        updater_bat = current_exe.parent / 'updater.bat'
         
-        if not updater_bat.exists():
+        # 動態建立獨立的臨時更新批次檔，執行完畢後自我刪除
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            prefix=f"updater_{unique_suffix}_",
+            suffix=".bat",
+            delete=False,
+            encoding='ascii'
+        ) as tf:
             bat_content = (
                 '@echo off\r\n'
-                'set PID=%1\r\n'
-                'set OLD=%2\r\n'
-                'set NEW=%3\r\n'
+                'set PID=%~1\r\n'
+                'set OLD=%~2\r\n'
+                'set NEW=%~3\r\n'
                 ':wait\r\n'
                 'tasklist /FI "PID eq %PID%" 2>NUL | find "%PID%" >NUL\r\n'
                 'if %ERRORLEVEL% == 0 (timeout /t 1 /nobreak >NUL & goto wait)\r\n'
-                'move /y %NEW% %OLD%\r\n'
-                'start "" %OLD%\r\n'
+                'move /y "%NEW%" "%OLD%" >NUL\r\n'
+                'start "" "%OLD%"\r\n'
+                '(goto) 2>nul & del "%~f0"\r\n'
             )
-            with open(updater_bat, 'w', encoding='ascii') as f:
-                f.write(bat_content)
+            tf.write(bat_content)
+            bat_file_path = Path(tf.name)
         
         subprocess.Popen(
-            ['cmd.exe', '/c', str(updater_bat), pid, str(current_exe), str(new_exe)],
+            ['cmd.exe', '/c', str(bat_file_path), pid, str(current_exe), str(new_exe)],
             creationflags=subprocess.CREATE_NO_WINDOW
         )
         return {'status': 'success', 'msg': '更新包下載完成，正在重啟主程式...'}
@@ -128,6 +139,11 @@ def perform_update(download_url: str) -> Dict[str, Any]:
         if new_exe.exists():
             try:
                 new_exe.unlink()
+            except OSError:
+                pass
+        if bat_file_path and bat_file_path.exists():
+            try:
+                bat_file_path.unlink()
             except OSError:
                 pass
         return {'status': 'error', 'msg': '更新下載失敗，請稍後重試。'}

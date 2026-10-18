@@ -401,8 +401,8 @@ class PDFConversionAgent:
             base_name = os.path.splitext(os.path.basename(input_pdf))[0]
             self.output_docx = str(PATHS.data_dir / "02_intermediate" / f"{base_name}_已轉檔.docx")
 
-        # ✅ 所有目錄預設由 PATHS 提供，公式萃取預設加上任務專屬 UUID 子目錄防止多工污染 (Race Condition)
-        self.preview_dir = preview_dir if preview_dir else str(PATHS.preview_dir)
+        # ✅ 所有目錄預設由 PATHS 提供，公式萃取與預覽圖預設加上任務專屬 UUID 子目錄防止多工污染 (Race Condition)
+        self.preview_dir = preview_dir if preview_dir else str(PATHS.preview_dir / f"task_{uuid.uuid4().hex[:8]}")
         self.formula_dir = formula_dir if formula_dir else str(PATHS.formula_dir_v2 / f"task_{uuid.uuid4().hex[:8]}")
 
         # ✅ 臨時 PDF 錨定至專案中間層，並加上 UUID 防止多工作業互相覆蓋 (Race Condition)
