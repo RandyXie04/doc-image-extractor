@@ -509,7 +509,8 @@ def process_book_vector_pdf(
                 
                 if block_type == 1:
                     if not is_page_header(b, page_h, page_w) and not is_page_footer(b, page_h):
-                        figure_blocks.append(b)
+                        if not (table_bboxes and _block_overlaps_any_table(table_bboxes, b.get("bbox", [0, 0, 0, 0]))):
+                            figure_blocks.append(b)
                     continue
                     
                 if block_type != 0:
@@ -656,7 +657,68 @@ def process_book_vector_pdf(
                     current_para_is_kaiti = False
                     current_para_custom_style = None
             
+            # ── Step 3: Interleave body_blocks, figure_blocks, and page_tables by reading order ──
+            flow_items = []
             for bb in body_blocks:
+                flow_items.append({
+                    "type": "text",
+                    "bbox": bb.get("bbox", [0, 0, 0, 0]),
+                    "data": bb
+                })
+
+            for block_idx, fig_b in enumerate(figure_blocks):
+                flow_items.append({
+                    "type": "figure",
+                    "bbox": fig_b.get("bbox", [0, 0, 0, 0]),
+                    "data": (block_idx, fig_b)
+                })
+
+            for tbl in page_tables:
+                flow_items.append({
+                    "type": "table",
+                    "bbox": list(tbl.bbox),
+                    "data": tbl
+                })
+
+            # Sort by top-to-bottom reading order (y0, then x0)
+            flow_items.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
+
+            for item in flow_items:
+                itype = item["type"]
+                if itype == "figure":
+                    flush_current_para()
+                    block_idx, fig_b = item["data"]
+                    fig_bbox = item["bbox"]
+                    all_image_blocks.append({
+                        "page_num": page_num,
+                        "block_idx": block_idx,
+                        "bbox": fig_bbox,
+                        "page_w": page_w,
+                        "page_h": page_h,
+                    })
+                    page_paragraphs.append(f"![__IMG_PLACEHOLDER_{page_num}_{block_idx}__]()")
+                    last_block_x0 = fig_bbox[0]
+                    last_block_x1 = fig_bbox[2]
+                    last_block_y1 = fig_bbox[3]
+                    last_block_last_line_x1 = 0.0
+                    last_heading_text = ""
+                    continue
+                elif itype == "table":
+                    flush_current_para()
+                    tbl = item["data"]
+                    tbl_md = _table_to_markdown(tbl, page_footnotes, page_num)
+                    if tbl_md:
+                        page_paragraphs.append(tbl_md)
+                    tbl_bbox = item["bbox"]
+                    last_block_x0 = tbl_bbox[0]
+                    last_block_x1 = tbl_bbox[2]
+                    last_block_y1 = tbl_bbox[3]
+                    last_block_last_line_x1 = 0.0
+                    last_heading_text = ""
+                    continue
+
+                # ── Regular Text Block ──
+                bb = item["data"]
                 lines = bb.get("lines", [])
                 if not lines:
                     continue
@@ -936,26 +998,6 @@ def process_book_vector_pdf(
                     
             # Flush any remaining body text
             flush_current_para()
-    
-            # ── Step 3c: Insert figure placeholders (sorted by document order ideally) ──────
-            for block_idx, fig_b in enumerate(figure_blocks):
-                fig_bbox = fig_b.get("bbox", [0, 0, 0, 0])
-                all_image_blocks.append({
-                    "page_num": page_num,
-                    "block_idx": block_idx,
-                    "bbox": fig_bbox,
-                    "page_w": page_w,
-                    "page_h": page_h,
-                })
-                page_paragraphs.append(f"![__IMG_PLACEHOLDER_{page_num}_{block_idx}__]()")
-    
-            # ── Step 3b: Render detected tables (inserted in document order) ──────
-            # Tables are inserted *after* the body paragraphs gathered so far;
-            # a future improvement can sort by y-position across body+table elements.
-            for tbl in page_tables:
-                tbl_md = _table_to_markdown(tbl, page_footnotes, page_num)
-                if tbl_md:
-                    page_paragraphs.append(tbl_md)
     
             # Step 4: Handle footnotes that didn't match any body/table marker (Fallback anchoring)
             for fn in page_footnotes:

@@ -642,6 +642,8 @@ def main(args=None):
                                 "surya_text": surya_text,
                                 "type": None
                             })
+                        # 依照幾何閱讀順序 (y0, x0) 排序，確保圖片與正文按自上而下排版
+                        para_blocks.sort(key=lambda b: (b["bbox"][1], b["bbox"][0]))
                         pdf_info_list.append({
                             "page_idx": page_idx,
                             "page_size": [img.width, img.height],
