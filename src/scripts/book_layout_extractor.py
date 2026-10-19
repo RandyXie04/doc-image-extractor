@@ -1024,10 +1024,10 @@ def process_book_vector_pdf(
 
     full_markdown = _IMG_PLACEHOLDER_RE.sub(_repl_placeholder, full_markdown)
     
-    # ── 統一節點式後處理 ──
-    from src.extraction.pipeline.facade import run_unified_postprocessing
+    # ── 統一後處理深模組 ──
+    from src.extraction.post_processor import postprocess_markdown
     
-    full_markdown, rare_char_stats = run_unified_postprocessing(
+    full_markdown, rare_char_stats = postprocess_markdown(
         markdown_text=full_markdown,
         pdf_name=os.path.basename(pdf_path),
         output_dir=output_dir,

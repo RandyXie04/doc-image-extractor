@@ -132,9 +132,7 @@ doc-image-extractor/
 ├── config/                     # 系統設定 (settings.py, fonts.json)
 ├── src/
 │   ├── core_agent.py           # 核心控制器與轉檔管道協同器
-│   ├── extraction/             # 自動化管線節點與管線定義
-│   │   ├── nodes/              # 各階段處理節點
-│   │   └── pipeline/           # 管線組裝器
+│   ├── extraction/             # Markdown 後處理深模組 (post_processor.py)
 │   ├── founder_tools/          # 方正書版非標準編碼與 CMap 修復模組
 │   ├── scripts/
 │   │   ├── pdf_engine_dispatcher.py    # 雙引擎分流排程器

@@ -729,14 +729,14 @@ def main(args=None):
                 final_md = "\n\n".join(all_page_contents)
 
 
-            # ── 統一節點式後處理 ──
-            from src.extraction.pipeline.facade import run_unified_postprocessing
+            # ── 統一後處理深模組 ──
+            from src.extraction.post_processor import postprocess_markdown
             
             def _progress_cb(p, msg):
                 print(json.dumps({"progress": p, "message": msg}))
                 sys.stdout.flush()
                 
-            final_md, rare_char_stats = run_unified_postprocessing(
+            final_md, rare_char_stats = postprocess_markdown(
                 markdown_text=final_md,
                 pdf_name=pdf_name,
                 output_dir=output_dir,
