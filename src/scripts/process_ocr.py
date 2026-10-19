@@ -61,7 +61,8 @@ try:
     from surya.layout import batch_layout_detection
     from surya.model.recognition.model import load_model as load_rec_model
     from surya.model.recognition.processor import load_processor as load_rec_processor
-    from surya.model.detection.model import load_model as load_layout_model, load_processor as load_layout_processor
+    from surya.model.layout.model import load_model as load_layout_model
+    from surya.model.layout.processor import load_processor as load_layout_processor
     from surya.settings import settings
     from PIL import Image
     import fitz
@@ -80,10 +81,115 @@ def check_internet():
     except:
         return False
 
+import numpy as np
+
 try:
     from src.founder_tools.core.marker_detector import MarkerDetector
 except ImportError:
     MarkerDetector = None
+
+try:
+    from src.founder_tools.core.heading_detector import HeadingDetector
+except ImportError:
+    HeadingDetector = None
+
+
+def _slice_box_into_lines(box_img: Image.Image, min_line_h: int = 10) -> list[Image.Image]:
+    """Slice a multi-line box image into horizontal line image slices using projection profile."""
+    img_gray = box_img.convert("L")
+    arr = np.array(img_gray)
+    binary = (arr < 185).astype(np.uint8)
+    row_counts = np.sum(binary, axis=1)
+
+    in_line = False
+    lines = []
+    start = 0
+    thresh = max(5, int(box_img.width * 0.01))
+    for y, count in enumerate(row_counts):
+        if count > thresh and not in_line:
+            in_line = True
+            start = y
+        elif count <= thresh and in_line:
+            in_line = False
+            if y - start >= min_line_h:
+                lines.append((max(0, start - 2), min(box_img.height, y + 2)))
+    if in_line and len(row_counts) - start >= min_line_h:
+        lines.append((max(0, start - 2), min(box_img.height, len(row_counts))))
+
+    if len(lines) <= 1:
+        return [box_img]
+    return [box_img.crop((0, y1, box_img.width, y2)) for y1, y2 in lines]
+
+
+def _is_heading_like(txt: str, block: dict, page_w: float) -> bool:
+    if not txt:
+        return False
+    if txt.startswith('#'):
+        return True
+    clean = txt.lstrip('#').strip()
+    if not clean:
+        return False
+    if re.match(r'^(?:第[一二三四五六七八九十\d]+[章节回集卷篇]|(?:[（(]?[一二三四五六七八九十\d]+[)）]?[.、\s]?))', clean):
+        return True
+    if HeadingDetector:
+        dummy = {"surya_text": clean, "bbox": block.get("bbox", [0, 0, 0, 0])}
+        if HeadingDetector.detect_block_level(dummy, page_width=page_w) > 0:
+            return True
+    if len(clean) <= 20 and not any(p in clean for p in ('。', '，', '；', '！', '？', ':', '：')):
+        func_count = sum(1 for w in '的了在是有与和于为以从到对' if w in clean)
+        if func_count <= 1:
+            return True
+    return False
+
+
+def _merge_wrapping_paragraphs(para_blocks: list, page_w: float = 1000.0, line_height_thresh: float = 35.0) -> list:
+    """
+    Merges vertically adjacent text blocks that represent the same paragraph
+    broken by an image cutout or text-wrapping around an illustration.
+    """
+    if not para_blocks:
+        return para_blocks
+
+    terminal_chars = {'。', '！', '？', '；', '…', ':', '：'}
+    merged = []
+    for blk in para_blocks:
+        if not merged:
+            merged.append(blk)
+            continue
+
+        prev = merged[-1]
+        prev_label = prev.get("original_label", "").lower()
+        curr_label = blk.get("original_label", "").lower()
+
+        if prev_label in ("text", "paragraph", "section-header") and curr_label in ("text", "paragraph"):
+            prev_txt = prev.get("surya_text", "").strip()
+            curr_txt = blk.get("surya_text", "").strip()
+
+            if _is_heading_like(prev_txt, prev, page_w) or _is_heading_like(curr_txt, blk, page_w):
+                merged.append(blk)
+                continue
+
+            prev_last_char = prev_txt[-1] if prev_txt else ""
+            ends_mid_sentence = (
+                prev_last_char not in terminal_chars
+                or prev_last_char in ('《', '“', '（', '(', '[', '〈')
+            )
+            prev_bbox = prev.get("bbox", [0, 0, 0, 0])
+            curr_bbox = blk.get("bbox", [0, 0, 0, 0])
+            y_gap = curr_bbox[1] - prev_bbox[3]
+
+            if ends_mid_sentence and 0 <= y_gap <= line_height_thresh:
+                prev["surya_text"] = prev_txt + curr_txt
+                prev["bbox"] = [
+                    min(prev_bbox[0], curr_bbox[0]),
+                    prev_bbox[1],
+                    max(prev_bbox[2], curr_bbox[2]),
+                    curr_bbox[3]
+                ]
+                continue
+
+        merged.append(blk)
+    return merged
 
 
 def extract_block_text(block):
@@ -181,6 +287,104 @@ def parse_footnote_entries(text):
         })
 
     return entries
+
+
+def sort_blocks_2d_reading_order(para_blocks, page_w, page_h):
+    """
+    智能 2D 自然閱讀順序排序：
+    1. 過濾極外側邊緣切口章名標籤與極底端純頁碼
+    2. 自動辨識圖文卡片（垂直緊密相連之圖片與標題/說明文字群組）
+    3. 依水平橫向分帶 (Band) 劃分多欄/網格卡片，橫帶內依欄位由左至右、欄內自上而下排版
+    """
+    if not para_blocks:
+        return []
+
+    def x_overlap(b1, b2):
+        return max(0, min(b1[2], b2[2]) - max(b1[0], b2[0]))
+
+    # 過濾邊界切口裝飾文字（如極右外側豎向章名 '第一章'）
+    valid_blocks = []
+    for b in para_blocks:
+        bbox = b["bbox"]
+        w = bbox[2] - bbox[0]
+        # 右側邊界極窄文字（豎排章名切口標）
+        if bbox[0] > page_w * 0.88 and w < 25 and b.get("original_label") in ("text", "caption", "header"):
+            txt = b.get("surya_text", "").replace(" ", "")
+            if re.match(r'^第[一二三四五六七八九十]+章$', txt):
+                continue
+        # 底端獨立頁碼
+        if bbox[1] > page_h * 0.90 and (bbox[3] - bbox[1]) < 25:
+            txt = b.get("surya_text", "").strip()
+            if re.match(r'^\d{1,4}$', txt):
+                continue
+        valid_blocks.append(b)
+
+    # 初步按 (y0, x0) 排序
+    valid_blocks.sort(key=lambda b: (b["bbox"][1], b["bbox"][0]))
+
+    # 聚類圖文卡片或多行欄位
+    clusters = []
+    for b in valid_blocks:
+        b_bbox = b["bbox"]
+        b_is_img = b.get("original_label") in ["image", "figure", "chart", "vision_figure", "picture"]
+        placed = False
+        for cl in clusters:
+            cl_bbox = cl["bbox"]
+            has_img = any(item.get("original_label") in ["image", "figure", "chart", "vision_figure", "picture"] for item in cl["items"])
+            if b_is_img and has_img:
+                continue # 一個圖文卡片最多包含一張主圖
+            overlap = x_overlap(b_bbox, cl_bbox)
+            min_w = min(b_bbox[2] - b_bbox[0], cl_bbox[2] - cl_bbox[0])
+            v_gap = b_bbox[1] - cl_bbox[3]
+            if min_w > 0 and (overlap / min_w) > 0.4 and -10 <= v_gap <= 25:
+                b_w = b_bbox[2] - b_bbox[0]
+                cl_w = cl_bbox[2] - cl_bbox[0]
+                if b_w < page_w * 0.6 and cl_w < page_w * 0.6:
+                    cl["items"].append(b)
+                    cl["bbox"] = [
+                        min(cl_bbox[0], b_bbox[0]),
+                        min(cl_bbox[1], b_bbox[1]),
+                        max(cl_bbox[2], b_bbox[2]),
+                        max(cl_bbox[3], b_bbox[3])
+                    ]
+                    placed = True
+                    break
+        if not placed:
+            clusters.append({
+                "bbox": list(b_bbox),
+                "items": [b]
+            })
+
+    # 將卡片聚類依垂直投影重疊劃分為水平行帶 (Horizontal Bands)
+    bands = []
+    for cl in sorted(clusters, key=lambda c: c["bbox"][1]):
+        placed = False
+        for band in bands:
+            band_y0, band_y1 = band["y0"], band["y1"]
+            ov = max(0, min(cl["bbox"][3], band_y1) - max(cl["bbox"][1], band_y0))
+            min_h = min(cl["bbox"][3] - cl["bbox"][1], band_y1 - band_y0)
+            if min_h > 0 and (ov / min_h) > 0.35:
+                band["clusters"].append(cl)
+                band["y0"] = min(band["y0"], cl["bbox"][1])
+                band["y1"] = max(band["y1"], cl["bbox"][3])
+                placed = True
+                break
+        if not placed:
+            bands.append({
+                "y0": cl["bbox"][1],
+                "y1": cl["bbox"][3],
+                "clusters": [cl]
+            })
+
+    # 行帶自上而下；帶內欄位由左至右；欄內自上而下
+    ordered_blocks = []
+    for band in bands:
+        band["clusters"].sort(key=lambda c: c["bbox"][0])
+        for cl in band["clusters"]:
+            cl["items"].sort(key=lambda b: b["bbox"][1])
+            ordered_blocks.extend(cl["items"])
+
+    return ordered_blocks
 
 
 def process_page_footnotes(
@@ -325,7 +529,11 @@ def process_page_footnotes(
             # Check in body markdown
             for p_item in rendered_initial:
                 if not is_weak_marker and marker_str and marker_str in p_item["md"]:
-                    p_item["md"] = p_item["md"].replace(marker_str, fn_ref_tag, 1)
+                    idx = p_item["md"].find(marker_str)
+                    # 註腳正文上標應依附於詞句中或句末，絕非獨立段落起始的條目編號 (例如 ②將藥材...)
+                    if idx == 0 and not is_strong_citation_text(p_item["md"]):
+                        continue
+                    p_item["md"] = p_item["md"][:idx] + fn_ref_tag + p_item["md"][idx + len(marker_str):]
                     matched = True
                     break
                 elif MarkerDetector:
@@ -417,8 +625,8 @@ def process_page_footnotes(
                     if found:
                         break
 
-    # Return list of dicts: [{"orig_idx": idx, "md": text}, ...]
-    body_markdown_list = [{"orig_idx": item["orig_idx"], "md": item["md"]} for item in rendered_initial]
+    # Return list of dicts: [{"orig_idx": idx, "md": text, "block": blk}, ...]
+    body_markdown_list = [{"orig_idx": item["orig_idx"], "md": item["md"], "block": item.get("block", {})} for item in rendered_initial]
     return body_markdown_list, final_footnotes, new_open_footnote
 
 
@@ -480,6 +688,7 @@ def main(args=None):
         parser.add_argument("--style_mapping", type=str, default="{}", help="JSON string for heading style mapping")
         parser.add_argument("--image_dir", type=str, default=None, help="Directory containing pre-extracted images")
         parser.add_argument("--no_footnote", action="store_true", help="Disable footnote extraction and keep all blocks as body text")
+        parser.add_argument("--output_stem", type=str, default=None, help="Stem name for output files")
         args = parser.parse_args()
     
     enable_footnotes = not getattr(args, "no_footnote", False)
@@ -505,13 +714,21 @@ def main(args=None):
     surya_pt_dir = _PROJECT_ROOT / "models" / "surya_pt"
     
     if (surya_pt_dir / "rec").exists():
-        os.environ["RECOGNITION_MODEL_CHECKPOINT"] = str(surya_pt_dir / "rec")
-        os.environ["LAYOUT_MODEL_CHECKPOINT"] = str(surya_pt_dir / "layout")
-        os.environ["DETECTION_MODEL_CHECKPOINT"] = str(surya_pt_dir / "det")
-        os.environ["ORDER_MODEL_CHECKPOINT"] = str(surya_pt_dir / "order")
-    else:
-        os.environ["RECOGNITION_MODEL_CHECKPOINT"] = "vikp/surya_rec"
-        os.environ["LAYOUT_MODEL_CHECKPOINT"] = "vikp/surya_layout"
+        layout_cfg = surya_pt_dir / "layout" / "config.json"
+        is_legacy = False
+        if layout_cfg.exists():
+            try:
+                with open(layout_cfg, "r", encoding="utf-8") as f:
+                    cfg_json = json.load(f)
+                    if "Segformer" in str(cfg_json.get("architectures", [])):
+                        is_legacy = True
+            except Exception:
+                is_legacy = True
+        if not is_legacy:
+            os.environ["RECOGNITION_MODEL_CHECKPOINT"] = str(surya_pt_dir / "rec")
+            os.environ["LAYOUT_MODEL_CHECKPOINT"] = str(surya_pt_dir / "layout")
+            os.environ["DETECTOR_MODEL_CHECKPOINT"] = str(surya_pt_dir / "det")
+            os.environ["ORDER_MODEL_CHECKPOINT"] = str(surya_pt_dir / "order")
     
 
     print(json.dumps({"progress": 5, "message": "[INFO] Initializing Surya OCR engine (v0.6.x)..."}))
@@ -571,6 +788,8 @@ def main(args=None):
     print(json.dumps({"progress": 10, "message": f"[INFO] OCR 硬體加速模式: {accel_label} | 批次大小: {_rec_batch}"}))
     sys.stdout.flush()
 
+    success_count = 0
+    has_error = False
     for pdf_path in pdf_files:
         print(json.dumps({"progress": 15, "message": f"[INFO] Running Surya OCR on: {os.path.basename(pdf_path)} (this may take a while...)"}))
         sys.stdout.flush()
@@ -598,32 +817,81 @@ def main(args=None):
 
                     chunk_layouts = batch_layout_detection(chunk_imgs, layout_model, layout_processor)
 
-                    chunk_bboxes = []
-                    chunk_mappings = []
-                    for layout in chunk_layouts:
-                        bboxes = []
-                        mapping = []
+                    ocr_slice_tasks = []
+                    all_slices_to_rec = []
+                    page_box_texts = [{} for _ in range(len(chunk_imgs))]
+                    page_box_labels = [{} for _ in range(len(chunk_imgs))]
+
+                    for offset, (img, layout) in enumerate(zip(chunk_imgs, chunk_layouts)):
+                        page_idx = chunk_start + offset
+                        p_page = doc[page_idx]
+                        sx = img.width / max(1.0, p_page.rect.width)
+                        sy = img.height / max(1.0, p_page.rect.height)
+
                         for idx, box in enumerate(layout.bboxes):
-                            if box.label.lower() in ('picture', 'figure', 'image'):
-                                continue
                             poly = box.polygon
+                            if not poly or len(poly) == 0:
+                                continue
                             xs = [p[0] for p in poly]
                             ys = [p[1] for p in poly]
-                            bboxes.append([min(xs), min(ys), max(xs), max(ys)])
-                            mapping.append(idx)
-                        chunk_bboxes.append(bboxes)
-                        chunk_mappings.append(mapping)
+                            bbox = [min(xs), min(ys), max(xs), max(ys)]
+                            label = box.label.lower()
 
-                    chunk_langs: list[list[str] | None] = [["zh"]] * len(chunk_imgs)
-                    chunk_ocrs = run_recognition(
-                        chunk_imgs, chunk_langs, rec_model, rec_processor, bboxes=chunk_bboxes
-                    )
+                            r = fitz.Rect(bbox[0]/sx, bbox[1]/sy, bbox[2]/sx, bbox[3]/sy)
+                            vec_text = p_page.get_text("text", clip=r).strip()
 
-                    for offset, (img, layout, ocr, mapping) in enumerate(
-                        zip(chunk_imgs, chunk_layouts, chunk_ocrs, chunk_mappings)
-                    ):
+                            has_overlapping_image = False
+                            for img_info in p_page.get_images():
+                                for img_rect in p_page.get_image_rects(img_info[0]):
+                                    if r.intersects(img_rect):
+                                        inter = r & img_rect
+                                        if inter.get_area() > 0.25 * min(r.get_area(), img_rect.get_area()):
+                                            has_overlapping_image = True
+                                            break
+                                if has_overlapping_image:
+                                    break
+
+                            # 判斷是否為誤標為 Picture 的文字標題或裝飾標籤
+                            if label in ('picture', 'figure', 'image'):
+                                if vec_text and not has_overlapping_image:
+                                    label = "text"
+                                    page_box_texts[offset][idx] = vec_text
+                                    page_box_labels[offset][idx] = label
+                                else:
+                                    page_box_texts[offset][idx] = ""
+                                    page_box_labels[offset][idx] = label
+                                continue
+
+                            page_box_labels[offset][idx] = label
+
+                            if vec_text:
+                                page_box_texts[offset][idx] = vec_text
+                            else:
+                                # 需要進行 OCR 識別（掃描檔或無向量字元）
+                                box_crop = img.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
+                                box_h = max(1, int(bbox[3] - bbox[1]))
+                                if box_h >= 35:
+                                    slices = _slice_box_into_lines(box_crop)
+                                else:
+                                    slices = [box_crop]
+                                ocr_slice_tasks.append((offset, idx, len(slices)))
+                                all_slices_to_rec.extend(slices)
+
+                    if all_slices_to_rec:
+                        from surya.ocr import batch_recognition
+                        all_langs = [["zh"]] * len(all_slices_to_rec)
+                        all_preds, _ = batch_recognition(
+                            all_slices_to_rec, all_langs, rec_model, rec_processor, batch_size=_rec_batch
+                        )
+                        s_idx = 0
+                        for offset, orig_idx, count in ocr_slice_tasks:
+                            preds = all_preds[s_idx : s_idx + count]
+                            s_idx += count
+                            combined = "\n".join(preds)
+                            page_box_texts[offset][orig_idx] = combined
+
+                    for offset, (img, layout) in enumerate(zip(chunk_imgs, chunk_layouts)):
                         page_idx = chunk_start + offset
-                        ocr_dict = {orig_idx: ocr.text_lines[i].text for i, orig_idx in enumerate(mapping)}
                         para_blocks = []
                         for idx, box in enumerate(layout.bboxes):
                             poly = box.polygon
@@ -633,17 +901,22 @@ def main(args=None):
                             ys = [p[1] for p in poly]
                             bbox = [min(xs), min(ys), max(xs), max(ys)]
 
-                            surya_text = ocr_dict.get(idx, "")
-                            surya_text = _clean_hallucinations(surya_text)
+                            box_text = page_box_texts[offset].get(idx, "")
+                            box_text = _clean_hallucinations(box_text)
+                            box_label = page_box_labels[offset].get(idx, box.label.lower())
 
                             para_blocks.append({
-                                "original_label": box.label.lower(),
+                                "original_label": box_label,
                                 "bbox": bbox,
-                                "surya_text": surya_text,
+                                "surya_text": box_text,
                                 "type": None
                             })
-                        # 依照幾何閱讀順序 (y0, x0) 排序，確保圖片與正文按自上而下排版
-                        para_blocks.sort(key=lambda b: (b["bbox"][1], b["bbox"][0]))
+
+                        # 依照 2D 自然幾何閱讀順序（水平橫帶與圖文卡片聚類）排序
+                        para_blocks = sort_blocks_2d_reading_order(para_blocks, img.width, img.height)
+                        # 合併因圖文環繞或切口被中斷之同一段落
+                        para_blocks = _merge_wrapping_paragraphs(para_blocks, page_w=img.width)
+
                         pdf_info_list.append({
                             "page_idx": page_idx,
                             "page_size": [img.width, img.height],
@@ -651,7 +924,7 @@ def main(args=None):
                         })
 
                     # 顯式釋放當前批次之記憶體資源
-                    del chunk_imgs, chunk_layouts, chunk_ocrs, chunk_bboxes, chunk_mappings
+                    del chunk_imgs, chunk_layouts, all_slices_to_rec, ocr_slice_tasks, page_box_texts, page_box_labels
 
             all_page_contents = []
             audit_records = []
@@ -676,6 +949,7 @@ def main(args=None):
                     )
                     pages_data.append({
                         "page_num": page_num,
+                        "page_size": page_info.get("page_size", [1000, 1000]),
                         "body": body_list,
                         "footnotes": parsed_entries
                     })
@@ -694,7 +968,7 @@ def main(args=None):
                             pdf_path=pdf_path,
                             image_blocks=image_blocks,
                             output_dir=images_dir,
-                            pre_extract_dir=args.image_dir
+                            pre_extract_dir=getattr(args, "image_dir", None)
                         )
                         extracted_count = len(image_path_map)
                         print(json.dumps({"progress": 78, "message": f"[INFO] 圖片提取完成：共成功提取 {extracted_count} 張嵌入圖片（原始畫質）。"}))
@@ -716,11 +990,22 @@ def main(args=None):
                         saved = image_path_map.get((p_num, orig_idx))
                         if saved:
                             img_rel = os.path.relpath(saved, output_dir).replace("\\", "/")
+                            blk = md_dict.get("block", {})
+                            bbox = blk.get("bbox", [0, 0, 0, 0])
+                            p_w = p.get("page_size", [1000, 1000])[0]
+                            w_ratio = (bbox[2] - bbox[0]) / max(p_w, 1)
+                            if w_ratio <= 0.35:
+                                w_attr = "{width=30%}"
+                            elif w_ratio <= 0.65:
+                                w_attr = "{width=50%}"
+                            else:
+                                w_attr = "{width=80%}"
                             updated_body.append("")
-                            updated_body.append(f"![]({img_rel}){{width=80%}}")
+                            updated_body.append(f"![]({img_rel}){w_attr}")
                             updated_body.append("")
                         elif md_item.strip():
-                            updated_body.append(md_item)
+                            if md_item.strip() != "![img]()":
+                                updated_body.append(md_item)
                     page_str = "\n\n".join(updated_body)
                     if p["footnotes"]:
                         defs = [f"[^p{p_num}_{fn['id']}]: {fn['content']}" for fn in p["footnotes"]]
@@ -747,7 +1032,8 @@ def main(args=None):
                 enable_dictionary_postprocess=True
             )
 
-            out_name = Path(pdf_path).stem + ".md"
+            out_stem = getattr(args, "output_stem", None) or Path(pdf_path).stem
+            out_name = f"{out_stem}.md"
             out_path = os.path.join(output_dir, out_name)
 
             with open(out_path, 'w', encoding='utf-8') as out_f:
@@ -758,12 +1044,15 @@ def main(args=None):
 
             # Generate footnote review audit report
             if not no_footnote:
-                report_path = os.path.join(output_dir, f"{Path(pdf_path).stem}_footnote_review.txt")
+                report_path = os.path.join(output_dir, f"{out_stem}_footnote_review.txt")
                 generate_audit_report(pdf_name, total_pages, audit_records, report_path)
                 print(json.dumps({"progress": 90, "message": f"[INFO] Footnote audit report generated: {os.path.basename(report_path)}"}))
                 sys.stdout.flush()
 
+            success_count += 1
+
         except Exception as e:
+            has_error = True
             import traceback
             tb_str = traceback.format_exc()
             error_data = {
@@ -773,8 +1062,13 @@ def main(args=None):
             }
             print(json.dumps(error_data, ensure_ascii=False))
             sys.stdout.flush()
-            # 繼續處理下一個檔案，不中斷整個程序
+            if getattr(args, "file", None):
+                raise RuntimeError(f"處理檔案 {pdf_name} 失敗: {e}") from e
+            # 批次模式下繼續處理下一個檔案
             continue
+
+    if has_error and success_count == 0:
+        raise RuntimeError("批次處理中所有檔案皆執行失敗")
 
     print(json.dumps({"progress": 100, "message": "[INFO] 批次處理結束"}))
     sys.stdout.flush()

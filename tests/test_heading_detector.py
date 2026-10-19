@@ -51,7 +51,24 @@ class TestHeadingDetector(unittest.TestCase):
             "surya_text": "第一章內容。",
             "bbox": [50, 100, 150, 120]
         }
-        self.assertEqual(HeadingDetector.detect_block_level(blk_short_punct, page_width=600.0), 0)
+    def test_whitespace_and_empty_blocks(self):
+        """測試空白字元或空字串之 OCR 區塊不會拋出 IndexError 且正確回傳 0"""
+        blk_spaces = {
+            "surya_text": "    \t\n  ",
+            "bbox": [50, 100, 150, 120]
+        }
+        self.assertEqual(HeadingDetector.detect_block_level(blk_spaces, page_width=600.0), 0)
+
+        blk_empty = {
+            "surya_text": "",
+            "bbox": [50, 100, 150, 120]
+        }
+        self.assertEqual(HeadingDetector.detect_block_level(blk_empty, page_width=600.0), 0)
+
+        blk_no_text = {
+            "bbox": [50, 100, 150, 120]
+        }
+        self.assertEqual(HeadingDetector.detect_block_level(blk_no_text, page_width=600.0), 0)
 
 
 if __name__ == "__main__":

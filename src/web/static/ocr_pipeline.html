@@ -1096,19 +1096,33 @@
                             pText.innerText = prog.message;
                         }
 
-                        if (prog.status === 'completed' || prog.progress === 100) {
+                        if (prog.status === 'failed') {
+                            isFinished = true;
+                            clearInterval(pollInterval);
+                            onFailure(prog.message || '後端轉檔發生錯誤');
+                            return;
+                        } else if (prog.status === 'completed') {
                             isFinished = true;
                             clearInterval(pollInterval);
                             onComplete(stem);
-                        } else if (prog.status === 'failed') {
-                            isFinished = true;
-                            clearInterval(pollInterval);
-                            throw new Error(prog.message || '後端轉檔發生錯誤');
+                            return;
                         }
                     } catch (e) {
                         console.error('Polling error:', e);
                     }
                 }, 1000);
+
+                function onFailure(errMsg) {
+                    statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background: rgba(220, 38, 38, 0.08); border:1px solid rgba(220, 38, 38, 0.25); border-radius:8px; color:#ef4444; text-align: left;">
+                        <b>轉檔失敗：</b>${errMsg} <br>
+                        <button type="button" onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                            重新嘗試執行
+                        </button>
+                    </div>`;
+                    submitBtn.disabled = false;
+                    analyzeFontsBtn.disabled = false;
+                }
 
                 function onComplete(filename_stem) {
                     statusDiv.innerHTML += `<div style="margin-top:1rem; color:#16a34a; font-weight:bold;">處理完成！請點選以下按鈕另存新檔：</div>`;
@@ -1182,6 +1196,14 @@
                 });
 
                 if (!res.ok) {
+                    if (res.status === 404) {
+                        alert(`另存失敗：指定的 ${ext.toUpperCase()} 輸出檔案尚未生成或不存在。`);
+                        if (btnElement) {
+                            btnElement.innerHTML = origHtml;
+                            btnElement.disabled = false;
+                        }
+                        return;
+                    }
                     throw new Error(`伺服器回應異常 (${res.status})`);
                 }
                 const result = await res.json();

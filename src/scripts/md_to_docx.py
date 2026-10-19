@@ -267,8 +267,18 @@ def main():
 
             md_content = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)(\{[^}]*\})?', _resolve_img_path, md_content)
             
+            # 清理未指定任何路徑之空白圖片標記（如 ![img]()），避免 Pandoc 輸出警告並殘留 'img' 文字
+            md_content = re.sub(r'(?m)^\s*!\[[^\]]*\]\(\s*\)(?:\{[^\n}]*\})?\s*\n?', '', md_content)
+
+            # 套用特殊排版符號還原（截斷括號、圓圈數字、波浪號正規化）
+            try:
+                from src.extraction.symbol_mapper import restore_ocr_symbols
+                md_content, _ = restore_ocr_symbols(md_content)
+            except ImportError:
+                pass
+
             # 確保圖片 Markdown 語法獨立成行（前後各加空行），並相容屬性語法 {...}
-            img_token_pattern = r'!\[[^\]]*\]\([^)]*\)(?:\{[^\n}]*\})?'
+            img_token_pattern = r'!\[[^\]]*\]\([^)]+\)(?:\{[^\n}]*\})?'
             md_content = re.sub(r'([^\n])\n*(' + img_token_pattern + r')', r'\1\n\n\2', md_content)
             md_content = re.sub(r'(' + img_token_pattern + r')\n*([^\n])', r'\1\n\n\2', md_content)
 
@@ -279,6 +289,7 @@ def main():
             # Convert MD (including raw HTML tables) directly to DOCX
             # 加入 --resource-path 確保 Pandoc 能解析圖片路徑並嵌入 Word
             # 使用 markdown-implicit_figures 停用自動將段落圖片視為 Figure Caption 的功能
+            # 使用 -subscript 停用波浪號 ~ 轉換為下標 (subscript)，避免數字區間如 2~3次 被誤轉為小標/下標
             pandoc_extra = []
             if template_path:
                 pandoc_extra.append(f'--reference-doc={template_path}')
@@ -287,7 +298,7 @@ def main():
             pypandoc.convert_file(
                 temp_md_path,
                 'docx',
-                format='markdown-implicit_figures+raw_html+tex_math_dollars',
+                format='markdown-implicit_figures-subscript+raw_html+tex_math_dollars',
                 outputfile=out_path,
                 extra_args=pandoc_extra
             )

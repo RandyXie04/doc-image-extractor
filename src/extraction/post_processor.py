@@ -124,6 +124,25 @@ class MarkdownPostProcessor:
         except Exception as e:
             logger.error(f"生僻字校驗處理失敗: {e}")
 
+        # ── Step 3: Special Symbol & Layout Typographic Restoration ──
+        try:
+            from src.extraction.symbol_mapper import restore_ocr_symbols
+            current_text, symbol_stats = restore_ocr_symbols(current_text)
+            total_symbol_fixes = sum(symbol_stats.values())
+            if progress_callback and total_symbol_fixes > 0:
+                msg_parts = []
+                if symbol_stats["brackets_restored"] > 0:
+                    msg_parts.append(f"還原 {symbol_stats['brackets_restored']} 處截斷括號")
+                if symbol_stats["circled_restored"] > 0:
+                    msg_parts.append(f"修復 {symbol_stats['circled_restored']} 處圓圈數字")
+                if symbol_stats["tildes_normalized"] > 0:
+                    msg_parts.append(f"標準化 {symbol_stats['tildes_normalized']} 處浪紋線")
+                if symbol_stats["empty_imgs_removed"] > 0:
+                    msg_parts.append(f"清理 {symbol_stats['empty_imgs_removed']} 處無效圖片標記")
+                progress_callback(90, f"[INFO] 特殊排版符號修復完成（{'，'.join(msg_parts)}）。")
+        except Exception as e:
+            logger.warning(f"特殊符號還原處理略過: {e}")
+
         return PostProcessResult(markdown=current_text, rare_char_stats=rare_char_stats)
 
 

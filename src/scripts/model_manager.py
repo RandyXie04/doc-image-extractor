@@ -181,9 +181,9 @@ def try_download_surya_from_huggingface(dest_dir: Path) -> Path | None:
     base_dir.mkdir(parents=True, exist_ok=True)
     
     models_to_download = {
-        "det": "vikp/surya_det",
-        "rec": "vikp/surya_rec",
-        "layout": "vikp/surya_layout",
+        "det": "vikp/surya_det3",
+        "rec": "vikp/surya_rec2",
+        "layout": "datalab-to/surya_layout0",
         "order": "vikp/surya_order"
     }
     

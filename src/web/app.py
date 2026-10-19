@@ -1006,10 +1006,20 @@ async def upload_and_run_ocr(
                 await proc.wait()
                 
                 if proc.returncode != 0:
+                    last_msg = ocr_progress_dict[stem].get("message", "")
                     fail_msg = f"轉檔程序執行失敗 (代碼: {proc.returncode})"
+                    if last_msg and not last_msg.startswith("{") and "轉檔程序執行失敗" not in last_msg:
+                        fail_msg = f"{fail_msg}: {last_msg}"
                     ocr_progress_dict[stem]["status"] = "failed"
                     ocr_progress_dict[stem]["message"] = fail_msg
-                    queue.update_task(tid, status=TaskStatus.FAILED.value, message=fail_msg, error=f"Process exited with {proc.returncode}")
+                    queue.update_task(tid, status=TaskStatus.FAILED.value, message=fail_msg, error=f"Process exited with {proc.returncode}: {last_msg}")
+                    return
+
+                if not md_file.exists():
+                    fail_msg = "轉檔程序異常結束：未生成 Markdown 輸出檔案"
+                    ocr_progress_dict[stem]["status"] = "failed"
+                    ocr_progress_dict[stem]["message"] = fail_msg
+                    queue.update_task(tid, status=TaskStatus.FAILED.value, message=fail_msg, error=fail_msg)
                     return
 
                 docx_msg = "正在套用樣式並產生 Word (.docx) 文件..."
@@ -1017,16 +1027,23 @@ async def upload_and_run_ocr(
                 ocr_progress_dict[stem]["message"] = docx_msg
                 queue.update_task(tid, progress=92, message=docx_msg)
                 
-                if md_file.exists():
-                    md_proc = await asyncio.create_subprocess_exec(
-                        sys.executable, "-m", "src.scripts.md_to_docx",
-                        "--files", str(md_file),
-                        cwd=str(PATHS.root),
-                        stdout=asyncio.subprocess.DEVNULL,
-                        stderr=asyncio.subprocess.DEVNULL
-                    )
-                    await md_proc.wait()
-                    
+                md_proc = await asyncio.create_subprocess_exec(
+                    sys.executable, "-m", "src.scripts.md_to_docx",
+                    "--files", str(md_file),
+                    cwd=str(PATHS.root),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                _, md_err = await md_proc.communicate()
+                
+                if md_proc.returncode != 0 or not docx_file.exists():
+                    err_detail = md_err.decode(errors="replace").strip() if md_err else ""
+                    fail_msg = f"Word (.docx) 文件產生失敗: {err_detail[:150]}" if err_detail else "Word (.docx) 文件產生失敗"
+                    ocr_progress_dict[stem]["status"] = "failed"
+                    ocr_progress_dict[stem]["message"] = fail_msg
+                    queue.update_task(tid, status=TaskStatus.FAILED.value, message=fail_msg, error=fail_msg)
+                    return
+
                 ocr_progress_dict[stem]["progress"] = 100
                 ocr_progress_dict[stem]["message"] = "轉檔完成！"
                 ocr_progress_dict[stem]["status"] = "completed"

@@ -85,8 +85,8 @@ class HeadingDetector:
             else:
                 return 0
 
-        # ── 2. 長度門檻（收緊至 25 字） ──
-        if len(text) > 25:
+        # ── 2. 長度門檻（收緊至 25 字，且排除空字串） ──
+        if not text or len(text) > 25:
             return 0
 
         # ── 3. 句末標點排除（擴充完整集） ──

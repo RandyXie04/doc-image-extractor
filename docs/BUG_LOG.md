@@ -86,3 +86,134 @@ ADR-003：
 - 清理 `config/fonts.json` 殘留的 25 筆全域「忽略」標記。
 - 新增 `tests/test_heading_detector.py` 並維護 `tests/test_font_analyzer_ignore.py` 全數綠燈通過。
 
+---
+
+## Bug Description
+自動整稿純OCR管線（Surya OCR）執行失敗，但管線未中斷反而直接跳至「處理完成」狀態，引導使用者點擊另存時觸發 `POST /api/native_save_file` 與 `GET /api/download_ocr_result/...` 404 Not Found。
+
+## Status
+CLOSED
+
+## Root Cause
+1. **模型載入與架構不匹配**：`src/scripts/process_ocr.py` 誤自 `surya.model.detection.model` 匯入 `load_layout_model`（應為 `surya.model.layout.model`），且因檢查點環境變數強行指定本機舊版 Segformer 模型權重，導致 Surya 0.6 在執行版面分析時拋出 `AttributeError: 'dict' object has no attribute 'pause_token_id'`。
+2. **錯誤吞沒與虛假進度**：`process_ocr.py` 的批次迴圈在捕捉到單一檔案例外時僅打印 JSON 後執行 `continue`，並在迴圈結束後盲目打印 `{"progress": 100, "message": "批次處理結束"}` 且以代碼 0 正常退出。
+3. **管線缺漏實體驗證**：`pdf_engine_dispatcher.py` 與 `app.py` 在執行結束後未驗證目標輸出檔案（`.md` 及 `.docx`）是否確實生成，跳過 Word 轉換後仍將任務狀態設定為 `completed` 與 `progress: 100`。
+4. **前端狀態競爭與例外未回報**：`ocr_pipeline.html` 輪詢條件誤採 `prog.status === 'completed' || prog.progress === 100`，使失敗任務因假 100% 被誤判為成功；且拋出之錯誤被輪詢定時器內部 catch 吞沒，未渲染失敗面板。
+
+## Decision Gate
+ADR-004（管線原子性與模型對齊守則）：
+1. **管線原子性與錯誤傳播**：任何子程序崩潰或輸出產物未實體生成時，禁止發送 `progress: 100`，必須立即退出非零代碼並將狀態設為 `failed`。
+2. **Surya OCR 0.6 模型對齊**：嚴格自 `surya.model.layout.model` 載入版面分析模型，使用官方現代模型（`datalab-to/surya_layout0` 與 `vikp/surya_rec2`），禁止強行載入舊版 Segformer 權重。
+3. **前端狀態確定性**：UI 僅能依據 `status === 'completed'` 觸發完成另存，遇 `status === 'failed'` 立即中斷輪詢並呈現詳細錯誤面板與重試按鈕。
+
+## Resolution
+- `src/scripts/process_ocr.py`：
+  - 修正版面模型載入模組為 `surya.model.layout.model` 與 `surya.model.layout.processor`。
+  - 加入檢查點架構檢驗，防範舊版 Segformer 權重覆蓋。
+  - 補全 `getattr(args, "image_dir", None)` 容錯。
+  - 遇到目標檔案例外時立即向外拋出 `RuntimeError`，中斷執行並阻止虛假 100% 輸出。
+- `src/scripts/pdf_engine_dispatcher.py`：補全 `image_dir` 參數，並在 OCR 結束後檢查 `target_out` 檔案存在性，若未生成則拋出 `RuntimeError`。
+- `src/scripts/model_manager.py`：將下載之 Surya 模型清單更新為 Surya 0.6 官方模型 ID。
+- `src/web/app.py`：在標記 completed 前嚴格檢驗 `md_file.exists()` 與 `docx_file.exists()`，缺失時直接標記為 `failed` 並退出。
+- `src/web/static/ocr_pipeline.html`：解耦進度 100 與 completed 判定，實作 `onFailure` 錯誤提示面板，另存 404 時給予明確提示。
+- 清除本機 1.8GB 不相容之舊版 `models/surya_pt` 殘留權重。
+---
+
+## Bug Description
+在執行全自動整稿純 OCR 管線（如使用 Surya OCR 處理 200+ 頁書籍）時，OCR 辨識完成後在腳注與段落結構建構階段拋出 `IndexError: string index out of range`，導致轉檔程序異常中斷退出（代碼: 1），且前端僅顯示通用失敗代碼而遮蔽具體錯誤訊息。
+
+## Status
+CLOSED
+
+## Root Cause
+1. **空白字元 OCR 區塊索引越界**：在 `src/founder_tools/core/heading_detector.py` 中，當 Surya OCR 輸出的版面文字區塊僅包含空白字元時（例如 `"   "`），`"surya_text" in block and block["surya_text"]` 判定為真，但在調用 `text = block["surya_text"].strip()` 後 `text` 退化為空字串 `""`。後續程式未防禦空字串，直接執行 `if text[-1] in HeadingDetector._SENTENCE_PUNCTUATION:`，對空字串取下標 `text[-1]` 引發 `IndexError: string index out of range`。
+2. **錯誤訊息覆蓋與細節遮蔽**：`src/web/app.py` 在子程序非零退出時，以 `轉檔程序執行失敗 (代碼: {proc.returncode})` 直接覆蓋了最後一筆包含崩潰例外或警告的訊息，且 Word 轉換階段 `md_proc` 將 stderr 重導向至 `DEVNULL`，阻礙使用者與開發者定位問題。
+
+## Decision Gate
+No new design decision is required.
+維持現有架構與型態契約，加強空字串邊界防護與例外回報透明度。
+
+## Resolution
+- `src/founder_tools/core/heading_detector.py`：
+  - 在第 89 行長度門檻檢查前加入 `if not text or len(text) > 25: return 0`，徹底防止空字串進入下標索引運算。
+- `src/founder_tools/core/heading_detector.py`：
+  - 在第 89 行長度門檻檢查前加入 `if not text or len(text) > 25: return 0`，徹底防止空字串進入下標索引運算。
+- `src/web/app.py`：
+  - 子程序非零退出時，保留最後一筆有意義之進度/錯誤訊息並附加於失敗提示中。
+  - Word 轉換階段 (`md_proc`) 改用 `PIPE` 捕獲 stderr，失敗時輸出具體轉換錯誤細節。
+
+---
+
+## Bug Description
+使用者人工審閱純 OCR 轉檔結果時發現以下五項排版與符號異常：
+1. **圓圈數字退化**：部分 `①`、`②`、`③` 等圓圈數字在 OCR 階段因外圈模糊被辨識為純阿拉伯數字 `1`、`2`、`3`。
+2. **章節括號截斷**：版面邊緣或裁切過近導致 `（一）`、`（二）` 丟失左括號，退化為 `一)`、`二)`。
+3. **無效圖片標記殘留**：未抽取實體圖檔的圖片區塊殘留 `![img]()`，導致 Pandoc 輸出警告且在 Word 中留下文字 `img`。
+4. **特殊排版文字與圖片凌亂**：多欄或網格卡片（如多草藥圖文卡）僅依單純 `(y0, x0)` 排序，導致所有圖片浮於頂端、所有文字沉於底端，圖文嚴重脫節且圖片被強制放大至 `width=80%`。
+5. **數字範圍波浪號誤轉為下標/小標**：文字中的 `2~3次`、`10~15秒` 被 Pandoc 預設的 `subscript` 語法誤判為下標標記，導致兩側數字與文字在 Word 中縮小沉降為小標/下標。
+
+## Status
+CLOSED
+
+## Root Cause
+1. **字形退化與缺乏符號後處理映射**：Surya OCR 文字識別模型在特定字級下對帶圈數字的圓圈遺失抗性較弱；行首數字未經中文上下文比對即輸出。
+2. **邊界裁剪丟失開括號**：掃描書籍內側/外側邊緣接近頁邊時，OCR 辨識漏掉前導半形或全形括號。
+3. **圖片佔位符未清理**：`process_ocr.py` 在未抽取到實體影像時仍原樣輸出 `![img]()`。
+4. **缺乏 2D 橫帶/卡片聚類排序**：原排序採用全域 `(bbox[1], bbox[0])`，卡片行中的圖片 `y0` 均小於文字 `y0`，造成圖文完全分離；圖片寬度未依版面幾何比例計算，一律硬編碼為 `80%`。
+5. **Pandoc 語法衝突**：Pandoc Markdown 預設開啟 `subscript` 擴展，以 `~...~` 作為下標包裹符，中文字串中的區間 `~` 觸發成對下標解析。
+
+## Decision Gate
+ADR-005（特殊符號映射與 2D 卡片閱讀流守則）：
+1. **建立特殊符號配置化映射機制**：新增 `config/symbol_mapping.json` 與 `src/extraction/symbol_mapper.py`，統整帶圈數字、全形括號與浪紋線標準化。
+2. **2D 自然閱讀流排序**：在 OCR 幾何排序中實作橫帶與圖文卡片聚類演算法，圖片寬度依據 bounding box 相對頁寬動態分配。
+3. **Pandoc Markdown 停用下標擴展**：Word 轉檔時傳入 `-subscript`，徹底杜絕半形波浪號被誤編為下標。
+
+## Resolution
+- `config/symbol_mapping.json`：建立帶圈數字、中文數字括號與浪紋線映射字典。
+- `src/extraction/symbol_mapper.py`：實作 `restore_ocr_symbols` 執行行首條目編號還原、截斷括號還原、浪紋線 `～` 正規化與空圖片標記清理。
+- `src/extraction/post_processor.py`：在深模組後處理管線整合 Step 3 符號還原。
+- `src/scripts/process_ocr.py`：
+  - 新增 `sort_blocks_2d_reading_order`，自動將卡片圖片與標題說明聚類排序，並過濾邊緣切口章名裝飾。
+  - 圖片寬度依 `(bbox[2] - bbox[0]) / page_w` 動態調整為 30%、50% 或 80%。
+  - 修正腳注雙向錨點匹配，禁止將行首條目編號誤判為正文腳注引用。
+- `src/scripts/md_to_docx.py`：加入 `-subscript` 格式旗標，並預先清理空圖片標記與套用符號映射。
+- `tests/test_symbol_mapper_and_ocr_fixes.py`：新增 6 項單元測試，全套 62 項測試全數 PASS 通過。
+
+---
+
+## Bug Description
+PDF 第 28 頁（對應第 16 頁頁碼）文字提取僅到「双参灵百汤的配伍思路主要借鉴了清代吴鞠通《温」一行，下方整段 9 行正文（包括沙参麦冬汤方义、配伍思路、北沙参与南沙参区别等）完全遺失，且標題「（一）组方思路」亦未出現在 Word/Markdown 成果中。
+
+## Status
+CLOSED
+
+## Root Cause
+1. **多行區塊引發 OCR 幻覺與自動清理截斷**：
+   Surya OCR 的文字識別模型（`vikp/surya_rec2`）為單行文字序列模型。原 `process_ocr.py` 直接將版面分析模型（`batch_layout_detection`）檢測出的整個段落 Bounding Box（高達 320 像素、內含 9 行文字）直接傳入 `run_recognition`。模型在面對多行密集文字時注意力機制崩潰，產生嚴重重複亂碼（「南昌 - 南昌 - 南昌...」），進而觸發 `_clean_hallucinations` 的重複詞防護機制將整塊文字清空為字串 `""`，導致下方 9 行正文全失。
+2. **完全忽略原生向量文字層**：
+   該書籍 PDF 232 頁中有 212 頁具備 100% 完整的原生向量文字層，但 OCR 管線未曾調用 PyMuPDF 的 `clip` 區域文字提取，強制以圖像 OCR 運算，造成算力浪費並引入 OCR 雜訊。
+3. **裝飾標題被誤判為 Picture 且遭拋棄**：
+   「（一）组方思路」因帶有裝飾色塊背景，被 Surya 版面模型標籤為 `Picture`。因其非點陣圖，在後續圖片抽取無匹配結果時被當成無效圖片標記直接過濾丟棄。
+4. **圖文環繞缺乏段落拼接機制**：
+   右上角草藥插圖導致正文在排版時文字環繞，Surya 將該段劃分為圖旁單行（Box 7）與圖下方塊（Box 8）。因缺乏垂直鄰近且句中斷行（末字為《温）的平滑合併機制，首行孤立且中斷。
+
+## Decision Gate
+ADR-006（OCR 雙軌混合解析與圖文環繞段落合併架構）：
+1. **雙軌混合文字提取 (Hybrid Vector/OCR Fallback)**：
+   在版面框分析完成後，優先映射並擷取 PyMuPDF 原生向量文字；若框內有文字且無實體點陣圖覆蓋，自動將誤判為 Picture 的裝飾色塊還原為文字/標題。
+2. **基於水平投影的多行 OCR 安全切片 (`_slice_box_into_lines`)**：
+   在純掃描檔或無原生文字之區塊中，高度大於 35 像素之多行區塊透過水平投影直方圖自動精確分割為單行切片，再送入 `batch_recognition`，零 VRAM 額外開銷下徹底根除多行幻覺。
+3. **圖文環繞平滑拼接 (`_merge_wrapping_paragraphs`)**：
+   在自然閱讀流排序後，偵測句中斷行、未閉合引號/書名號且垂直間距正常之相鄰正文區塊，自動合併為單一完整段落，並嚴格保護中英文標題不被誤合。
+
+## Resolution
+- `src/scripts/process_ocr.py`：
+  - 新增 `_slice_box_into_lines(box_img)`：利用灰階投影自動偵測文字行波谷，將段落區塊分割為單行送審。
+  - 新增 `_is_heading_like` 與 `_merge_wrapping_paragraphs`：支援圖文環繞斷行平滑合併，保證段落連貫性。
+  - 在分批處理迴圈中實作向量文字映射與誤判 Picture 校正，大幅提升處理速度（232 頁僅需約 1 分鐘）。
+  - 修復 `body_markdown_list` 未傳遞 `block` 屬性之問題，使圖片尺寸動態百分比能正常計算。
+  - 支援 `--output_stem` 參數統一輸出檔名。
+- `src/scripts/pdf_engine_dispatcher.py`：傳遞 `output_stem` 至 `process_ocr.py`。
+- `tests/test_symbol_mapper_and_ocr_fixes.py`：新增 `test_merge_wrapping_paragraphs` 與 `test_slice_box_into_lines` 單元測試。
+- 驗收測試：全套 64 項測試全數通過（PASS），28 頁所有 10 行內文與「（一）组方思路」標題全數完整還原至 Markdown 與 Word。
+

@@ -119,8 +119,10 @@ def main():
             ocr_args = argparse.Namespace(
                 file=args.file,
                 output_dir=args.output_dir,
+                output_stem=args.output_stem,
                 style_mapping=args.style_mapping,
-                no_footnote=args.no_footnote
+                no_footnote=args.no_footnote,
+                image_dir=None
             )
             if hasattr(process_ocr, "main"):
                 process_ocr.main(ocr_args)
@@ -137,6 +139,8 @@ def main():
                     "--output_dir", args.output_dir, 
                     "--style_mapping", args.style_mapping
                 ]
+                if args.output_stem:
+                    cmd.extend(["--output_stem", args.output_stem])
                 if args.no_footnote:
                     cmd.append("--no_footnote")
                 import subprocess
@@ -152,23 +156,26 @@ def main():
                         sys.stdout.flush()
                 proc.wait()
                 if proc.returncode != 0:
-                    raise RuntimeError("process_ocr.py subprocess failed")
+                    raise RuntimeError(f"process_ocr.py subprocess failed with exit code {proc.returncode}")
             else:
                 raise RuntimeError("Frozen environment 中無法獨立啟動 process_ocr.py 子程序，請確認模組能被 import") from e
         
         # If output_stem is specified and Surya OCR produced a file based on args.file basename, rename if needed
-        if args.output_stem:
-            raw_base = os.path.basename(args.file).rsplit(".", 1)[0]
-            raw_out = os.path.join(args.output_dir, f"{raw_base}.md")
-            target_out = os.path.join(args.output_dir, f"{args.output_stem}.md")
-            if os.path.exists(raw_out) and raw_out != target_out:
-                import shutil
-                shutil.move(raw_out, target_out)
+        raw_base = os.path.basename(args.file).rsplit(".", 1)[0]
+        raw_out = os.path.join(args.output_dir, f"{raw_base}.md")
+        target_out = os.path.join(args.output_dir, f"{args.output_stem}.md") if args.output_stem else raw_out
+
+        if args.output_stem and os.path.exists(raw_out) and raw_out != target_out:
+            import shutil
+            shutil.move(raw_out, target_out)
 
         if 'proc' in locals() and proc.returncode != 0:
             raise RuntimeError(f"Surya OCR execution failed with code {proc.returncode}")
         elif 'proc' not in locals() and not hasattr(process_ocr, "main"):
             raise RuntimeError("process_ocr.py is missing or empty, cannot execute Surya OCR.")
+
+        if not os.path.exists(target_out):
+            raise RuntimeError(f"Surya OCR 執行未生成預期之輸出檔案: {target_out}")
 
 if __name__ == "__main__":
     main()

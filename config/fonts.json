@@ -112,5 +112,15 @@
     "role": "H2",
     "docx_style": "heading 2",
     "mapped_by": "user"
+  },
+  "FZXBSK--GBK1-0 (18.5pt)": {
+    "role": "H1",
+    "docx_style": "heading 1",
+    "mapped_by": "user"
+  },
+  "FZSHK--GBK1-0 (12.5pt)": {
+    "role": "H2",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
   }
 }
