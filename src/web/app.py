@@ -1332,3 +1332,160 @@ def api_open_file_folder(req: OpenFileFolderRequest, request: Request):
     return {"status": "success"}
 
 
+# --- POD Automated Markup Production API Endpoints ---
+from typing import Optional, List, Dict, Any
+from src.pod_studio.pod_service import (
+    extract_raw_from_pdf,
+    extract_raw_from_markdown,
+    compile_blueprint_from_seed,
+    propagate_and_validate_session,
+)
+from src.pod_studio.blueprint_schema import BookBlueprint
+
+
+@app.post("/api/pod/1_extract_raw")
+async def pod_1_extract_raw(
+    file: UploadFile = File(...),
+    split_level: int = Form(2),
+):
+    """
+    階段一：初稿生成 API
+    上傳 PDF 或 MD 原稿，輸出 Book_raw.docx 與包含幾何座標的 Book_raw_ast.json。
+    """
+    session_id = f"pod_{uuid.uuid4().hex[:12]}"
+    session_dir = PATHS.output_dir / "pod_workspaces" / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    input_path = session_dir / (file.filename or "input_book.pdf")
+    await save_upload_file_safely(file, input_path, max_mb=CFG.max_upload_size_mb)
+
+    ext = input_path.suffix.lower()
+    if ext == ".pdf":
+        sections, ast_path, raw_docx_path = extract_raw_from_pdf(input_path, session_dir, split_level=split_level)
+    elif ext in (".md", ".txt"):
+        md_text = input_path.read_text(encoding="utf-8")
+        sections, ast_path, raw_docx_path = extract_raw_from_markdown(md_text, session_dir, split_level=split_level)
+    else:
+        raise HTTPException(status_code=400, detail="生稿僅支援 .pdf 或 .md 檔案")
+
+    return {
+        "status": "success",
+        "session_id": session_id,
+        "raw_docx_name": raw_docx_path.name,
+        "ast_json_name": ast_path.name,
+        "total_sections": len(sections),
+        "sections_preview": [
+            {"id": s.section_id, "title": s.title, "paragraphs": len(s.paragraphs)}
+            for s in sections[:10]
+        ],
+    }
+
+
+@app.post("/api/pod/2_compile_blueprint")
+async def pod_2_compile_blueprint(
+    session_id: str = Form(...),
+    seed_file: UploadFile = File(...),
+):
+    """
+    階段二：規則合成 API
+    比對前 5% 人工精修範本與生稿 AST，以 LCS 差分合成通用出版藍圖 book_blueprint.json。
+    """
+    session_dir = PATHS.output_dir / "pod_workspaces" / session_id
+    if not session_dir.exists():
+        raise HTTPException(status_code=404, detail="Session 不存在或已過期")
+
+    seed_path = session_dir / (seed_file.filename or "Book_seed.docx")
+    await save_upload_file_safely(seed_file, seed_path, max_mb=CFG.max_template_size_mb)
+
+    blueprint = compile_blueprint_from_seed(session_dir, seed_path)
+
+    return {
+        "status": "success",
+        "session_id": session_id,
+        "blueprint": blueprint.to_dict(),
+        "inferred_rules_count": len(blueprint.style_rules),
+        "mandatory_badges": blueprint.mandatory_section_badges,
+        "detected_styles": blueprint.template_styles_used,
+    }
+
+
+@app.post("/api/pod/3_propagate_and_validate")
+async def pod_3_propagate_and_validate(
+    session_id: str = Form(...),
+    template_file: Optional[UploadFile] = File(None),
+    blueprint_json: Optional[str] = Form(None),
+    model: Optional[str] = Form(None),
+):
+    """
+    階段三：批量擴散與硬性驗收 API
+    依藍圖執行確定性 AST 標記索引套用，並由 CJK 骨架守恆閘門校驗輸出。
+    預設使用 gemini-3.8-flash 模型或環境變數指定之模型。
+    """
+    session_dir = PATHS.output_dir / "pod_workspaces" / session_id
+    if not session_dir.exists():
+        raise HTTPException(status_code=404, detail="Session 不存在或已過期")
+
+    template_path = None
+    if template_file and template_file.filename:
+        template_path = session_dir / "template.docx"
+        await save_upload_file_safely(template_file, template_path, max_mb=CFG.max_template_size_mb)
+
+    custom_bp = None
+    if blueprint_json:
+        try:
+            custom_bp = BookBlueprint.from_json(blueprint_json)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"自訂 Blueprint JSON 格式錯誤: {e}")
+
+    pdf_files = list(session_dir.glob("*.pdf"))
+    pdf_path = pdf_files[0] if pdf_files else None
+
+    final_docx_path, report, bp = propagate_and_validate_session(
+        session_dir=session_dir,
+        template_docx_path=template_path,
+        custom_blueprint=custom_bp,
+        pdf_path=pdf_path,
+        model=model,
+    )
+
+    return {
+        "status": "success",
+        "session_id": session_id,
+        "is_valid": report.is_valid,
+        "final_docx_name": final_docx_path.name,
+        "audit_summary": {
+            "total_sections": report.total_sections,
+            "passed_sections": report.passed_sections,
+            "failed_sections": report.failed_sections,
+            "green_count": report.green_count,
+            "yellow_count": report.yellow_count,
+            "red_count": report.red_count,
+            "violations_count": len(report.violations),
+        },
+        "audit_report": report.to_dict(),
+    }
+
+
+@app.get("/api/pod/download/{session_id}/{filename}")
+async def pod_download_file(session_id: str, filename: str):
+    """下載 POD 工作區之產出物 (Book_raw.docx, Book_POD_Final.docx, audit_report.json 等)"""
+    session_dir = (PATHS.output_dir / "pod_workspaces" / session_id).resolve()
+    if not session_dir.exists():
+        raise HTTPException(status_code=404, detail="Session 不存在")
+
+    target_file = (session_dir / filename).resolve()
+    if not target_file.is_relative_to(session_dir) or not target_file.exists():
+        raise HTTPException(status_code=404, detail="檔案不存在或存取受限")
+
+    media_type = "application/octet-stream"
+    if filename.endswith(".docx"):
+        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    elif filename.endswith(".json"):
+        media_type = "application/json"
+    elif filename.endswith(".md"):
+        media_type = "text/markdown"
+
+    return FileResponse(path=str(target_file), media_type=media_type, filename=filename)
+
+
+

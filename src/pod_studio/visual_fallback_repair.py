@@ -2,8 +2,9 @@
 """
 Visual Fallback Repair
 ======================
-Reuses the 150 DPI block screenshot rendering pattern from AIKaitiClassifier
-to provide visual context for sections with vector-outlined missing badges or OCR corruption.
+Renders 150 DPI block/page screenshots using PyMuPDF to provide visual context
+for sections or paragraphs with vector-outlined missing badges or OCR corruption,
+enabling targeted multimodal VLM repair without full-book OCR overhead.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Sequence
 
 from .blueprint_schema import BookBlueprint
+from .section_ast import ParagraphUnit, SectionUnit
 
 
 def render_page_crop(
@@ -23,7 +25,6 @@ def render_page_crop(
     """
     Renders a page or a padded bounding box to PNG bytes.
     1-indexed page_num.
-    Reuses the robust logic from AIKaitiClassifier._render_block_screenshot.
     """
     with fitz.open(str(pdf_path)) as doc:
         if page_num < 1 or page_num > len(doc):
@@ -55,8 +56,8 @@ def build_vlm_repair_prompt(
 ) -> str:
     """Constructs prompt for multimodal LLM visual repair."""
     prompt_lines = [
-        "你是一位專精於繁體/簡體中文圖書 POD 排版的專家。",
-        "附圖為書籍原版 PDF 頁面截圖。原書中部分特殊標題、印章（如【組成】、【用法】）可能因美編轉曲而在生稿中遺失，或者存在版面欄位錯位。",
+        "你是一位專精於中文圖書出版與 POD 數位整稿的專家。",
+        "附圖為書籍原版 PDF 頁面局部截圖。原書中部分特殊標題、印章徽標（如【導讀】、【重點】、【解析】）可能因美編轉曲或向量裝飾而在生稿中遺失，或者存在排版欄位錯位。",
         "",
         "### 【標準排版範本 (Golden Reference)】",
     ]
@@ -81,9 +82,9 @@ def build_vlm_repair_prompt(
         "```",
         "",
         "### 任務要求：",
-        "1. 對照 PDF 原圖，將生稿中遺失的標題、印章標籤（如【組成】、【用法】、【按語】）與文字準確補回。",
+        "1. 對照 PDF 原圖，將生稿中遺失的標題、印章標籤（如【導讀】、【注意事項】、【重點解析】）與文字準確補回。",
         "2. 嚴格套用 Pandoc `::: {custom-style=\"樣式名\"}` 標記。",
-        "3. 直接回傳修復完成的 Markdown 內文，不需附加說明。",
+        "3. 直接回傳修復完成的 Markdown 內文，不需附加無關對話說明。",
     ])
 
     return "\n".join(prompt_lines)
@@ -97,11 +98,26 @@ def repair_corrupted_section_with_vlm(
     ai_client: Optional[Any] = None,
     bbox: Optional[Sequence[float]] = None,
     missing_badges: Optional[List[str]] = None,
+    model: Optional[str] = None,
 ) -> str:
     """
     Executes visual fallback repair.
-    If ai_client is provided, calls multimodal model. Otherwise returns generated prompt.
+    If ai_client is not passed, attempts to initialize via GEMINI_API_KEY.
+    Defaults to model 'gemini-3.8-flash'.
     """
+    import os
+
+    target_model = model or os.getenv("DEFAULT_AI_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.8-flash"
+
+    if ai_client is None:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if api_key:
+            try:
+                from google import genai
+                ai_client = genai.Client(api_key=api_key)
+            except Exception:
+                pass
+
     image_bytes = render_page_crop(pdf_path, page_num, bbox=bbox, dpi=150)
     prompt = build_vlm_repair_prompt(
         corrupted_raw_md=corrupted_raw_md,
@@ -110,11 +126,9 @@ def repair_corrupted_section_with_vlm(
     )
 
     if ai_client is not None:
-        # Client invocation dispatch (e.g., google.genai, anthropic, or openai)
         if hasattr(ai_client, "models") and hasattr(ai_client.models, "generate_content"):
-            # Google GenAI SDK
             resp = ai_client.models.generate_content(
-                model="gemini-2.5-flash",
+                model=target_model,
                 contents=[image_bytes, prompt],
             )
             return resp.text.strip()
@@ -124,5 +138,4 @@ def repair_corrupted_section_with_vlm(
         elif callable(ai_client):
             return ai_client(prompt, image_bytes)
 
-    # If no active client, return the prompt representation
     return f"<!-- VLM Repair Prompt Prepared ({len(image_bytes)} bytes image rendered) -->\n{prompt}"

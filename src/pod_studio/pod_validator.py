@@ -4,10 +4,10 @@ POD Validator (Completion Gatekeeper)
 =====================================
 CLI-friendly validation gatekeeper for Antigravity, Claude Code, and Codex.
 Enforces book-specific quality gates without rigid hardcoded assumptions:
-- Flowcheck: text conservation (adaptive threshold)
-- Badges: only checked if the book archetype has mandatory recurring badges
-- Numbering: only checked if the book uses sequential numbered items
-- Styles: validates custom-style against template.docx / allowed styles
+- CJK Skeleton Invariant: zero silent-dropping of CJK and alphanumeric characters
+- Badges: validates mandatory structural badges
+- Numbering: validates continuity of circled or ordered numbers
+- Styles: validates custom-style tags against template.docx / styles.xml whitelist
 """
 
 from __future__ import annotations
@@ -22,19 +22,14 @@ from typing import List, Dict, Set, Optional, Any
 
 from .blueprint_schema import BookBlueprint, ValidationConfig
 from .section_ast import SectionUnit, SectionAST
-
-try:
-    from src.extraction.post_processor import OutputAnomalyError
-except ImportError:
-    class OutputAnomalyError(Exception):
-        pass
+from .cjk_validator import PODIntegrityValidator, CJKValidationResult
 
 
 @dataclass
 class ValidationViolation:
     section_id: str
     title: str
-    check_type: str         # "flowcheck" | "badge" | "numbering" | "style"
+    check_type: str         # "cjk_skeleton" | "flowcheck" | "badge" | "numbering" | "style"
     message: str
     severity: str = "ERROR" # "ERROR" | "WARNING"
 
@@ -47,7 +42,11 @@ class ValidationReport:
     total_sections: int
     passed_sections: int
     failed_sections: int
+    green_count: int = 0
+    yellow_count: int = 0
+    red_count: int = 0
     violations: List[ValidationViolation] = field(default_factory=list)
+    section_audits: List[Dict[str, Any]] = field(default_factory=list)
     strict_mode: bool = False
 
     @property
@@ -61,6 +60,7 @@ class ValidationReport:
         lines = [
             f"=== POD Validation Report: {status_sym} ===",
             f"Total Sections: {self.total_sections} | Passed: {self.passed_sections} | Failed: {self.failed_sections}",
+            f"Audit Traffic Lights: 🟢 Green: {self.green_count} | 🟡 Yellow: {self.yellow_count} | 🔴 Red: {self.red_count}",
             f"Total Violations: {len(self.violations)}",
         ]
         if self.violations:
@@ -69,12 +69,24 @@ class ValidationReport:
                 lines.append(f"  [{v.severity}] [{v.check_type.upper()}] {v.section_id} ({v.title}): {v.message}")
         return "\n".join(lines)
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "is_valid": self.is_valid,
+            "total_sections": self.total_sections,
+            "passed_sections": self.passed_sections,
+            "failed_sections": self.failed_sections,
+            "green_count": self.green_count,
+            "yellow_count": self.yellow_count,
+            "red_count": self.red_count,
+            "violations": [v.to_dict() for v in self.violations],
+            "section_audits": self.section_audits,
+        }
+
 
 class PodValidator:
-    """Adaptive gatekeeper ensuring zero structural defects according to book blueprint."""
+    """Adaptive gatekeeper ensuring zero structural defects and CJK skeleton conservation."""
 
     CIRCLED_NUMS = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"]
-    CHINESE_NUMS = ["（一）", "（二）", "（三）", "（四）", "（五）", "（六）", "（七）", "（八）", "（九）", "（十）"]
 
     def __init__(
         self,
@@ -85,13 +97,23 @@ class PodValidator:
         self.blueprint = blueprint
         self.config: ValidationConfig = getattr(blueprint, "validation_config", ValidationConfig())
 
-        # Override max_shrink_ratio if explicitly passed
         self.max_shrink_ratio = max_shrink_ratio if max_shrink_ratio is not None else self.config.max_shrink_ratio
         self.template_styles: Set[str] = set(blueprint.template_styles_used)
 
         if template_docx_path and Path(template_docx_path).exists():
             extracted_styles = self.extract_styles_from_docx(template_docx_path)
             self.template_styles.update(extracted_styles)
+
+        # Invariant gatekeeper
+        allowed_badges = [f"【{b}】" for b in blueprint.mandatory_section_badges]
+        for r in blueprint.style_rules:
+            if r.inject_prefix_badge:
+                allowed_badges.append(r.inject_prefix_badge)
+
+        self.cjk_validator = PODIntegrityValidator(
+            valid_docx_styles=self.template_styles,
+            allowed_injected_badges=allowed_badges,
+        )
 
     @staticmethod
     def extract_styles_from_docx(docx_path: str | Path) -> Set[str]:
@@ -115,33 +137,54 @@ class PodValidator:
             pass
         return styles
 
-    def validate_section(self, section: SectionUnit) -> List[ValidationViolation]:
+    def validate_section(self, section: SectionUnit) -> Tuple[List[ValidationViolation], Optional[CJKValidationResult]]:
         """Validates a single section against configured quality dimensions."""
         violations: List[ValidationViolation] = []
         if section.title == "__PREAMBLE__" or section.level == 0:
-            return violations
+            return violations, None
 
         content = section.effective_content
 
-        # 1. Flowcheck (Text conservation check) - only if enabled
-        if self.config.enable_flowcheck:
-            raw_len = len(section.raw_content)
-            proc_len = len(content)
-            if raw_len > 100:
-                shrink_ratio = (raw_len - proc_len) / raw_len
-                if shrink_ratio > self.max_shrink_ratio:
-                    violations.append(ValidationViolation(
-                        section_id=section.section_id,
-                        title=section.title,
-                        check_type="flowcheck",
-                        message=f"正文字數大幅縮水: 原文 {raw_len} 字 -> 處理後 {proc_len} 字 (縮減 {shrink_ratio:.1%} > 上限 {self.max_shrink_ratio:.0%})",
-                        severity="ERROR",
-                    ))
+        # 1. CJK Skeleton Conservation (Zero-deletion guarantee)
+        cjk_res = self.cjk_validator.validate_section(
+            section_id=section.section_id,
+            section_title=section.title,
+            raw_text=section.raw_content,
+            processed_text=content,
+            intentionally_deleted_texts=self.blueprint.intentionally_deleted_patterns,
+        )
 
-        # 2. Schema Check: Mandatory Badges - only if enabled AND book has mandatory badges
+        if cjk_res.dropped_fragments:
+            violations.append(ValidationViolation(
+                section_id=section.section_id,
+                title=section.title,
+                check_type="cjk_skeleton",
+                message=f"檢測到漢字骨架遺失（疑似掉字）: 遺失 {len(cjk_res.dropped_fragments)} 處片段 {cjk_res.dropped_fragments[:3]}",
+                severity="ERROR",
+            ))
+
+        if cjk_res.invalid_styles:
+            violations.append(ValidationViolation(
+                section_id=section.section_id,
+                title=section.title,
+                check_type="style",
+                message=f"使用了未在樣式庫定義的樣式: {cjk_res.invalid_styles}",
+                severity="ERROR",
+            ))
+
+        if cjk_res.added_fragments:
+            violations.append(ValidationViolation(
+                section_id=section.section_id,
+                title=section.title,
+                check_type="cjk_skeleton",
+                message=f"包含增補文字片段（需確認是否為預期之轉曲補字）: {cjk_res.added_fragments[:3]}",
+                severity="WARNING",
+            ))
+
+        # 2. Schema Check: Mandatory Badges
         if self.config.enable_badge_check and self.blueprint.mandatory_section_badges:
             existing_badges = set(re.findall(r'【([^】]+)】|\[([^\]]+)\]', content))
-            prefix_badges = set(re.findall(r'(?:^|[\n\r])\s*([問答QA材料步驟作法解析案情評析提示注意要點病案分析]{1,6})[：:]', content))
+            prefix_badges = set(re.findall(r'(?:^|[\n\r])\s*([問答QA材料步驟作法解析案情評析提示注意要點導讀摘要重點範例]{1,6})[：:]', content))
             flattened_badges = {b[0] or b[1] for b in existing_badges} | prefix_badges
 
             for badge in self.blueprint.mandatory_section_badges:
@@ -154,7 +197,7 @@ class PodValidator:
                         severity="ERROR",
                     ))
 
-        # 3. Numbering Continuity Check - only if enabled for this book
+        # 3. Numbering Continuity Check
         if self.config.enable_numbering_check:
             found_circled = [c for c in self.CIRCLED_NUMS if c in content]
             if len(found_circled) >= 2:
@@ -170,28 +213,28 @@ class PodValidator:
                         severity="WARNING",
                     ))
 
-        # 4. Style Check: Pandoc Custom Style Validation - only if enabled
-        if self.config.enable_style_check and self.template_styles:
-            custom_styles = re.findall(r':::\s*\{\s*custom-style="([^"]+)"\s*\}', content)
-            for s in custom_styles:
-                if s not in self.template_styles and s != "Normal":
-                    violations.append(ValidationViolation(
-                        section_id=section.section_id,
-                        title=section.title,
-                        check_type="style",
-                        message=f"使用了未在樣式庫定義的樣式: '{s}'",
-                        severity="WARNING",
-                    ))
-
-        return violations
+        return violations, cjk_res
 
     def validate_all(self, sections: List[SectionUnit]) -> ValidationReport:
-        """Validates all sections and aggregates the report."""
+        """Validates all sections and aggregates the report with traffic light counts."""
         all_violations: List[ValidationViolation] = []
+        section_audits: List[Dict[str, Any]] = []
         failed_count = 0
+        green_count = 0
+        yellow_count = 0
+        red_count = 0
 
         for sec in sections:
-            sec_violations = self.validate_section(sec)
+            sec_violations, cjk_res = self.validate_section(sec)
+            if cjk_res:
+                section_audits.append(cjk_res.to_dict())
+                if cjk_res.status == "GREEN":
+                    green_count += 1
+                elif cjk_res.status == "YELLOW":
+                    yellow_count += 1
+                elif cjk_res.status == "RED":
+                    red_count += 1
+
             if sec_violations:
                 all_violations.extend(sec_violations)
                 if any(v.severity == "ERROR" for v in sec_violations):
@@ -206,7 +249,11 @@ class PodValidator:
             total_sections=total,
             passed_sections=passed,
             failed_sections=failed_count,
+            green_count=green_count,
+            yellow_count=yellow_count,
+            red_count=red_count,
             violations=all_violations,
+            section_audits=section_audits,
             strict_mode=self.config.strict_mode,
         )
 
@@ -225,7 +272,6 @@ def main():
 
     bp = BookBlueprint.load(args.blueprint)
 
-    # CLI option overrides
     if args.disable_badge_check:
         bp.validation_config.enable_badge_check = False
     if args.disable_numbering_check:

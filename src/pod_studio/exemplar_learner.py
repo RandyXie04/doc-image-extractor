@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
 """
-Exemplar Learner
-================
+Exemplar Learner & Diff Aligner
+===============================
 Compares raw extraction files with human pre-processed golden exemplars (Golden Seed),
-dynamically inferring book archetype (novels, Q&A, recipes, academic, legal, technical),
-learning used Word styles, recurring structural badges, and Few-Shot pairs without
-imposing rigid assumptions across different book genres.
+dynamically inferring layout blueprints (custom styles, recurring structural badges,
+and text transformation rules) via deterministic LCS Diff Alignment without domain-specific hardcoding.
 """
 
 from __future__ import annotations
 import re
 import json
+import difflib
 import argparse
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple, Set
@@ -20,77 +20,103 @@ from .blueprint_schema import BookBlueprint, StyleTriggerRule, ValidationConfig
 from .section_ast import SectionAST, SectionUnit
 
 
+class DiffAligner:
+    """
+    Compares raw and golden paragraphs using SequenceMatcher to automatically infer:
+    1. Injected badges (e.g. 【導讀】, 【重點】)
+    2. Applied custom styles (e.g. ::: {custom-style="提示框"} ...)
+    3. Intentionally deleted lines (e.g. decorative running headers)
+    """
+
+    _BADGE_PREFIX_RE = re.compile(r'^(?:【([^】]+)】|\[([^\]]+)\]|〔([^〕]+)〕)')
+    _CUSTOM_STYLE_RE = re.compile(r':::\s*\{\s*custom-style="([^"]+)"\s*\}\n?(.*?)\n?:::', re.DOTALL)
+
+    @classmethod
+    def align_paragraphs(cls, raw_text: str, golden_text: str) -> List[StyleTriggerRule]:
+        """Infers transformation rules by comparing raw and golden paragraph streams."""
+        raw_paras = [p.strip() for p in raw_text.split("\n\n") if p.strip()]
+        gold_paras = [p.strip() for p in golden_text.split("\n\n") if p.strip()]
+
+        inferred_rules: List[StyleTriggerRule] = []
+        rule_signatures: Set[str] = set()
+
+        # Step A: Find paragraphs in golden that have custom styles
+        for gp in gold_paras:
+            m_style = cls._CUSTOM_STYLE_RE.search(gp)
+            if m_style:
+                style_name = m_style.group(1).strip()
+                inner_text = m_style.group(2).strip()
+                # Find matching paragraph in raw_paras
+                for rp in raw_paras:
+                    # If raw paragraph is contained in or contains inner_text
+                    if inner_text and (inner_text in rp or rp in inner_text):
+                        # Construct a leading regex trigger (first 6-12 chars)
+                        clean_start = re.sub(r'^[#\s【】\[\]\d\.\-、]+', '', rp).strip()
+                        prefix = clean_start[:8]
+                        if len(prefix) >= 2:
+                            escaped = re.escape(prefix)
+                            sig = f"style_{style_name}_{escaped}"
+                            if sig not in rule_signatures:
+                                rule_signatures.add(sig)
+                                inferred_rules.append(StyleTriggerRule(
+                                    rule_id=f"rule_style_{len(inferred_rules)+1}",
+                                    target_docx_style=style_name,
+                                    trigger_regex=f"^{escaped}",
+                                    action="apply_style",
+                                    priority=20,
+                                ))
+
+        # Step B: Find injected badges
+        for gp in gold_paras:
+            m_badge = cls._BADGE_PREFIX_RE.match(gp)
+            if m_badge:
+                badge_name = m_badge.group(1) or m_badge.group(2) or m_badge.group(3)
+                full_badge = f"【{badge_name}】"
+                post_badge_text = gp[m_badge.end():].strip()
+
+                # Check if raw version lacked this badge
+                for rp in raw_paras:
+                    if not rp.startswith(full_badge) and post_badge_text and post_badge_text[:12] in rp:
+                        clean_start = re.sub(r'^[#\s【】\[\]\d\.\-、]+', '', post_badge_text).strip()
+                        prefix = clean_start[:8]
+                        if len(prefix) >= 2:
+                            escaped = re.escape(prefix)
+                            sig = f"badge_{badge_name}_{escaped}"
+                            if sig not in rule_signatures:
+                                rule_signatures.add(sig)
+                                inferred_rules.append(StyleTriggerRule(
+                                    rule_id=f"rule_badge_{badge_name}_{len(inferred_rules)+1}",
+                                    action="inject_badge",
+                                    inject_prefix_badge=full_badge,
+                                    trigger_regex=f"^{escaped}",
+                                    priority=10,
+                                ))
+
+        return inferred_rules
+
+
 class ExemplarLearner:
     """Extracts typography and semantic transformation blueprints from human golden seeds."""
-
-    # Archetype-specific trigger packs
-    RECIPE_TRIGGERS = [
-        {
-            "badge": "用法",
-            "regex": r"(?:水煎服|日服|每日\s*[一二三123]\s*劑|空腹[溫温]服|分\s*[一二三123]\s*次服|水煎[，,]\s*去渣|煎湯代茶|代茶飲|早晚各一次|日一劑)",
-            "style": "Normal",
-        },
-        {
-            "badge": "組成",
-            "regex": r"(?:(?:[\u4e00-\u9fa5]{1,6}\s*\d+[\s\u3000]*[克g克千克兩钱錢]|各等分|適量).*){2,}",
-            "style": "Normal",
-        },
-        {
-            "badge": "功效",
-            "regex": r"(?:清熱|健脾|補腎|活血|祛風|化痰|散寒|疏肝|養心|理氣|利水|溫陽|益氣|止痛|潤肺|安神)[\u4e00-\u9fa5]{2,6}",
-            "style": "Normal",
-        },
-        {
-            "badge": "按語",
-            "regex": r"(?:本方出自|按[：:]|臨床體會|臨證應用|本方主要|配伍特點|筆者體會)",
-            "style": "備注楷體",
-        },
-        {
-            "badge": "備注",
-            "regex": r"(?:孕婦忌服|忌生冷|服藥期間|注意[：:]|禁忌[：:])",
-            "style": "備注楷體",
-        },
-    ]
-
-    QA_TRIGGERS = [
-        {
-            "badge": "問",
-            "regex": r"^(?:問[：:]|Q[：:]|問題[：:])\s*",
-            "style": "問答題幹",
-        },
-        {
-            "badge": "答",
-            "regex": r"^(?:答[：:]|A[：:]|解答[：:])\s*",
-            "style": "問答解析",
-        },
-    ]
-
-    COOKBOOK_TRIGGERS = [
-        {
-            "badge": "材料",
-            "regex": r"^(?:材料|食材|主料|配料|調料)[：:]\s*",
-            "style": "Normal",
-        },
-        {
-            "badge": "步驟",
-            "regex": r"^(?:步驟|做法|製作方法|烹調步驟)[：:]\s*",
-            "style": "Normal",
-        },
-    ]
 
     @classmethod
     def _extract_badges_from_text(cls, text: str) -> List[str]:
         """Extracts candidate structural badges or prefixes from text."""
         badges = []
         # Pattern 1: Bracketed badges 【...】, [...], 〔...〕
-        bracket_matches = re.findall(r'(?:^|[\n\r])\s*(?:【([^】]{2,10})】|\[([^\]]{2,10})\]|〔([^〕]{2,10})〕)', text)
+        bracket_matches = re.findall(
+            r'(?:^|[\n\r])\s*(?:【([^】]{2,10})】|\[([^\]]{2,10})\]|〔([^〕]{2,10})〕)',
+            text
+        )
         for m in bracket_matches:
             b = m[0] or m[1] or m[2]
             if b and len(b.strip()) <= 8:
                 badges.append(b.strip())
 
-        # Pattern 2: Prefix labels like 問：, 答：, 材料：, 步驟：
-        prefix_matches = re.findall(r'(?:^|[\n\r])\s*([問答QA材料步驟作法解析案情評析提示注意要點病案分析]{1,6})[：:]', text)
+        # Pattern 2: Standard prefix labels like 導讀：, 摘要：, 提示：, 注意：, 範例：
+        prefix_matches = re.findall(
+            r'(?:^|[\n\r])\s*([問答QA材料步驟作法解析案情評析提示注意要點導讀摘要重點範例]{1,6})[：:]',
+            text
+        )
         for p in prefix_matches:
             badges.append(p.strip())
 
@@ -100,14 +126,10 @@ class ExemplarLearner:
     def _detect_book_type(cls, learned_badges: List[str]) -> str:
         """Infers the book archetype based on recurring badges."""
         badge_set = set(learned_badges)
-        if any(b in badge_set for b in ("組成", "用法", "方解", "方歌", "加減")):
-            return "recipe_formula"
-        elif any(b in badge_set for b in ("問", "答", "Q", "A", "問題", "解答")):
+        if any(b in badge_set for b in ("問", "答", "Q", "A", "問題", "解答")):
             return "qa_dialogue"
-        elif any(b in badge_set for b in ("材料", "步驟", "作法", "主料", "調料")):
-            return "cookbook"
-        elif any(b in badge_set for b in ("條文", "判例", "要件", "釋義")):
-            return "legal_statute"
+        elif any(b in badge_set for b in ("導讀", "重點", "摘要", "提示", "範例", "說明", "解析")):
+            return "technical_manual"
         elif not learned_badges:
             return "narrative"
         return "general"
@@ -160,10 +182,7 @@ class ExemplarLearner:
             for b in sec_badges:
                 badge_counts[b] = badge_counts.get(b, 0) + 1
 
-        # Determine section count (excluding preamble)
         sec_count = max(len([t for t in gold_sections if t != "__PREAMBLE__"]), 1)
-
-        # Mandatory badges must appear in >= 60% of sampled sections (or >= 1 if <= 2 sections)
         threshold = 1 if sec_count <= 2 else max(2, int(sec_count * 0.6))
         mandatory_badges = [
             b for b, count in badge_counts.items()
@@ -172,8 +191,10 @@ class ExemplarLearner:
 
         book_type = cls._detect_book_type(distinct_badges)
 
-        # Few-shots
+        # Few-shots and Diff-Aligned rules
         few_shots: List[Dict[str, str]] = []
+        all_inferred_rules: List[StyleTriggerRule] = []
+
         for title, gold_md in gold_sections.items():
             if title == "__PREAMBLE__":
                 continue
@@ -192,11 +213,22 @@ class ExemplarLearner:
                     "raw_input": raw_match,
                     "golden_output": gold_md,
                 })
+                # Infer rules from diff
+                rules_from_sec = DiffAligner.align_paragraphs(raw_match, gold_md)
+                all_inferred_rules.extend(rules_from_sec)
                 if len(few_shots) >= sample_chapters:
                     break
 
         # Numbering check enabled only if circled numbers are regularly used
         enable_numbering = circled_number_count >= max(2, int(sec_count * 0.4))
+
+        if enable_numbering:
+            all_inferred_rules.insert(0, StyleTriggerRule(
+                rule_id="split_circled_num_rule",
+                action="split_circled_num",
+                trigger_regex=r"[①②③④⑤⑥⑦⑧⑨⑩]",
+                priority=5,
+            ))
 
         # Dynamic validation config
         val_config = ValidationConfig(
@@ -207,7 +239,14 @@ class ExemplarLearner:
             enable_style_check=True,
         )
 
-        rules = cls._build_style_rules(distinct_badges, used_styles, book_type, enable_numbering)
+        # Deduplicate rules by rule_id or signature
+        seen_rules = set()
+        deduped_rules = []
+        for r in all_inferred_rules:
+            sig = (r.action, r.target_docx_style, r.inject_prefix_badge, r.trigger_regex)
+            if sig not in seen_rules:
+                seen_rules.add(sig)
+                deduped_rules.append(r)
 
         return BookBlueprint(
             book_name=Path(golden_docx_path).stem.replace("_前處理", "").replace("_golden", ""),
@@ -215,7 +254,7 @@ class ExemplarLearner:
             template_styles_used=sorted(list(used_styles)),
             heading_hierarchy=heading_hierarchy,
             mandatory_section_badges=mandatory_badges,
-            style_rules=rules,
+            style_rules=deduped_rules,
             few_shot_examples=few_shots,
             validation_config=val_config,
             metadata={
@@ -240,7 +279,9 @@ class ExemplarLearner:
 
         raw_sections = {s.title: s.raw_content for s in raw_units}
         h2_gold_sections = {s.title: s.raw_content for s in gold_units if s.level >= 2}
-        gold_sections = h2_gold_sections if h2_gold_sections else {s.title: s.raw_content for s in gold_units if s.title != "__PREAMBLE__"}
+        gold_sections = h2_gold_sections if h2_gold_sections else {
+            s.title: s.raw_content for s in gold_units if s.title != "__PREAMBLE__"
+        }
 
         used_styles = set(re.findall(r':::\s*\{\s*custom-style="([^"]+)"\s*\}', gold_text))
 
@@ -268,6 +309,8 @@ class ExemplarLearner:
         enable_numbering = circled_number_count >= max(2, int(sec_count * 0.4))
 
         few_shots = []
+        all_inferred_rules: List[StyleTriggerRule] = []
+
         for title, gold_content in gold_sections.items():
             if title == "__PREAMBLE__":
                 continue
@@ -277,8 +320,19 @@ class ExemplarLearner:
                     "raw_input": raw_sections[title],
                     "golden_output": gold_content,
                 })
+                # Infer rules from diff
+                rules_from_sec = DiffAligner.align_paragraphs(raw_sections[title], gold_content)
+                all_inferred_rules.extend(rules_from_sec)
                 if len(few_shots) >= sample_chapters:
                     break
+
+        if enable_numbering:
+            all_inferred_rules.insert(0, StyleTriggerRule(
+                rule_id="split_circled_num_rule",
+                action="split_circled_num",
+                trigger_regex=r"[①②③④⑤⑥⑦⑧⑨⑩]",
+                priority=5,
+            ))
 
         val_config = ValidationConfig(
             enable_flowcheck=True,
@@ -288,7 +342,13 @@ class ExemplarLearner:
             enable_style_check=True,
         )
 
-        rules = cls._build_style_rules(distinct_badges, used_styles, book_type, enable_numbering)
+        seen_rules = set()
+        deduped_rules = []
+        for r in all_inferred_rules:
+            sig = (r.action, r.target_docx_style, r.inject_prefix_badge, r.trigger_regex)
+            if sig not in seen_rules:
+                seen_rules.add(sig)
+                deduped_rules.append(r)
 
         return BookBlueprint(
             book_name=Path(golden_md_path).stem.replace("_前處理", "").replace("_golden", ""),
@@ -296,65 +356,10 @@ class ExemplarLearner:
             template_styles_used=sorted(list(used_styles)),
             heading_hierarchy={"H1": "Heading 1", "H2": "Heading 2"},
             mandatory_section_badges=mandatory_badges,
-            style_rules=rules,
+            style_rules=deduped_rules,
             few_shot_examples=few_shots,
             validation_config=val_config,
         )
-
-    @classmethod
-    def _build_style_rules(
-        cls,
-        learned_badges: List[str],
-        used_styles: Set[str],
-        book_type: str,
-        enable_numbering: bool,
-    ) -> List[StyleTriggerRule]:
-        """Maps known semantic patterns to trigger rules according to book archetype."""
-        rules: List[StyleTriggerRule] = []
-
-        # 1. Circle number separation rule (only if book actually uses them)
-        if enable_numbering:
-            rules.append(StyleTriggerRule(
-                rule_id="split_circled_num_rule",
-                action="split_circled_num",
-                trigger_regex=r"[①②③④⑤⑥⑦⑧⑨⑩]",
-                priority=5,
-            ))
-
-        # 2. Add badge injection rules based on inferred archetype
-        trigger_pool = []
-        if book_type == "recipe_formula":
-            trigger_pool = cls.RECIPE_TRIGGERS
-        elif book_type == "qa_dialogue":
-            trigger_pool = cls.QA_TRIGGERS
-        elif book_type == "cookbook":
-            trigger_pool = cls.COOKBOOK_TRIGGERS
-
-        for item in trigger_pool:
-            badge = item["badge"]
-            if badge in learned_badges:
-                target_style = item["style"] if item["style"] in used_styles else "Normal"
-                rules.append(StyleTriggerRule(
-                    rule_id=f"inject_badge_{badge}",
-                    action="inject_badge",
-                    inject_prefix_badge=f"【{badge}】",
-                    trigger_regex=item["regex"],
-                    target_docx_style=target_style,
-                    priority=10,
-                ))
-
-        # 3. Apply custom style rules if custom styles are observed
-        for st in used_styles:
-            if "詩詞" in st or "框" in st:
-                rules.append(StyleTriggerRule(
-                    rule_id=f"apply_{st}",
-                    action="apply_style",
-                    target_docx_style=st,
-                    trigger_regex=r"^[\u4e00-\u9fa5]{5,7}[，,。]\s*[\u4e00-\u9fa5]{5,7}",
-                    priority=20,
-                ))
-
-        return rules
 
     @staticmethod
     def _split_docx_by_h2(doc: docx.Document) -> Dict[str, str]:

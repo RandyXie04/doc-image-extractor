@@ -10,9 +10,12 @@ deterministic rule propagation, visual fallback repair, and CLI validation gatek
 from .blueprint_schema import (
     StyleTriggerRule,
     BookBlueprint,
+    ValidationConfig,
+    IndexTaggingInstruction,
 )
-from .exemplar_learner import ExemplarLearner
-from .section_ast import SectionUnit, SectionAST
+from .cjk_validator import PODIntegrityValidator, CJKValidationResult
+from .exemplar_learner import ExemplarLearner, DiffAligner
+from .section_ast import SectionUnit, ParagraphUnit, SectionAST
 from .propagation_engine import PropagationEngine
 from .visual_fallback_repair import render_page_crop, build_vlm_repair_prompt, repair_corrupted_section_with_vlm
 from .pod_validator import PodValidator, ValidationReport, ValidationViolation
@@ -20,8 +23,14 @@ from .pod_validator import PodValidator, ValidationReport, ValidationViolation
 __all__ = [
     "StyleTriggerRule",
     "BookBlueprint",
+    "ValidationConfig",
+    "IndexTaggingInstruction",
+    "PODIntegrityValidator",
+    "CJKValidationResult",
     "ExemplarLearner",
+    "DiffAligner",
     "SectionUnit",
+    "ParagraphUnit",
     "SectionAST",
     "PropagationEngine",
     "render_page_crop",

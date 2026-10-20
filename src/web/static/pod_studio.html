@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>POD 自動整稿與擴散工作區 - 出版專用</title>
+    <link rel="stylesheet" href="/static/sidebar.css?v=20261016_v5">
+    <style>
+        :root {
+            color-scheme: light;
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg-color: #f8fafc;
+            --surface: rgba(0, 0, 0, 0.02);
+            --text-main: #0f172a;
+            --text-muted: #64748b;
+            --border: #e2e8f0;
+            --card-bg: #ffffff;
+            --success: #16a34a;
+            --warning: #d97706;
+            --danger: #dc2626;
+        }
+
+        :root[data-theme="dark"] {
+            color-scheme: dark;
+            --primary: #3b82f6;
+            --primary-hover: #2563eb;
+            --bg-color: #0f172a;
+            --surface: rgba(255, 255, 255, 0.03);
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border: rgba(255, 255, 255, 0.1);
+            --card-bg: #1e293b;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            color: var(--text-main);
+            background: var(--bg-color);
+            margin: 0;
+            padding: 0;
+        }
+
+        .container {
+            background: var(--card-bg);
+            padding: clamp(1.5rem, 3vw, 2.5rem);
+            border-radius: 16px;
+            border: 1px solid var(--border);
+            width: 100%;
+            max-width: 1100px;
+            margin: 0 auto;
+            box-sizing: border-box;
+        }
+
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 2rem;
+            padding-bottom: 1.2rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .header-title-group h1 {
+            margin: 0 0 0.4rem;
+            font-size: 1.6rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .header-title-group p {
+            margin: 0;
+            font-size: 0.95rem;
+            color: var(--text-muted);
+        }
+
+        .btn-link {
+            text-decoration: none;
+            color: var(--primary);
+            font-size: 0.9rem;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 8px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+
+        .pipeline-steps {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+
+        @media (max-width: 768px) {
+            .pipeline-steps {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .step-indicator {
+            padding: 1rem;
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            background: var(--surface);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: border-color 0.2s;
+        }
+
+        .step-indicator.active {
+            border-color: var(--primary);
+            background: rgba(37, 99, 235, 0.05);
+        }
+
+        .step-num {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: var(--border);
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.85rem;
+            flex-shrink: 0;
+        }
+
+        .step-indicator.active .step-num {
+            background: var(--primary);
+            color: #ffffff;
+        }
+
+        .step-indicator.completed .step-num {
+            background: var(--success);
+            color: #ffffff;
+        }
+
+        .step-info h3 {
+            margin: 0;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .step-info p {
+            margin: 2px 0 0;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .card-stage {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .stage-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1rem;
+        }
+
+        .stage-title h2 {
+            margin: 0;
+            font-size: 1.15rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .form-row {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            margin-bottom: 1rem;
+        }
+
+        .form-row label {
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: var(--text-main);
+        }
+
+        .form-hint {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .file-upload-box {
+            border: 1px dashed var(--border);
+            border-radius: 8px;
+            padding: 1.2rem;
+            text-align: center;
+            background: var(--card-bg);
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+
+        .file-upload-box:hover {
+            border-color: var(--primary);
+        }
+
+        .select-input, .text-input {
+            width: 100%;
+            padding: 8px 12px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--card-bg);
+            color: var(--text-main);
+            font-size: 0.9rem;
+            box-sizing: border-box;
+        }
+
+        .select-input:focus, .text-input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        .btn-action {
+            background: var(--primary);
+            color: #ffffff;
+            border: none;
+            border-radius: 8px;
+            padding: 10px 18px;
+            font-size: 0.92rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            transition: background 0.15s, opacity 0.15s;
+        }
+
+        .btn-action:hover:not(:disabled) {
+            background: var(--primary-hover);
+        }
+
+        .btn-action:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--surface);
+            color: var(--text-main);
+            border: 1px solid var(--border);
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: var(--border);
+        }
+
+        .results-box {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-size: 0.88rem;
+        }
+
+        .badge-pill {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.78rem;
+            font-weight: 600;
+            margin-right: 6px;
+            margin-bottom: 4px;
+            background: var(--surface);
+            border: 1px solid var(--border);
+        }
+
+        .traffic-lights {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin: 1rem 0;
+        }
+
+        .traffic-card {
+            padding: 0.9rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            text-align: center;
+        }
+
+        .traffic-card.green {
+            border-color: rgba(34, 197, 94, 0.4);
+            background: rgba(34, 197, 94, 0.06);
+        }
+
+        .traffic-card.yellow {
+            border-color: rgba(245, 158, 11, 0.4);
+            background: rgba(245, 158, 11, 0.06);
+        }
+
+        .traffic-card.red {
+            border-color: rgba(239, 68, 68, 0.4);
+            background: rgba(239, 68, 68, 0.06);
+        }
+
+        .traffic-count {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+
+        .traffic-card.green .traffic-count { color: var(--success); }
+        .traffic-card.yellow .traffic-count { color: var(--warning); }
+        .traffic-card.red .traffic-count { color: var(--danger); }
+
+        .traffic-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .session-badge {
+            font-family: monospace;
+            background: var(--surface);
+            border: 1px solid var(--border);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="header-title-group">
+                <h1>POD 自動整稿與擴散工作區</h1>
+                <p>三階段管線：幾何 AST 提取、範本藍圖歸納、標記索引擴散與 CJK 骨架守恆驗收</p>
+            </div>
+            <a href="/" class="btn-link">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+                返回工具箱
+            </a>
+        </div>
+
+        <div class="pipeline-steps">
+            <div class="step-indicator active" id="stepIndicator1">
+                <div class="step-num">1</div>
+                <div class="step-info">
+                    <h3>階段一：初稿生成</h3>
+                    <p>幾何座標與 AST 結構鎖定</p>
+                </div>
+            </div>
+            <div class="step-indicator" id="stepIndicator2">
+                <div class="step-num">2</div>
+                <div class="step-info">
+                    <h3>階段二：規則合成</h3>
+                    <p>比對前 5% 範本推導藍圖</p>
+                </div>
+            </div>
+            <div class="step-indicator" id="stepIndicator3">
+                <div class="step-num">3</div>
+                <div class="step-info">
+                    <h3>階段三：批量擴散</h3>
+                    <p>標記索引與骨架守恆驗收</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- 階段一 -->
+        <div class="card-stage" id="stage1Section">
+            <div class="stage-title">
+                <h2>階段一：原稿解析與幾何 AST 提取</h2>
+            </div>
+            <div class="form-row">
+                <label>上傳原稿檔案 (.pdf 或 .md)</label>
+                <div class="file-upload-box" onclick="document.getElementById('rawFileInput').click()">
+                    <span id="rawFileLabel">點擊選擇原稿檔案</span>
+                    <input type="file" id="rawFileInput" accept=".pdf,.md,.txt" style="display:none">
+                </div>
+            </div>
+            <button class="btn-action" id="extractRawBtn" disabled>
+                執行初稿生成
+            </button>
+            <div id="stage1Result" class="results-box" style="display:none;"></div>
+        </div>
+
+        <!-- 階段二 -->
+        <div class="card-stage" id="stage2Section" style="opacity: 0.6; pointer-events: none;">
+            <div class="stage-title">
+                <h2>階段二：人工範本特徵學習與藍圖編譯</h2>
+                <span class="session-badge" id="sessionBadgeDisplay">未建立 Session</span>
+            </div>
+            <p class="form-hint" style="margin-bottom: 1rem;">
+                請先下載階段一生成的 <code>Book_raw.docx</code>，僅微調前 5%~10% 章節的排版樣式與轉曲補字，另存為 <code>Book_seed.docx</code> 後上傳比對。
+            </p>
+            <div class="form-row">
+                <label>上傳精修種子範本 (Book_seed.docx 或 .md)</label>
+                <div class="file-upload-box" onclick="document.getElementById('seedFileInput').click()">
+                    <span id="seedFileLabel">點擊選擇種子範本檔案</span>
+                    <input type="file" id="seedFileInput" accept=".docx,.md" style="display:none">
+                </div>
+            </div>
+            <button class="btn-action" id="compileBlueprintBtn" disabled>
+                合成排版藍圖 (Compile Blueprint)
+            </button>
+            <div id="stage2Result" class="results-box" style="display:none;"></div>
+        </div>
+
+        <!-- 階段三 -->
+        <div class="card-stage" id="stage3Section" style="opacity: 0.6; pointer-events: none;">
+            <div class="stage-title">
+                <h2>階段三：批量擴散與 CJK 骨架守恆硬性驗收</h2>
+            </div>
+
+            <!-- 模型選擇區塊 -->
+            <div class="form-row">
+                <label for="vlmModelSelect">視覺補字與修復模型選擇 (VLM Model)</label>
+                <select id="vlmModelSelect" class="select-input">
+                    <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash (推薦，預設)</option>
+                    <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                    <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                    <option value="custom">自訂模型名稱...</option>
+                </select>
+                <input type="text" id="customModelInput" class="text-input" placeholder="請輸入自訂模型名稱（例如 gemini-3.1-pro-preview）" style="display:none; margin-top: 6px;">
+                <span class="form-hint">僅在單元缺乏必備轉曲徽標或檢測到異常短少時，依幾何座標裁切 150 DPI 截圖送交該模型修復。</span>
+            </div>
+
+            <div class="form-row">
+                <label>選擇套用之 Word 樣式庫範本 (可選 template.docx)</label>
+                <div class="file-upload-box" onclick="document.getElementById('templateFileInput').click()">
+                    <span id="templateFileLabel">使用系統預設範本 (點擊自訂)</span>
+                    <input type="file" id="templateFileInput" accept=".docx" style="display:none">
+                </div>
+            </div>
+
+            <button class="btn-action" id="propagateBtn" disabled>
+                執行批量擴散與硬性驗收
+            </button>
+
+            <div id="stage3Result" class="results-box" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script src="/static/sidebar.js?v=20261016_v5"></script>
+    <script>
+        let currentSessionId = "";
+
+        const rawFileInput = document.getElementById("rawFileInput");
+        const rawFileLabel = document.getElementById("rawFileLabel");
+        const extractRawBtn = document.getElementById("extractRawBtn");
+        const stage1Result = document.getElementById("stage1Result");
+
+        const stage2Section = document.getElementById("stage2Section");
+        const sessionBadgeDisplay = document.getElementById("sessionBadgeDisplay");
+        const seedFileInput = document.getElementById("seedFileInput");
+        const seedFileLabel = document.getElementById("seedFileLabel");
+        const compileBlueprintBtn = document.getElementById("compileBlueprintBtn");
+        const stage2Result = document.getElementById("stage2Result");
+
+        const stage3Section = document.getElementById("stage3Section");
+        const vlmModelSelect = document.getElementById("vlmModelSelect");
+        const customModelInput = document.getElementById("customModelInput");
+        const templateFileInput = document.getElementById("templateFileInput");
+        const templateFileLabel = document.getElementById("templateFileLabel");
+        const propagateBtn = document.getElementById("propagateBtn");
+        const stage3Result = document.getElementById("stage3Result");
+
+        vlmModelSelect.addEventListener("change", () => {
+            if (vlmModelSelect.value === "custom") {
+                customModelInput.style.display = "block";
+                customModelInput.focus();
+            } else {
+                customModelInput.style.display = "none";
+            }
+        });
+
+        rawFileInput.addEventListener("change", () => {
+            if (rawFileInput.files && rawFileInput.files[0]) {
+                rawFileLabel.textContent = rawFileInput.files[0].name;
+                extractRawBtn.disabled = false;
+            }
+        });
+
+        seedFileInput.addEventListener("change", () => {
+            if (seedFileInput.files && seedFileInput.files[0]) {
+                seedFileLabel.textContent = seedFileInput.files[0].name;
+                compileBlueprintBtn.disabled = false;
+            }
+        });
+
+        templateFileInput.addEventListener("change", () => {
+            if (templateFileInput.files && templateFileInput.files[0]) {
+                templateFileLabel.textContent = templateFileInput.files[0].name;
+            }
+        });
+
+        extractRawBtn.addEventListener("click", async () => {
+            const file = rawFileInput.files[0];
+            if (!file) return;
+
+            extractRawBtn.disabled = true;
+            extractRawBtn.textContent = "正在解析原稿與座標...";
+
+            const formData = new FormData();
+            formData.append("file", file);
+            formData.append("split_level", "2");
+
+            try {
+                const res = await fetch("/api/pod/1_extract_raw", {
+                    method: "POST",
+                    body: formData,
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || "生成失敗");
+
+                currentSessionId = data.session_id;
+                sessionBadgeDisplay.textContent = `Session: ${currentSessionId}`;
+
+                stage1Result.style.display = "block";
+                stage1Result.innerHTML = `
+                    <div style="color: var(--success); font-weight: 600; margin-bottom: 6px;">初稿生成成功！共解析 ${data.total_sections} 個章節單元。</div>
+                    <div>產出物：
+                        <a href="/api/pod/download/${currentSessionId}/${data.raw_docx_name}" target="_blank" style="color: var(--primary); font-weight: 600; margin-right: 12px;">下載 ${data.raw_docx_name}</a>
+                        <a href="/api/pod/download/${currentSessionId}/${data.ast_json_name}" target="_blank" style="color: var(--primary); font-weight: 600;">下載 ${data.ast_json_name}</a>
+                    </div>
+                `;
+
+                document.getElementById("stepIndicator1").classList.add("completed");
+                document.getElementById("stepIndicator2").classList.add("active");
+
+                stage2Section.style.opacity = "1";
+                stage2Section.style.pointerEvents = "auto";
+            } catch (err) {
+                alert("階段一執行失敗: " + err.message);
+            } finally {
+                extractRawBtn.disabled = false;
+                extractRawBtn.textContent = "執行初稿生成";
+            }
+        });
+
+        compileBlueprintBtn.addEventListener("click", async () => {
+            const file = seedFileInput.files[0];
+            if (!file || !currentSessionId) return;
+
+            compileBlueprintBtn.disabled = true;
+            compileBlueprintBtn.textContent = "正在差分對齊與編譯藍圖...";
+
+            const formData = new FormData();
+            formData.append("session_id", currentSessionId);
+            formData.append("seed_file", file);
+
+            try {
+                const res = await fetch("/api/pod/2_compile_blueprint", {
+                    method: "POST",
+                    body: formData,
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || "藍圖合成失敗");
+
+                const bp = data.blueprint;
+                const badges = (data.mandatory_badges || []).map(b => `<span class="badge-pill">【${b}】</span>`).join("") || "無固定徽標";
+                const styles = (data.detected_styles || []).map(s => `<span class="badge-pill">${s}</span>`).join("") || "無自訂樣式";
+
+                stage2Result.style.display = "block";
+                stage2Result.innerHTML = `
+                    <div style="color: var(--success); font-weight: 600; margin-bottom: 8px;">排版藍圖編譯成功！歸納出 ${data.inferred_rules_count} 條狀態機轉換規則。</div>
+                    <div style="margin-bottom: 6px;"><strong>偵測必備徽標：</strong>${badges}</div>
+                    <div style="margin-bottom: 8px;"><strong>套用樣式清單：</strong>${styles}</div>
+                    <a href="/api/pod/download/${currentSessionId}/book_blueprint.json" target="_blank" style="color: var(--primary); font-weight: 600;">下載 book_blueprint.json 預覽</a>
+                `;
+
+                document.getElementById("stepIndicator2").classList.add("completed");
+                document.getElementById("stepIndicator3").classList.add("active");
+
+                stage3Section.style.opacity = "1";
+                stage3Section.style.pointerEvents = "auto";
+                propagateBtn.disabled = false;
+            } catch (err) {
+                alert("階段二執行失敗: " + err.message);
+            } finally {
+                compileBlueprintBtn.disabled = false;
+                compileBlueprintBtn.textContent = "合成排版藍圖 (Compile Blueprint)";
+            }
+        });
+
+        propagateBtn.addEventListener("click", async () => {
+            if (!currentSessionId) return;
+
+            propagateBtn.disabled = true;
+            propagateBtn.textContent = "正在批量擴散並執行 CJK 骨架校驗...";
+
+            const selectedModel = vlmModelSelect.value === "custom"
+                ? (customModelInput.value.trim() || "gemini-3.8-flash")
+                : vlmModelSelect.value;
+
+            const formData = new FormData();
+            formData.append("session_id", currentSessionId);
+            formData.append("model", selectedModel);
+
+            if (templateFileInput.files && templateFileInput.files[0]) {
+                formData.append("template_file", templateFileInput.files[0]);
+            }
+
+            try {
+                const res = await fetch("/api/pod/3_propagate_and_validate", {
+                    method: "POST",
+                    body: formData,
+                });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.detail || "擴散與驗收失敗");
+
+                const summary = data.audit_summary;
+                const statusColor = data.is_valid ? "var(--success)" : "var(--danger)";
+                const statusText = data.is_valid ? "驗收合格 (PASS)" : "需人工複查 (FLAGGED)";
+
+                stage3Result.style.display = "block";
+                stage3Result.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h3 style="margin: 0; font-size: 1.1rem; color: ${statusColor};">${statusText}</h3>
+                        <span style="font-size: 0.85rem; color: var(--text-muted);">使用模型: <code>${selectedModel}</code></span>
+                    </div>
+
+                    <div class="traffic-lights">
+                        <div class="traffic-card green">
+                            <div class="traffic-count">${summary.green_count}</div>
+                            <div class="traffic-label">🟢 骨架 100% 守恆篇章</div>
+                        </div>
+                        <div class="traffic-card yellow">
+                            <div class="traffic-count">${summary.yellow_count}</div>
+                            <div class="traffic-label">🟡 VLM 視覺補字篇章</div>
+                        </div>
+                        <div class="traffic-card red">
+                            <div class="traffic-count">${summary.red_count}</div>
+                            <div class="traffic-label">🔴 格式/掉字攔截篇章</div>
+                        </div>
+                    </div>
+
+                    <div style="display: flex; gap: 12px; margin-top: 1rem; flex-wrap: wrap;">
+                        <a href="/api/pod/download/${currentSessionId}/${data.final_docx_name}" target="_blank" class="btn-action" style="text-decoration: none;">
+                            下載成品 ${data.final_docx_name}
+                        </a>
+                        <a href="/api/pod/download/${currentSessionId}/audit_report.json" target="_blank" class="btn-action btn-secondary" style="text-decoration: none;">
+                            下載審計報告 (audit_report.json)
+                        </a>
+                    </div>
+                `;
+
+                document.getElementById("stepIndicator3").classList.add("completed");
+            } catch (err) {
+                alert("階段三執行失敗: " + err.message);
+            } finally {
+                propagateBtn.disabled = false;
+                propagateBtn.textContent = "執行批量擴散與硬性驗收";
+            }
+        });
+    </script>
+</body>
+</html>

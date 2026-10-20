@@ -48,11 +48,11 @@ class ValidationConfig:
 class StyleTriggerRule:
     """
     Describes text-based or structural features that trigger Word custom styles,
-    badge injections (e.g., 【用法】), or text transformations.
+    badge injections (e.g., 【導讀】, 【重點】), or text transformations.
     """
     rule_id: str
     target_docx_style: str = ""
-    inject_prefix_badge: str = ""      # e.g., "【用法】" when missing from outlined text
+    inject_prefix_badge: str = ""      # e.g., "【導讀】" when missing from outlined text
     trigger_regex: str = ""            # Regex trigger
     action: str = "apply_style"        # "apply_style" | "inject_badge" | "delete_line" | "split_circled_num"
     priority: int = 10                 # Lower number = higher priority
@@ -73,16 +73,44 @@ class StyleTriggerRule:
 
 
 @dataclass
+class IndexTaggingInstruction:
+    """
+    Fine-grained operation instruction addressing an isolated paragraph by its ID.
+    Enforces the zero-regeneration rule: text is kept in deterministic memory,
+    only operation tags are transmitted.
+    """
+    para_id: str
+    style: Optional[str] = None
+    prepend_badge: Optional[str] = None
+    delete: bool = False
+    split_numbering: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> IndexTaggingInstruction:
+        return cls(
+            para_id=data.get("para_id", ""),
+            style=data.get("style"),
+            prepend_badge=data.get("prepend_badge"),
+            delete=data.get("delete", False),
+            split_numbering=data.get("split_numbering", False),
+        )
+
+
+@dataclass
 class BookBlueprint:
     """
     Standard POD layout blueprint shared between automation scripts,
     Antigravity, Claude Code, and Codex.
     """
     book_name: str
-    book_type: str = "general"         # "general" | "recipe_formula" | "qa_dialogue" | "narrative" | "academic"
+    book_type: str = "general"         # "general" | "qa_dialogue" | "narrative" | "academic" | "technical_manual"
     template_styles_used: List[str] = field(default_factory=list)
     heading_hierarchy: Dict[str, str] = field(default_factory=dict)
     mandatory_section_badges: List[str] = field(default_factory=list)
+    intentionally_deleted_patterns: List[str] = field(default_factory=list)
     style_rules: List[StyleTriggerRule] = field(default_factory=list)
     few_shot_examples: List[Dict[str, str]] = field(default_factory=list)
     validation_config: ValidationConfig = field(default_factory=ValidationConfig)
@@ -116,6 +144,7 @@ class BookBlueprint:
             template_styles_used=list(data.get("template_styles_used", [])),
             heading_hierarchy=dict(data.get("heading_hierarchy", {})),
             mandatory_section_badges=list(data.get("mandatory_section_badges", [])),
+            intentionally_deleted_patterns=list(data.get("intentionally_deleted_patterns", [])),
             style_rules=rules,
             few_shot_examples=list(data.get("few_shot_examples", [])),
             validation_config=val_cfg,
