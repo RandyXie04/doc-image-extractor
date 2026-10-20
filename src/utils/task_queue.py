@@ -109,6 +109,16 @@ class BaseTaskQueue(abc.ABC):
         """Mark interrupted running/queued tasks as failed after reboot."""
         pass
 
+    @abc.abstractmethod
+    def cleanup_expired_tasks(self, max_age_seconds: int = 86400) -> int:
+        """Purge completed, failed, or cancelled tasks older than max_age_seconds."""
+        pass
+
+    @abc.abstractmethod
+    def get_active_payload_paths(self) -> Set[Path]:
+        """Retrieve file paths currently held by queued or running tasks."""
+        pass
+
 
 class PersistentSQLiteTaskQueue(BaseTaskQueue):
     """
@@ -282,6 +292,41 @@ class PersistentSQLiteTaskQueue(BaseTaskQueue):
             conn.commit()
             return cursor.rowcount > 0
 
+    def cleanup_expired_tasks(self, max_age_seconds: int = 86400) -> int:
+        cutoff = time.time() - max_age_seconds
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                DELETE FROM task_records
+                WHERE status IN ('completed', 'failed', 'cancelled')
+                  AND updated_at < ?
+                """,
+                (cutoff,),
+            )
+            conn.commit()
+            return cursor.rowcount
+
+    def get_active_payload_paths(self) -> Set[Path]:
+        active_paths: Set[Path] = set()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT payload FROM task_records WHERE status IN ('queued', 'running')"
+            )
+            rows = cursor.fetchall()
+            for (raw_payload,) in rows:
+                if not raw_payload:
+                    continue
+                try:
+                    payload = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
+                    fp = payload.get("file_path")
+                    if fp:
+                        active_paths.add(Path(fp))
+                except Exception:
+                    pass
+        return active_paths
+
 
 class CeleryTaskQueueAdapter(BaseTaskQueue):
     """
@@ -338,6 +383,12 @@ class CeleryTaskQueueAdapter(BaseTaskQueue):
 
     def recover_interrupted_tasks(self) -> int:
         return self.fallback.recover_interrupted_tasks()
+
+    def cleanup_expired_tasks(self, max_age_seconds: int = 86400) -> int:
+        return self.fallback.cleanup_expired_tasks(max_age_seconds)
+
+    def get_active_payload_paths(self) -> Set[Path]:
+        return self.fallback.get_active_payload_paths()
 
 
 # Global task queue singleton

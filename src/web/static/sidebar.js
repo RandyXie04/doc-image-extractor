@@ -1,3 +1,32 @@
+// 全域安全配置與上傳限制檢查器
+window.APP_CONFIG = {
+    maxUploadSizeMB: 200,
+    maxTemplateSizeMB: 20,
+    fileRetentionHours: 24
+};
+
+// 異步取得伺服器最新安全與生命週期配置
+fetch('/api/system_config').then(r => r.json()).then(cfg => {
+    if (cfg && cfg.max_upload_size_mb) {
+        window.APP_CONFIG.maxUploadSizeMB = cfg.max_upload_size_mb;
+        window.APP_CONFIG.maxTemplateSizeMB = cfg.max_template_size_mb;
+        window.APP_CONFIG.fileRetentionHours = cfg.file_retention_hours;
+    }
+}).catch(() => {});
+
+// 全域檔案大小預檢輔助函式 (客戶端第一道防線)
+window.checkUploadFileSize = function(file, customMaxMB) {
+    if (!file) return true;
+    const maxMB = customMaxMB || window.APP_CONFIG.maxUploadSizeMB;
+    const maxBytes = maxMB * 1024 * 1024;
+    if (file.size > maxBytes) {
+        const fileMB = (file.size / (1024 * 1024)).toFixed(1);
+        alert(`檔案大小 (${fileMB} MB) 超過單次上傳限制 (上限 ${maxMB} MB)！\n請壓縮檔案或分卷後再試。`);
+        return false;
+    }
+    return true;
+};
+
 // 全域錯誤監聽器，防止隱含 SyntaxError 或 Runtime Error 讓按鈕靜默失效
 window.addEventListener('error', function(e) {
     let errorBanner = document.getElementById('global-error-banner');
@@ -58,6 +87,12 @@ document.addEventListener("DOMContentLoaded", () => {
                 </span>
             </div>
             <div id="versionDisplay" class="sidebar-version-text">版本: 讀取中...</div>
+            <div class="sidebar-privacy-box" style="margin-top: 6px; font-size: 0.72rem; color: var(--text-muted, #64748b); text-align: center; padding: 5px; background: rgba(0,0,0,0.03); border-radius: 6px; border: 1px solid var(--border, #e2e8f0); line-height: 1.3;">
+                <span style="display: inline-flex; align-items: center; gap: 4px; font-weight: 600; color: #059669;">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg> 零日誌隱私架構
+                </span><br>
+                檔案僅保留 24h 後自動銷毀
+            </div>
             <button id="modeToggleBtn" class="sidebar-mode-btn">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg> 編輯專用 (點擊切換)
             </button>

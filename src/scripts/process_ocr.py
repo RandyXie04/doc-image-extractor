@@ -1023,18 +1023,18 @@ def main(args=None):
                 print(json.dumps({"progress": p, "message": msg}))
                 sys.stdout.flush()
                 
+            out_stem = getattr(args, "output_stem", None) or Path(pdf_path).stem
+            out_name = f"{out_stem}.md"
+            out_path = os.path.join(output_dir, out_name)
+
             final_md, rare_char_stats = postprocess_markdown(
                 markdown_text=final_md,
-                pdf_name=pdf_name,
+                pdf_name=out_stem,
                 output_dir=output_dir,
                 style_mapping=style_mapping,
                 progress_callback=_progress_cb,
                 enable_dictionary_postprocess=True
             )
-
-            out_stem = getattr(args, "output_stem", None) or Path(pdf_path).stem
-            out_name = f"{out_stem}.md"
-            out_path = os.path.join(output_dir, out_name)
 
             with open(out_path, 'w', encoding='utf-8') as out_f:
                 out_f.write(final_md)

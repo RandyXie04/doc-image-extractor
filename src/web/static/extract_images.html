@@ -129,6 +129,10 @@
         };
 
         function handleFile(file) {
+            if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
+                fileInput.value = '';
+                return;
+            }
             currentFile = file;
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
             fileInfo.innerHTML = `

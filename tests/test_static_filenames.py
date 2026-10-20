@@ -51,6 +51,29 @@ class TestStaticFilenameFixes(unittest.TestCase):
         with open(report_path, "r", encoding="utf-8") as f:
             content = f.read()
             self.assertIn("book_chapter_1.pdf", content)
+    def test_rare_char_review_stem_path(self):
+        """Verify rare char review generates unique stem-based text and json reports."""
+        from src.scripts.ocr_rare_char_corrector import postprocess_ocr_markdown
+        stem = "book_chapter_rare"
+        pdf_name = f"{stem}.pdf"
+        sample_text = "第 1 頁測試內容\n\n第 2 頁含有可疑字元 \ufffd 與正常文字。"
+        text, stats = postprocess_ocr_markdown(
+            markdown_text=sample_text,
+            data_dir=str(PATHS.data_dir),
+            pdf_name=pdf_name,
+            output_dir=self.temp_dir,
+        )
+        expected_txt = os.path.join(self.temp_dir, f"{stem}_rare_char_review.txt")
+        expected_json = os.path.join(self.temp_dir, f"{stem}_rare_char_review.json")
+
+        self.assertEqual(stats["report_path"], expected_txt)
+        self.assertEqual(stats["json_report_path"], expected_json)
+        self.assertTrue(os.path.exists(expected_txt))
+        self.assertTrue(os.path.exists(expected_json))
+        with open(expected_txt, "r", encoding="utf-8") as f:
+            content = f.read()
+            self.assertIn(pdf_name, content)
+            self.assertIn("待人工覆核可疑字元", content)
 
 
 if __name__ == "__main__":

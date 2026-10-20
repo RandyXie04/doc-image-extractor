@@ -122,5 +122,25 @@
     "role": "H2",
     "docx_style": "heading 2",
     "mapped_by": "user"
+  },
+  "FZCSJW--GB1-0 (16.0pt)": {
+    "role": "H2",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZQKBYSJW--GB1-0 (16.0pt)": {
+    "role": "H2",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZSHENGSKS_ZHONGJW--GB1- (12.0pt)": {
+    "role": "H3",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZLTHK--GBK1-0 (11.0pt)": {
+    "role": null,
+    "docx_style": "標粗",
+    "mapped_by": "user"
   }
 }

@@ -119,15 +119,6 @@ def main():
         except Exception as e:
             print(f"[Warning] 讀取 founder_correction_dict.json 失敗: {e}")
             
-    # 準備紀錄新發現的可疑亂碼
-    suspicious_chars_file = _data_dir / '03_output' / 'suspicious_founder_chars.json'
-    suspicious_chars_set = set()
-    if suspicious_chars_file.exists():
-        try:
-            with open(suspicious_chars_file, 'r', encoding='utf-8') as f:
-                suspicious_chars_set = set(json.load(f))
-        except Exception:
-            pass
     
     for md_path in md_files:
         print(f"Converting: {md_path}")
@@ -155,48 +146,6 @@ def main():
             except ImportError:
                 pass
             
-            # 偵測並記錄可疑的未登錄亂碼 (擴展偵測範圍)
-            # PUA 區 + 彝文音節區 + CJK 相容區 + 替換字元 + 零寬字元
-            suspicious_pattern = re.compile(
-                r'[\uE000-\uF8FF'        # PUA 私用區
-                r'\uFFFD'                 # 替換字元 (OCR 無法辨識)
-                r'\uA000-\uA4CF'          # 彝文音節區 (方正 GBK 映射殘留)
-                r'\uF900-\uFAFF'          # CJK 相容表意文字區
-                r'\u200B-\u200D'           # 零寬字元
-                r'\uFEFF'                 # BOM 標記
-                r']'
-            )
-            found_suspicious_chars = suspicious_pattern.findall(md_content)
-            if found_suspicious_chars:
-                suspicious_chars_set.update(found_suspicious_chars)
-                
-                # 建立帶上下文的詳細記錄
-                detailed_findings = []
-                for m in suspicious_pattern.finditer(md_content):
-                    ch = m.group(0)
-                    pos = m.start()
-                    ctx_start = max(0, pos - 15)
-                    ctx_end = min(len(md_content), pos + 16)
-                    context = md_content[ctx_start:ctx_end].replace('\n', '↵')
-                    marker_pos = pos - ctx_start
-                    context_marked = context[:marker_pos] + f"【{ch}】" + context[marker_pos + 1:]
-                    detailed_findings.append({
-                        "char": ch,
-                        "unicode": f"U+{ord(ch):04X}",
-                        "context": context_marked
-                    })
-                
-                try:
-                    # 寫入簡易字元清單
-                    with open(suspicious_chars_file, 'w', encoding='utf-8') as f:
-                        json.dump(list(suspicious_chars_set), f, ensure_ascii=False, indent=2)
-                    # 寫入詳細上下文報告
-                    detailed_file = _data_dir / '03_output' / 'suspicious_founder_chars_detailed.json'
-                    with open(detailed_file, 'w', encoding='utf-8') as f:
-                        json.dump(detailed_findings, f, ensure_ascii=False, indent=2)
-                    print(f"[REVIEW] ⚠️ 偵測到 {len(found_suspicious_chars)} 處可疑字元，詳細報告：{detailed_file}")
-                except Exception as e:
-                    print(f"[Warning] 寫入 suspicious_founder_chars 失敗: {e}")
 
 
             # Fix scrambled table header from OCR (e.g. text01 page_0636 with diagonal splits)

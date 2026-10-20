@@ -157,7 +157,8 @@ def generate_rare_char_review_report(
     pdf_name: str,
     all_findings: list,
     correction_records: list,
-    output_path: str
+    output_path: str,
+    json_output_path: str = None,
 ):
     """
     產出格式化的生僻字/可疑字元人工覆核報告。
@@ -166,7 +167,8 @@ def generate_rare_char_review_report(
         pdf_name: 來源 PDF 檔名
         all_findings: 所有頁面的可疑字元偵測記錄
         correction_records: 靜態字典已修正的記錄
-        output_path: 報告輸出路徑
+        output_path: 報告輸出路徑 (TXT)
+        json_output_path: 機器可讀 JSON 報告輸出路徑 (可選)
     """
     now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -262,6 +264,22 @@ def generate_rare_char_review_report(
     with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines))
 
+    if json_output_path:
+        json_data = {
+            "pdf_name": pdf_name,
+            "generated_at": now_str,
+            "summary": {
+                "total_corrected": total_corrected,
+                "total_suspicious": total_suspicious,
+                "pages_with_issues": pages_with_issues,
+            },
+            "category_counts": category_counts,
+            "corrections": correction_records,
+            "findings": all_findings,
+        }
+        with open(json_output_path, "w", encoding="utf-8") as f:
+            json.dump(json_data, f, ensure_ascii=False, indent=2)
+
 
 def postprocess_ocr_markdown(
     markdown_text: str,
@@ -304,15 +322,28 @@ def postprocess_ocr_markdown(
         all_findings.extend(findings)
 
     # 4. 產出覆核報告
+    report_path = None
+    json_report_path = None
     if output_dir:
-        report_path = os.path.join(output_dir, "rare_char_review_report.txt")
-        generate_rare_char_review_report(pdf_name, all_findings, correction_records, report_path)
+        stem = Path(pdf_name).stem if pdf_name else ""
+        report_filename = f"{stem}_rare_char_review.txt" if stem else "rare_char_review_report.txt"
+        json_filename = f"{stem}_rare_char_review.json" if stem else "rare_char_review.json"
+        report_path = os.path.join(output_dir, report_filename)
+        json_report_path = os.path.join(output_dir, json_filename)
+        generate_rare_char_review_report(
+            pdf_name=pdf_name,
+            all_findings=all_findings,
+            correction_records=correction_records,
+            output_path=report_path,
+            json_output_path=json_report_path,
+        )
 
     stats = {
         "corrections_applied": sum(r["count"] for r in correction_records) if correction_records else 0,
         "suspicious_chars_found": len(all_findings),
         "correction_details": correction_records,
-        "report_path": os.path.join(output_dir, "rare_char_review_report.txt") if output_dir else None,
+        "report_path": report_path,
+        "json_report_path": json_report_path,
     }
 
     return markdown_text, stats

@@ -19,51 +19,100 @@ import pymupdf as fitz
 from PIL import Image, ImageDraw
 
 from src.core_agent import PDFConversionAgent
-from config import PATHS
+from config import PATHS, CFG
 from src.scripts.cleanup_scratch import cleanup_scratch
+from src.utils.file_guard import (
+    MaxBodySizeMiddleware,
+    save_upload_file_safely,
+    purge_expired_files,
+    purge_in_memory_records,
+)
 
 # --- Pydantic Data Models / Schemas ---
 class MarkdownUpdate(BaseModel):
     content: str
 
-def cleanup_old_files():
-    """自動清理 03_output 與 formula_dir_v2 超過 24 小時之快取與產出檔案及任務資料夾"""
+def run_full_cleanup() -> dict:
+    """
+    全系統 24 小時無日誌與過期檔案安全清理器 (Full 24-Hour Janitor)
+    - 安全銷毀超期 (>24h) 之 03_output (含 backup_originals)、01_input、database_text、scratch、系統 Temp
+    - 保護正在執行之活躍任務檔案 (active_paths)，避免 Windows WinError 32 異常
+    - 同步清除 SQLite task_records 與 In-Memory 狀態字典中超時紀錄
+    - 嚴格遵守無日誌架構 (Zero-Log)：若非必要除錯，清空/銷毀磁碟日誌
+    """
     import time
-    import shutil
-    now = time.time()
-    
-    # 1. 清理 data/03_output
-    output_dir = PATHS.root / 'data' / '03_output'
-    if output_dir.exists():
-        for item in output_dir.glob('*'):
+    from src.utils.task_queue import get_task_queue
+
+    max_age_seconds = CFG.file_retention_hours * 3600
+    queue = get_task_queue()
+
+    # 1. 收集正在處理中的檔案路徑 (白名單保護，避免 Windows 鎖定或損毀處理中檔案)
+    active_paths: set[Path] = set()
+    try:
+        active_paths.update(queue.get_active_payload_paths())
+    except Exception:
+        pass
+
+    for tid, tinfo in list(tasks.items()):
+        if isinstance(tinfo, dict) and tinfo.get("status") in ("queued", "processing"):
+            for key in ("result_file", "word_file", "zip_file"):
+                val = tinfo.get(key)
+                if val:
+                    active_paths.add(Path(val))
+
+    # 2. 定義所有需要巡檢銷毀之目標資料夾
+    target_dirs = [
+        PATHS.output_dir,                                  # data/03_output (含 backup_originals)
+        PATHS.input_dir,                                   # data/01_input
+        PATHS.data_dir / "database_text",                  # data/database_text (含 cropped_*.pdf)
+        PATHS.scratch_dir,                                 # scratch/
+        PATHS.temp_base,                                   # %TEMP%/doc-image-extractor-temp (含 ai_heading_cache, ai_kaiti_cache, previews 等)
+        PATHS.logs_dir,                                    # logs/
+    ]
+
+    # 3. 執行磁碟檔案銷毀 (跳過受保護的範本檔案)
+    deleted_files_count = purge_expired_files(
+        target_dirs=target_dirs,
+        max_age_seconds=max_age_seconds,
+        protected_names={".gitkeep", "README.md", "user_template.docx", "template.docx"},
+        active_paths=active_paths,
+    )
+
+    # 4. 同步清除 SQLite task_queue 超過 24 小時之歷史任務
+    purged_tasks_count = 0
+    try:
+        purged_tasks_count = queue.cleanup_expired_tasks(max_age_seconds=max_age_seconds)
+    except Exception:
+        pass
+
+    # 5. 同步淘汰 In-Memory 字典項目，杜絕伺服器長久運作內存洩漏
+    active_keys = {
+        k for k, v in tasks.items() if isinstance(v, dict) and v.get("status") in ("queued", "processing")
+    }
+    purged_mem_tasks = purge_in_memory_records(tasks, max_age_seconds=max_age_seconds, active_keys=active_keys)
+
+    active_ocr_stems = {
+        stem for stem, v in ocr_progress_dict.items() if isinstance(v, dict) and v.get("status") == "processing"
+    }
+    purged_mem_ocr = purge_in_memory_records(ocr_progress_dict, max_age_seconds=max_age_seconds, active_keys=active_ocr_stems)
+    purged_mem_img = purge_in_memory_records(extracted_image_tasks, max_age_seconds=max_age_seconds)
+
+    # 6. 無日誌規範：若未啟用磁碟日誌，清理 logs 目錄現存殘留
+    if not CFG.enable_disk_logging and PATHS.logs_dir.exists():
+        for log_file in PATHS.logs_dir.glob("*.log"):
             try:
-                if (now - item.stat().st_mtime) > 86400:
-                    if item.is_file():
-                        item.unlink(missing_ok=True)
-                    elif item.is_dir() and item.name != "backup_originals":
-                        shutil.rmtree(item, ignore_errors=True)
-            except Exception:
+                log_file.unlink(missing_ok=True)
+            except OSError:
                 pass
 
-    # 2. 清理 data/formula_dir_v2/task_* 隔離目錄
-    formula_dir = PATHS.formula_dir_v2
-    if formula_dir.exists():
-        for item in formula_dir.glob('task_*'):
-            try:
-                if item.is_dir() and (now - item.stat().st_mtime) > 86400:
-                    shutil.rmtree(item, ignore_errors=True)
-            except Exception:
-                pass
+    return {
+        "deleted_files": deleted_files_count,
+        "purged_db_tasks": purged_tasks_count,
+        "purged_mem_records": purged_mem_tasks + purged_mem_ocr + purged_mem_img,
+    }
 
-    # 3. 清理 preview_dir/task_* 隔離目錄
-    preview_dir = PATHS.preview_dir
-    if preview_dir.exists():
-        for item in preview_dir.glob('task_*'):
-            try:
-                if item.is_dir() and (now - item.stat().st_mtime) > 86400:
-                    shutil.rmtree(item, ignore_errors=True)
-            except Exception:
-                pass
+# 向下相容既有模組與測試之別名
+cleanup_old_files = run_full_cleanup
 
 @asynccontextmanager
 async def lifespan(app_instance: FastAPI):
@@ -83,11 +132,15 @@ async def lifespan(app_instance: FastAPI):
         cleanup_scratch(force=False, log_fn=print)
     except Exception as e:
         print(f"[Startup Warning] Scratch cleanup failed: {e}")
-    # 啟動時自動清理 24 小時過期輸出
+
+    # 啟動時立即執行全系統 24 小時過期清理
     try:
-        cleanup_old_files()
+        stats = run_full_cleanup()
+        if stats["deleted_files"] > 0 or stats["purged_db_tasks"] > 0:
+            print(f"[Janitor] 啟動清理完成：銷毀 {stats['deleted_files']} 個過期檔案，清理 {stats['purged_db_tasks']} 筆過期任務")
     except Exception as e:
         print(f"[Startup Warning] Old files cleanup failed: {e}")
+
     # 啟動時自動檢查並修復異常中斷之佇列任務
     try:
         from src.utils.task_queue import get_task_queue
@@ -96,7 +149,26 @@ async def lifespan(app_instance: FastAPI):
             print(f"[TaskQueue] 已自動重置/標記 {recovered_count} 個中斷任務")
     except Exception as e:
         print(f"[Startup Warning] Task queue recovery failed: {e}")
-    yield
+
+    # 啟動常態定時清理背景守護程序 (每 30 分鐘巡檢一次)
+    async def periodic_cleanup_daemon():
+        while True:
+            try:
+                await asyncio.sleep(1800)
+                run_full_cleanup()
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                print(f"[Janitor Warning] Periodic cleanup error: {e}")
+
+    cleanup_daemon_task = asyncio.create_task(periodic_cleanup_daemon())
+    _BACKGROUND_TASKS.add(cleanup_daemon_task)
+    cleanup_daemon_task.add_done_callback(_BACKGROUND_TASKS.discard)
+
+    try:
+        yield
+    finally:
+        cleanup_daemon_task.cancel()
 
 app = FastAPI(title="PDF AI 公式萃取站", lifespan=lifespan)
 
@@ -104,6 +176,13 @@ app = FastAPI(title="PDF AI 公式萃取站", lifespan=lifespan)
 _OCR_SEMAPHORE = asyncio.Semaphore(1)
 # 保留背景 Task 參照，防止 Python 3.10+ 在長任務執行期間因 GC 導致 Task 丟失
 _BACKGROUND_TASKS: set[asyncio.Task] = set()
+
+# 第一道防線：在 Starlette 解析 Multipart 寫入 SpooledTemporaryFile 前檢查 Content-Length
+app.add_middleware(
+    MaxBodySizeMiddleware,
+    max_upload_bytes=CFG.max_upload_size_mb * 1024 * 1024,
+    max_template_bytes=CFG.max_template_size_mb * 1024 * 1024,
+)
 
 @app.middleware("http")
 async def add_no_cache_header(request: Request, call_next):
@@ -126,6 +205,8 @@ app.add_middleware(
 tasks = {}
 # Global OCR progress tracking
 ocr_progress_dict = {}
+# Extracted images task tracking
+extracted_image_tasks = {}
 
 @app.post("/api/upload_file")
 async def upload_file(file: UploadFile = File(...)):
@@ -135,8 +216,9 @@ async def upload_file(file: UploadFile = File(...)):
         
     file_id = f"{uuid.uuid4()}.pdf"
     file_path = PATHS.input_dir / file_id
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    
+    # 第二道防線：安全串流分塊寫入，若累積超標立即中止並刪除半成品檔案
+    await save_upload_file_safely(file, file_path, max_mb=CFG.max_upload_size_mb)
         
     total_pages = 1
     try:
@@ -144,7 +226,7 @@ async def upload_file(file: UploadFile = File(...)):
             total_pages = len(doc)
     except Exception as e:
         if file_path.exists():
-            file_path.unlink()
+            file_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail=f"無法解析此 PDF 檔案: {e}")
 
     orig_name = Path(file.filename).stem if file.filename else "已轉檔"
@@ -159,8 +241,7 @@ async def upload_template(file: UploadFile = File(...)):
     template_dir.mkdir(parents=True, exist_ok=True)
     
     file_path = template_dir / "user_template.docx"
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    await save_upload_file_safely(file, file_path, max_mb=CFG.max_template_size_mb)
         
     return {"status": "success", "message": f"範本 {file.filename} 上傳成功", "filename": file.filename}
 
@@ -398,7 +479,8 @@ async def start_process(
         "result_file": None,
         "word_file": None,
         "zip_file": None,
-        "orig_name": orig_name or "已轉檔"
+        "orig_name": orig_name or "已轉檔",
+        "created_at": time.time(),
     }
     
     background_tasks.add_task(
@@ -481,14 +563,28 @@ async def get_status(task_id: str):
         return {"status": "not_found"}
     return tasks[task_id]
 
+@app.get("/api/system_config")
+async def get_system_config():
+    """取得系統安全防護與無日誌配置資訊"""
+    from config import CFG
+    return {
+        "max_upload_size_mb": CFG.max_upload_size_mb,
+        "max_template_size_mb": CFG.max_template_size_mb,
+        "file_retention_hours": CFG.file_retention_hours,
+        "enable_disk_logging": CFG.enable_disk_logging,
+        "app_mode": CFG.app_mode
+    }
+
 @app.get("/api/download/{task_id}")
 async def download_result(task_id: str):
     """向下相容通用下載端點"""
     if task_id in tasks and tasks[task_id].get("result_file"):
         path = tasks[task_id]["result_file"]
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail="檔案不存在或已超過 24 小時保存期限由系統自動銷毀")
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if path.endswith(".docx") else "application/zip"
         return FileResponse(path, media_type=media_type, filename=os.path.basename(path))
-    return {"error": "File not found or task not completed"}
+    raise HTTPException(status_code=404, detail="成果檔案不存在或任務未完成")
 
 @app.get("/api/hardware_status")
 async def get_hardware_status():
@@ -496,25 +592,23 @@ async def get_hardware_status():
     profile = CFG.get_hardware_profile()
     return profile
 
-
-
 @app.get("/api/download/{task_id}/formulas")
 async def download_formulas(task_id: str):
     """專用公式圖檔包下載端點"""
     if task_id in tasks and tasks[task_id].get("zip_file"):
         path = tasks[task_id]["zip_file"]
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail="檔案不存在或已超過 24 小時保存期限由系統自動銷毀")
         return FileResponse(
             path,
             media_type="application/zip",
             filename=os.path.basename(path)
         )
-    return {"error": "Formula ZIP not available for this task"}
+    raise HTTPException(status_code=404, detail="公式圖檔包不存在或任務未完成")
 
 # =========================================================================
 # 文件圖片無損提取 API (DOCX / PDF)
 # =========================================================================
-extracted_image_tasks = {}
-
 @app.post("/api/extract_images")
 async def api_extract_images(
     file: UploadFile = File(...),
@@ -522,6 +616,7 @@ async def api_extract_images(
 ):
     from src.scripts.extract_images import process_document_images
     import asyncio
+    import time
 
     orig_filename = file.filename or "document"
     orig_ext = Path(orig_filename).suffix.lower()
@@ -536,8 +631,7 @@ async def api_extract_images(
     output_zip_path = PATHS.root / "data" / "03_output" / output_zip_name
 
     temp_dir.mkdir(parents=True, exist_ok=True)
-    with open(input_file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+    await save_upload_file_safely(file, input_file_path, max_mb=CFG.max_upload_size_mb)
 
     try:
         count, zip_path = await asyncio.to_thread(
@@ -566,7 +660,8 @@ async def api_extract_images(
         extracted_image_tasks[task_id] = {
             "zip_path": zip_path,
             "filename": output_zip_name,
-            "count": actual_files
+            "count": actual_files,
+            "created_at": time.time(),
         }
 
         return {
@@ -596,6 +691,7 @@ async def download_extracted_images(task_id: str):
                 media_type="application/zip",
                 filename=info["filename"]
             )
+        raise HTTPException(status_code=404, detail="檔案不存在或已超過 24 小時保存期限由系統自動銷毀")
     raise HTTPException(status_code=404, detail="找不到提取的壓縮檔案或任務不存在")
 
 
@@ -650,10 +746,7 @@ async def api_founder_repair(
 
     task_id = str(uuid.uuid4())
     temp_input = PATHS.root / "scratch" / f"founder_repair_{task_id}{ext}"
-    
-    with open(temp_input, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-        
+    await save_upload_file_safely(file, temp_input, max_mb=CFG.max_upload_size_mb)
     created_temps = [str(temp_input)]
     
     output_dir = PATHS.root / "data" / "03_output"
@@ -876,8 +969,7 @@ async def upload_and_run_ocr(
         if ext != ".pdf":
             raise HTTPException(status_code=400, detail="僅支援 PDF 檔案格式")
         raw_pdf_path = pdf_dir / clean_filename
-        with open(raw_pdf_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        await save_upload_file_safely(file, raw_pdf_path, max_mb=CFG.max_upload_size_mb)
         filename_stem = Path(clean_filename).stem
     else:
         raise HTTPException(status_code=400, detail="請提供 PDF 檔案或檔案代碼")
@@ -934,7 +1026,8 @@ async def upload_and_run_ocr(
         "task_id": task_id,
         "progress": 0,
         "message": "正在初始化任務...",
-        "status": "processing"
+        "status": "processing",
+        "created_at": time.time(),
     }
 
     async def run_scripts_async(tid, pdf_path_str, stem, style_map_json, eng, skip_footnotes, ai_kaiti_on, ai_kaiti_thresh):
@@ -1092,7 +1185,7 @@ async def download_ocr_result(filename_stem: str, ext: str):
     output_dir = PATHS.root / 'data' / '03_output'
     file_path = output_dir / f"{filename_stem}.{ext}"
     if not file_path.exists():
-        raise HTTPException(status_code=404, detail="檔案尚未生成或不存在")
+        raise HTTPException(status_code=404, detail="檔案尚未生成或已超過 24 小時保存期限由系統自動銷毀")
     return FileResponse(file_path, filename=f"{filename_stem}.{ext}")
 
 

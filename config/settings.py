@@ -32,9 +32,13 @@ _TEMP_BASE = Path(tempfile.gettempdir()) / "doc-image-extractor-temp"
 class _Paths:
     root:           Path = _PROJECT_ROOT
     bundle_root:    Path = _BUNDLE_ROOT
+    # // Dynamic Path Configurations
+    temp_base:      Path = _TEMP_BASE
     data_dir:       Path = _PROJECT_ROOT / "data"
     scratch_dir:    Path = _PROJECT_ROOT / "scratch"
     config_dir:     Path = _PROJECT_ROOT / "config"
+    output_dir:     Path = _PROJECT_ROOT / "data" / "03_output"
+    logs_dir:       Path = _PROJECT_ROOT / "logs"
 
     @property
     def fonts_json_path(self) -> Path:
@@ -182,10 +186,14 @@ class _Config:
     # // Operation Mode: 'editor' (default for publishing house) or 'dev' (for engineers)
     app_mode:       str   = field(default_factory=lambda: os.getenv("APP_MODE", "editor").lower())
     
-    # // Resource guardrails
-    max_safe_pages: int   = field(default_factory=lambda: int(os.getenv("MAX_SAFE_PAGES", "300")))
-    batch_size:     int   = field(default_factory=lambda: int(os.getenv("BATCH_SIZE", "50")))
-    max_image_width:int   = field(default_factory=lambda: int(os.getenv("MAX_IMAGE_WIDTH", "4000")))
+    # // Resource guardrails & Ephemeral Lifecycle
+    max_safe_pages:       int   = field(default_factory=lambda: int(os.getenv("MAX_SAFE_PAGES", "300")))
+    batch_size:           int   = field(default_factory=lambda: int(os.getenv("BATCH_SIZE", "50")))
+    max_image_width:      int   = field(default_factory=lambda: int(os.getenv("MAX_IMAGE_WIDTH", "4000")))
+    max_upload_size_mb:   int   = field(default_factory=lambda: int(os.getenv("MAX_UPLOAD_SIZE_MB", "200")))
+    max_template_size_mb: int   = field(default_factory=lambda: int(os.getenv("MAX_TEMPLATE_SIZE_MB", "20")))
+    file_retention_hours: int   = field(default_factory=lambda: int(os.getenv("FILE_RETENTION_HOURS", "24")))
+    enable_disk_logging:  bool  = field(default_factory=lambda: os.getenv("ENABLE_DISK_LOGGING", "false").lower() == "true")
     
     def get_hardware_profile(self) -> dict:
         import json

@@ -890,6 +890,10 @@
         templateInput.onchange = async (e) => {
             if (e.target.files.length === 0) return;
             const file = e.target.files[0];
+            if (window.checkUploadFileSize && !window.checkUploadFileSize(file, window.APP_CONFIG?.maxTemplateSizeMB || 20)) {
+                templateInput.value = '';
+                return;
+            }
             const formData = new FormData();
             formData.append('file', file);
 
@@ -932,6 +936,10 @@
         async function handleFile(file) {
             if (!file.name.toLowerCase().endsWith('.pdf')) {
                 alert('請選擇 PDF 格式之檔案！');
+                return;
+            }
+            if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
+                fileInput.value = '';
                 return;
             }
             currentFile = file;

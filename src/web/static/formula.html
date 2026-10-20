@@ -577,6 +577,10 @@
         async function handleFileSelect() {
             if (!fileInput.files.length) return;
             const file = fileInput.files[0];
+            if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
+                fileInput.value = "";
+                return;
+            }
             currentFileName = file.name;
             currentFileOrigName = file.name.replace(/\.[^/.]+$/, "");
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
@@ -592,6 +596,9 @@
             try {
                 const res = await fetch('/api/upload_file', { method: 'POST', body: formData });
                 const data = await res.json();
+                if (!res.ok) {
+                    throw new Error(data.detail || '上傳失敗');
+                }
                 if (data.file_id) {
                     currentFileId = data.file_id;
                     if (data.orig_name) currentFileOrigName = data.orig_name;
