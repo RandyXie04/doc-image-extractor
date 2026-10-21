@@ -1,9 +1,11 @@
-import os
+﻿import os
 import io
 import sys
 import shutil
 import uuid
 import asyncio
+import base64
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -193,11 +195,62 @@ async def add_no_cache_header(request: Request, call_next):
         response.headers["Expires"] = "0"
     return response
 
+# --- 鑑權層防護 (Authentication Guard Middleware) ---
+@app.middleware("http")
+async def authentication_guard_middleware(request: Request, call_next):
+    """
+    鑑權層：當 CFG.auth_enabled 為 True 時，強制校驗 HTTP Basic 憑證或 X-API-Key Header。
+    允許 CORS Preflight (OPTIONS) 通行以確保協定相容性。
+    """
+    if not CFG.auth_enabled:
+        return await call_next(request)
+
+    # 允許 CORS preflight
+    if request.method == "OPTIONS":
+        return await call_next(request)
+
+    authenticated = False
+    auth_header = request.headers.get("Authorization")
+    api_key = request.headers.get("X-API-Key")
+
+    # 1. 支援 X-API-Key Header (供自動化呼叫或 API 存取)
+    if api_key and CFG.auth_password and secrets.compare_digest(api_key, CFG.auth_password):
+        authenticated = True
+
+    # 2. 支援 HTTP Basic Auth (使用者:密碼，供瀏覽器原生對話框)
+    elif auth_header and auth_header.startswith("Basic "):
+        try:
+            encoded_creds = auth_header.split(" ", 1)[1]
+            decoded = base64.b64decode(encoded_creds).decode("utf-8")
+            if ":" in decoded:
+                username, password = decoded.split(":", 1)
+                user_match = secrets.compare_digest(username, CFG.auth_username)
+                pass_match = secrets.compare_digest(password, CFG.auth_password)
+                if user_match and pass_match:
+                    authenticated = True
+        except Exception:
+            authenticated = False
+
+    if not authenticated:
+        return Response(
+            content="Authentication required: 請提供正確的 HTTP Basic 憑證或 X-API-Key Header",
+            status_code=401,
+            headers={"WWW-Authenticate": 'Basic realm="Doc-Image-Extractor"'},
+            media_type="text/plain; charset=utf-8",
+        )
+
+    return await call_next(request)
+
+
+# --- 協定層防護 (Protocol / CORS Middleware) ---
+# 移除非法之 allow_origins=["*"] 搭配 allow_credentials=True；限制僅允許 Localhost 與私有區域網路 (RFC 1918)
+cors_origins = CFG.allowed_origins if CFG.allowed_origins else []
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+)(:\d+)?$",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 

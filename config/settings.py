@@ -1,4 +1,4 @@
-# // ==============================================================================
+﻿# // ==============================================================================
 # // config.py: Project Configuration Hub
 # // - Paths: Dynamically resolved via pathlib(__file__).
 # // - API Keys & Settings: Loaded from .env.
@@ -194,6 +194,12 @@ class _Config:
     max_template_size_mb: int   = field(default_factory=lambda: int(os.getenv("MAX_TEMPLATE_SIZE_MB", "20")))
     file_retention_hours: int   = field(default_factory=lambda: int(os.getenv("FILE_RETENTION_HOURS", "24")))
     enable_disk_logging:  bool  = field(default_factory=lambda: os.getenv("ENABLE_DISK_LOGGING", "false").lower() == "true")
+
+    # // Security & Authentication Settings
+    auth_enabled:         bool  = field(default_factory=lambda: os.getenv("AUTH_ENABLED", "false").lower() == "true")
+    auth_username:        str   = field(default_factory=lambda: os.getenv("AUTH_USERNAME", "admin"))
+    auth_password:        str   = field(default_factory=lambda: os.getenv("AUTH_PASSWORD", ""))
+    allowed_origins:      list  = field(default_factory=lambda: [x.strip() for x in os.getenv("ALLOWED_ORIGINS", "").split(",") if x.strip()])
     
     def get_hardware_profile(self) -> dict:
         import json
