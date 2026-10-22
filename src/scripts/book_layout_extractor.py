@@ -878,16 +878,27 @@ def _parse_pdf_layout_flow(
                         body_font_clean = body_font.lower() if body_font else ""
                         is_different_font_from_body = bool(body_font_clean and any(fn and fn != body_font_clean for fn in span_fonts))
 
+                        # 真正置中判定：左右邊距平衡且兩側有明顯留白，絕非貼齊左邊界之普通正文
+                        left_margin = bbox[0]
+                        right_margin = page_w - bbox[2]
+                        is_true_centered = bool(
+                            is_centered
+                            and (bbox[0] > base_x0 + 10.0)
+                            and abs(left_margin - right_margin) < max(25.0, page_w * 0.08)
+                        )
+
                         if avg_size >= body_size + 1.5:
                             heading_level = 2  # 字級明顯大於正文基準
-                        elif is_centered or avg_size >= body_size + 0.5:
-                            heading_level = 2  # 居中或字級微大於正文
+                        elif is_true_centered and avg_size >= body_size + 0.5:
+                            heading_level = 2  # 真正居中且字級微大於正文
                         elif is_heiti_or_bold and (is_different_font_from_body or avg_size >= body_size):
                             # 與正文同字級但換成黑體/粗體的短句標題（排除以助詞結尾的普通句）
                             if not re.search(r'[的了在]$', clean_content):
                                 heading_level = 3
-                        elif is_centered and avg_size >= body_size - 0.5:
-                            heading_level = 2
+                        elif is_true_centered and (is_heiti_or_bold or is_different_font_from_body) and avg_size >= body_size - 0.5:
+                            # 真正居中且具有粗體或相異字體之短標題
+                            if not re.search(r'[的了在]$', clean_content):
+                                heading_level = 2
 
             if heading_level > 0:
                 flush_current_para()
