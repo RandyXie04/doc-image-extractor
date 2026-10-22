@@ -98,6 +98,34 @@ class SectionUnit:
         )
 
 
+@dataclass
+class BookAST:
+    """Represents the complete structured in-memory AST of a book."""
+    sections: List[SectionUnit]
+    image_blocks: List[Dict[str, Any]] = field(default_factory=list)
+    audit_data: Dict[str, Any] = field(default_factory=dict)
+    pdf_name: str = ""
+    total_pages: int = 0
+    doc_profile: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "pdf_name": self.pdf_name,
+            "total_pages": self.total_pages,
+            "doc_profile": self.doc_profile,
+            "sections": [s.to_dict() for s in self.sections],
+            "image_blocks": self.image_blocks,
+            "audit_data": self.audit_data,
+        }
+
+
+class SectionAdapter:
+    """Adapts a BookAST to existing consumers expecting List[SectionUnit]."""
+    @staticmethod
+    def to_sections(ast: BookAST) -> List[SectionUnit]:
+        return ast.sections
+
+
 class SectionAST:
     """Manages splitting, serialization, workspace caching, and reassembly of sections."""
 

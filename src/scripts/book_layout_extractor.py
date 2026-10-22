@@ -13,10 +13,21 @@ import re
 import json
 from pathlib import Path
 from collections import Counter
-from typing import Optional, Dict, Any, List, Tuple, Callable
+from typing import Optional, Dict, Any, List, Tuple, Callable, Sequence
 
 # pyrefly: ignore [missing-import]
 import fitz
+
+try:
+    from src.pod_studio.section_ast import BookAST, SectionAdapter, SectionUnit, ParagraphUnit
+except ImportError:
+    try:
+        from pod_studio.section_ast import BookAST, SectionAdapter, SectionUnit, ParagraphUnit
+    except ImportError:
+        BookAST = None
+        SectionAdapter = None
+        SectionUnit = None
+        ParagraphUnit = None
 
 # Try to import project helpers
 try:
@@ -122,6 +133,57 @@ def _simple_similarity(a: str, b: str) -> float:
     intersection = set_a & set_b
     union = set_a | set_b
     return len(intersection) / len(union) if union else 0.0
+
+
+def _union_bboxes(bboxes: Sequence[Sequence[float]]) -> Optional[List[float]]:
+    """Computes the minimal bounding box enclosing all valid non-empty bboxes."""
+    valid_boxes = [b for b in bboxes if b and len(b) == 4 and b[2] > b[0] and b[3] > b[1]]
+    if not valid_boxes:
+        return None
+    x0 = min(b[0] for b in valid_boxes)
+    y0 = min(b[1] for b in valid_boxes)
+    x1 = max(b[2] for b in valid_boxes)
+    y1 = max(b[3] for b in valid_boxes)
+    return [round(x0, 2), round(y0, 2), round(x1, 2), round(y1, 2)]
+
+
+def _compute_dominant_font_and_size(
+    blocks: Sequence[Dict[str, Any]],
+    fallback_font: str = "",
+    fallback_size: float = 10.5,
+) -> Tuple[str, float]:
+    """
+    Computes dominant font name (by character count) and character-weighted average font size
+    from contributing blocks and their spans.
+    """
+    font_counter: Counter = Counter()
+    total_chars = 0
+    size_weighted_sum = 0.0
+
+    for b in blocks:
+        for line in b.get("lines", []):
+            for span in line.get("spans", []):
+                txt = span.get("text", "")
+                if not txt:
+                    continue
+                char_len = len(txt)
+                total_chars += char_len
+                raw_font = (span.get("font") or "").split("+", 1)[-1]
+                if raw_font:
+                    font_counter[raw_font] += char_len
+                span_size = float(span.get("size", 0.0))
+                if span_size > 0:
+                    size_weighted_sum += span_size * char_len
+
+    dominant_font = font_counter.most_common(1)[0][0] if font_counter else fallback_font
+    if not dominant_font:
+        dominant_font = fallback_font or "SimSun"
+
+    avg_size = round(size_weighted_sum / total_chars, 2) if total_chars > 0 else fallback_size
+    if avg_size <= 0.0:
+        avg_size = fallback_size or 10.5
+
+    return dominant_font, avg_size
 
 
 def build_document_profile(doc: fitz.Document) -> dict:
@@ -363,13 +425,14 @@ def _parse_pdf_layout_flow(
     enable_footnotes: bool = True,
     ai_kaiti_classifier: Optional[Any] = None,
     progress_callback: Optional[Callable[[int, str], None]] = None,
-) -> Tuple[List[str], List[Dict[str, Any]], Dict[str, Any]]:
+) -> Tuple[List[str], List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]]:
     """
     純記憶體版面與流式閱讀解析核心 (Pure Parsing Core)。
     
     職責：
     - 遍歷 PDF 頁面結構，執行表格偵測、頁眉/頁尾剔除、腳注解析、標題識別、段落防黏連重流。
     - 產出未嵌入圖檔路徑之 Markdown 頁面字串（含圖片佔位符號）、待提取圖檔幾何資訊清單與稽核數據。
+    - 保留結構化 layout_records (段落、幾何 bbox、字型、字級、樣式)，供 AST 構建器使用。
     - 絕不執行任何檔案建立、磁碟寫入（images/、.md、稀有字報告）或目錄變更等副作用。
     """
     if style_mapping is None:
@@ -405,6 +468,7 @@ def _parse_pdf_layout_flow(
     
     final_md_pages = []
     all_image_blocks = []
+    layout_records = []
 
     for page_idx in range(total_pages):
         page_num = page_idx + 1
@@ -565,6 +629,7 @@ def _parse_pdf_layout_flow(
 
         page_paragraphs = []
         current_para_lines = []
+        current_para_contributing_blocks = []
         current_para_is_kaiti = False
         current_para_custom_style = None
         last_block_x0 = 0.0
@@ -574,7 +639,7 @@ def _parse_pdf_layout_flow(
         last_heading_text = ""
 
         def flush_current_para():
-            nonlocal current_para_lines, current_para_is_kaiti, current_para_custom_style
+            nonlocal current_para_lines, current_para_contributing_blocks, current_para_is_kaiti, current_para_custom_style
             if current_para_lines:
                 # Splice lines smoothly
                 para_text = ""
@@ -589,15 +654,37 @@ def _parse_pdf_layout_flow(
                             audit_data["paragraphs_reflowed"] += 1
                         else:
                             para_text += " " + line_txt
+
+                custom_style_val = ""
                 if current_para_custom_style:
                     # Apply specific custom Word style from font mapping
-                    para_text = f'::: {{custom-style="{current_para_custom_style}"}}\n{para_text}\n:::'
+                    custom_style_val = current_para_custom_style
+                    para_md = f'::: {{custom-style="{current_para_custom_style}"}}\n{para_text}\n:::'
                 elif current_para_is_kaiti:
                     # Apply custom Word style instead of basic blockquote
                     kaiti_style = style_mapping.get("kaiti") or "楷體2"
-                    para_text = f'::: {{custom-style="{kaiti_style}"}}\n{para_text}\n:::'
-                page_paragraphs.append(para_text)
+                    custom_style_val = kaiti_style
+                    para_md = f'::: {{custom-style="{kaiti_style}"}}\n{para_text}\n:::'
+                else:
+                    para_md = para_text
+                page_paragraphs.append(para_md)
+
+                # Record structured paragraph block
+                para_bbox = _union_bboxes([b.get("bbox") for b in current_para_contributing_blocks if b.get("bbox")])
+                dominant_font, avg_size = _compute_dominant_font_and_size(current_para_contributing_blocks, body_font, body_size)
+                layout_records.append({
+                    "type": "paragraph",
+                    "page_num": page_num,
+                    "raw_text": para_text,
+                    "md_text": para_md,
+                    "bbox": para_bbox,
+                    "font_name": dominant_font,
+                    "font_size": avg_size,
+                    "custom_style": custom_style_val,
+                })
+
                 current_para_lines = []
+                current_para_contributing_blocks = []
                 current_para_is_kaiti = False
                 current_para_custom_style = None
         
@@ -640,6 +727,14 @@ def _parse_pdf_layout_flow(
                     "page_w": page_w,
                     "page_h": page_h,
                 })
+                layout_records.append({
+                    "type": "figure",
+                    "page_num": page_num,
+                    "block_idx": block_idx,
+                    "bbox": fig_bbox,
+                    "page_w": page_w,
+                    "page_h": page_h,
+                })
                 page_paragraphs.append(f"![__IMG_PLACEHOLDER_{page_num}_{block_idx}__]()")
                 last_block_x0 = fig_bbox[0]
                 last_block_x1 = fig_bbox[2]
@@ -654,6 +749,12 @@ def _parse_pdf_layout_flow(
                 if tbl_md:
                     page_paragraphs.append(tbl_md)
                 tbl_bbox = item["bbox"]
+                layout_records.append({
+                    "type": "table",
+                    "page_num": page_num,
+                    "bbox": tbl_bbox,
+                    "raw_md": tbl_md or "",
+                })
                 last_block_x0 = tbl_bbox[0]
                 last_block_x1 = tbl_bbox[2]
                 last_block_y1 = tbl_bbox[3]
@@ -811,6 +912,19 @@ def _parse_pdf_layout_flow(
                 else:
                     formatted_heading = f"{'#' * heading_level} {bb_text}"
                 page_paragraphs.append(formatted_heading)
+
+                h_font, h_size = _compute_dominant_font_and_size([bb], body_font, body_size)
+                layout_records.append({
+                    "type": "heading",
+                    "page_num": page_num,
+                    "level": heading_level,
+                    "title": bb_text,
+                    "raw_text": formatted_heading,
+                    "bbox": bbox,
+                    "font_name": h_font,
+                    "font_size": h_size,
+                    "custom_style": custom_style or "",
+                })
                 continue
             else:
                 last_heading_text = ""
@@ -845,9 +959,23 @@ def _parse_pdf_layout_flow(
                         if _caption_style:
                             break
                 if _caption_style:
-                    page_paragraphs.append(f'::: {{custom-style="{_caption_style}"}}\n{bb_text}\n:::')
+                    cap_md = f'::: {{custom-style="{_caption_style}"}}\n{bb_text}\n:::'
+                    page_paragraphs.append(cap_md)
                 else:
-                    page_paragraphs.append(f'*{bb_text}*')  # fallback: 斜體
+                    cap_md = f'*{bb_text}*'
+                    page_paragraphs.append(cap_md)  # fallback: 斜體
+
+                c_font, c_size = _compute_dominant_font_and_size([bb], body_font, body_size)
+                layout_records.append({
+                    "type": "caption",
+                    "page_num": page_num,
+                    "raw_text": bb_text,
+                    "md_text": cap_md,
+                    "bbox": bbox,
+                    "font_name": c_font,
+                    "font_size": c_size,
+                    "custom_style": _caption_style or "",
+                })
                 last_block_x0 = bbox[0]
                 last_block_x1 = bbox[2]
                 last_block_y1 = bbox[3]
@@ -928,12 +1056,16 @@ def _parse_pdf_layout_flow(
                 current_para_custom_style = block_custom_style
 
             # Process lines in this block, replacing footnote anchors
+            block_has_valid_line = False
             for line in lines:
                 line_str = "".join(s.get("text", "") for s in line.get("spans", [])).strip()
                 if not line_str:
                     continue
                 line_str = _replace_fn_markers_in_text(line_str, page_footnotes, page_num)
                 current_para_lines.append(line_str)
+                block_has_valid_line = True
+            if block_has_valid_line:
+                current_para_contributing_blocks.append(bb)
 
             last_block_x0 = bbox[0]
             last_block_x1 = bbox[2]
@@ -971,10 +1103,17 @@ def _parse_pdf_layout_flow(
 
             # Append Pandoc footnote definition
             page_paragraphs.append(f"{fn_tag}: {fn['content']}")
+            layout_records.append({
+                "type": "footnote",
+                "page_num": page_num,
+                "fn_id": fn_id,
+                "tag": fn_tag,
+                "content": fn['content'],
+            })
 
         if page_paragraphs:
             final_md_pages.append("\n\n".join(page_paragraphs))
-    return final_md_pages, all_image_blocks, audit_data
+    return final_md_pages, all_image_blocks, audit_data, layout_records
 
 
 def process_book_vector_pdf(
@@ -1053,7 +1192,7 @@ def process_book_vector_pdf(
 
     doc = fitz.open(pdf_path)
     try:
-        final_md_pages, all_image_blocks, audit_data = _parse_pdf_layout_flow(
+        final_md_pages, all_image_blocks, audit_data, _ = _parse_pdf_layout_flow(
             doc=doc,
             pdf_name=os.path.basename(pdf_path),
             style_mapping=style_mapping,
@@ -1125,3 +1264,263 @@ def process_book_vector_pdf(
             progress_callback(90, f"[AI-Kaiti] {stats_summary}")
         
     return out_md_path, audit_data
+
+
+def build_book_ast(
+    layout_records: List[Dict[str, Any]],
+    image_blocks: List[Dict[str, Any]],
+    audit_data: Dict[str, Any],
+    pdf_name: str = "",
+    total_pages: int = 0,
+    doc_profile: Optional[Dict[str, Any]] = None,
+    split_level: int = 2,
+) -> BookAST:
+    """
+    Pure builder transforming structured layout records into a BookAST instance
+    comprising SectionUnit and ParagraphUnit hierarchies.
+    """
+    if doc_profile is None:
+        doc_profile = audit_data.get("doc_profile", {})
+
+    sections: List[SectionUnit] = []
+    current_sec: Optional[SectionUnit] = None
+    sec_counter = 0
+
+    def start_new_section(title: str, level: int) -> SectionUnit:
+        nonlocal sec_counter
+        sec_id = f"sec_{sec_counter:03d}"
+        sec_counter += 1
+        sec = SectionUnit(
+            section_id=sec_id,
+            title=title,
+            level=level,
+            paragraphs=[],
+        )
+        sections.append(sec)
+        return sec
+
+    for rec in layout_records:
+        rtype = rec.get("type")
+        page_num = rec.get("page_num", 1)
+
+        if rtype == "heading" and rec.get("level", 2) <= split_level:
+            # Starts a new section
+            heading_title = rec.get("title", "")
+            heading_level = rec.get("level", 2)
+            current_sec = start_new_section(heading_title, heading_level)
+
+            # Record the heading as paragraph #1 of the section
+            p_id = f"{current_sec.section_id}_p001"
+            p = ParagraphUnit(
+                para_id=p_id,
+                raw_text=rec.get("raw_text", f"{'#' * heading_level} {heading_title}"),
+                page_num=page_num,
+                bbox=rec.get("bbox"),
+                font_name=rec.get("font_name", ""),
+                font_size=rec.get("font_size", 0.0),
+                custom_style=rec.get("custom_style", ""),
+            )
+            current_sec.paragraphs.append(p)
+            continue
+
+        # If no section has been created yet, start a preamble section
+        if current_sec is None:
+            current_sec = start_new_section("__PREAMBLE__", 0)
+
+        p_idx = len(current_sec.paragraphs) + 1
+        p_id = f"{current_sec.section_id}_p{p_idx:03d}"
+
+        if rtype == "heading":
+            h_level = rec.get("level", 3)
+            h_title = rec.get("title", "")
+            p = ParagraphUnit(
+                para_id=p_id,
+                raw_text=rec.get("raw_text", f"{'#' * h_level} {h_title}"),
+                page_num=page_num,
+                bbox=rec.get("bbox"),
+                font_name=rec.get("font_name", ""),
+                font_size=rec.get("font_size", 0.0),
+                custom_style=rec.get("custom_style", ""),
+            )
+            current_sec.paragraphs.append(p)
+
+        elif rtype == "paragraph":
+            p = ParagraphUnit(
+                para_id=p_id,
+                raw_text=rec.get("raw_text", ""),
+                page_num=page_num,
+                bbox=rec.get("bbox"),
+                font_name=rec.get("font_name", ""),
+                font_size=rec.get("font_size", 0.0),
+                custom_style=rec.get("custom_style", ""),
+            )
+            current_sec.paragraphs.append(p)
+
+        elif rtype == "caption":
+            p = ParagraphUnit(
+                para_id=p_id,
+                raw_text=rec.get("raw_text", ""),
+                page_num=page_num,
+                bbox=rec.get("bbox"),
+                font_name=rec.get("font_name", ""),
+                font_size=rec.get("font_size", 0.0),
+                custom_style=rec.get("custom_style", ""),
+            )
+            current_sec.paragraphs.append(p)
+
+        elif rtype == "figure":
+            p = ParagraphUnit(
+                para_id=p_id,
+                raw_text=f"![__IMG_PLACEHOLDER_{page_num}_{rec.get('block_idx', 0)}__]()",
+                page_num=page_num,
+                bbox=rec.get("bbox"),
+                font_name="image",
+                font_size=0.0,
+            )
+            current_sec.paragraphs.append(p)
+
+        elif rtype == "table":
+            p = ParagraphUnit(
+                para_id=p_id,
+                raw_text=rec.get("raw_md", ""),
+                page_num=page_num,
+                bbox=rec.get("bbox"),
+                font_name="table",
+                font_size=0.0,
+            )
+            current_sec.paragraphs.append(p)
+
+        elif rtype == "footnote":
+            p = ParagraphUnit(
+                para_id=p_id,
+                raw_text=f"{rec.get('tag', '')}: {rec.get('content', '')}",
+                page_num=page_num,
+                bbox=None,
+                font_name="footnote",
+                font_size=0.0,
+            )
+            current_sec.paragraphs.append(p)
+
+    # Empty document fallback
+    if not sections:
+        sections.append(SectionUnit(
+            section_id="sec_001",
+            title="__DOCUMENT__",
+            level=1,
+            paragraphs=[],
+        ))
+
+    for sec in sections:
+        sec.raw_content = sec.effective_content
+
+    return BookAST(
+        sections=sections,
+        image_blocks=image_blocks,
+        audit_data=audit_data,
+        pdf_name=pdf_name,
+        total_pages=total_pages,
+        doc_profile=doc_profile,
+    )
+
+
+def extract_book_vector_ast(
+    pdf_path: str | Path,
+    style_mapping: Optional[Dict[str, str]] = None,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+    no_footnote: bool = False,
+    ai_kaiti: Optional[bool] = None,
+    ai_kaiti_threshold: Optional[float] = None,
+    enable_footnotes: bool = True,
+    split_level: int = 2,
+) -> BookAST:
+    """
+    Extracts vector PDF into a structured BookAST in pure memory.
+
+    Guarantees:
+    - Pure read-only operation: performs zero file writes and zero directory creation.
+    - Preserves paragraph bbox (72-DPI points), 1-based page_num, font_name, font_size.
+    - Strictly releases fitz.Document resource handle on both normal return and exception.
+    - Returns exactly one BookAST instance.
+    """
+    pdf_path_str = str(pdf_path)
+    if not os.path.isfile(pdf_path_str):
+        raise FileNotFoundError(f"PDF file not found: {pdf_path_str}")
+
+    if not enable_footnotes:
+        no_footnote = True
+    elif no_footnote:
+        enable_footnotes = False
+
+    if style_mapping is None:
+        style_mapping = {}
+    if isinstance(style_mapping, str):
+        try:
+            style_mapping = json.loads(style_mapping)
+        except Exception:
+            style_mapping = {}
+
+    font_role_map = {}
+    try:
+        from src.scripts.pdf_font_analyzer import get_font_role_map
+        _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json')
+        _fonts_json = os.path.normpath(_fonts_json)
+        font_role_map = get_font_role_map(_fonts_json)
+    except Exception:
+        try:
+            from scripts.pdf_font_analyzer import get_font_role_map
+            _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json')
+            _fonts_json = os.path.normpath(_fonts_json)
+            font_role_map = get_font_role_map(_fonts_json)
+        except Exception:
+            font_role_map = {}
+
+    ai_kaiti_classifier = None
+    if ai_kaiti and AIKaitiClassifier is not None:
+        try:
+            from config import CFG, AI
+            threshold = float(ai_kaiti_threshold if ai_kaiti_threshold is not None else getattr(CFG, "ai_kaiti_threshold", 0.65))
+            ai_kaiti_classifier = AIKaitiClassifier(
+                api_key=AI.gemini_key or "",
+                model=CFG.ai_kaiti_model,
+                min_confidence=threshold,
+            )
+            if not ai_kaiti_classifier.is_available:
+                ai_kaiti_classifier = None
+        except Exception:
+            ai_kaiti_classifier = None
+
+    doc = fitz.open(pdf_path_str)
+    try:
+        final_md_pages, all_image_blocks, audit_data, layout_records = _parse_pdf_layout_flow(
+            doc=doc,
+            pdf_name=os.path.basename(pdf_path_str),
+            style_mapping=style_mapping,
+            font_role_map=font_role_map,
+            enable_footnotes=enable_footnotes,
+            ai_kaiti_classifier=ai_kaiti_classifier,
+            progress_callback=progress_callback,
+        )
+        total_pages = len(doc)
+    finally:
+        doc.close()
+
+    return build_book_ast(
+        layout_records=layout_records,
+        image_blocks=all_image_blocks,
+        audit_data=audit_data,
+        pdf_name=os.path.basename(pdf_path_str),
+        total_pages=total_pages,
+        doc_profile=audit_data.get("doc_profile", {}),
+        split_level=split_level,
+    )
+
+
+__all__ = [
+    "process_book_vector_pdf",
+    "extract_book_vector_ast",
+    "build_book_ast",
+    "BookAST",
+    "SectionAdapter",
+    "SectionUnit",
+    "ParagraphUnit",
+]
