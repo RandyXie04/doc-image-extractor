@@ -140,8 +140,7 @@ class PodValidator:
     def validate_section(self, section: SectionUnit) -> Tuple[List[ValidationViolation], Optional[CJKValidationResult]]:
         """Validates a single section against configured quality dimensions."""
         violations: List[ValidationViolation] = []
-        if section.title == "__PREAMBLE__" or section.level == 0:
-            return violations, None
+        is_preamble = (section.title == "__PREAMBLE__" or section.level == 0)
 
         content = section.effective_content
 
@@ -181,8 +180,8 @@ class PodValidator:
                 severity="WARNING",
             ))
 
-        # 2. Schema Check: Mandatory Badges
-        if self.config.enable_badge_check and self.blueprint.mandatory_section_badges:
+        # 2. Schema Check: Mandatory Badges (skipped on preamble)
+        if not is_preamble and self.config.enable_badge_check and self.blueprint.mandatory_section_badges:
             existing_badges = set(re.findall(r'【([^】]+)】|\[([^\]]+)\]', content))
             prefix_badges = set(re.findall(r'(?:^|[\n\r])\s*([問答QA材料步驟作法解析案情評析提示注意要點導讀摘要重點範例]{1,6})[：:]', content))
             flattened_badges = {b[0] or b[1] for b in existing_badges} | prefix_badges
@@ -197,8 +196,8 @@ class PodValidator:
                         severity="ERROR",
                     ))
 
-        # 3. Numbering Continuity Check
-        if self.config.enable_numbering_check:
+        # 3. Numbering Continuity Check (skipped on preamble)
+        if not is_preamble and self.config.enable_numbering_check:
             found_circled = [c for c in self.CIRCLED_NUMS if c in content]
             if len(found_circled) >= 2:
                 indices = [self.CIRCLED_NUMS.index(c) for c in found_circled]

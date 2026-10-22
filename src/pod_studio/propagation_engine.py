@@ -34,9 +34,7 @@ class PropagationEngine:
 
     def process_section(self, section: SectionUnit) -> SectionUnit:
         """Processes an individual SectionUnit using rule transformations."""
-        if section.title == "__PREAMBLE__" or section.level == 0:
-            section.processed_content = section.raw_content
-            return section
+        is_preamble = (section.title == "__PREAMBLE__" or section.level == 0)
 
         # Track badges already present
         existing_badges = set(re.findall(r'【([^】]+)】|\[([^\]]+)\]', section.raw_content))
@@ -63,6 +61,8 @@ class PropagationEngine:
                             transformed = self._split_circled_numbers(transformed)
 
                     elif rule.action == "inject_badge" and rule.inject_prefix_badge:
+                        if is_preamble:
+                            continue
                         badge_clean = rule.inject_prefix_badge.strip("【】[] ")
                         if badge_clean not in flattened_badges and rule.trigger_regex:
                             if re.search(rule.trigger_regex, transformed):
@@ -74,6 +74,12 @@ class PropagationEngine:
                         if "custom-style=" not in transformed and rule.trigger_regex:
                             if re.search(rule.trigger_regex, transformed):
                                 p.custom_style = rule.target_docx_style
+
+                # Sanitize alien custom_style not defined in blueprint template
+                if self.blueprint and self.blueprint.template_styles_used:
+                    valid_styles = set(self.blueprint.template_styles_used)
+                    if p.custom_style and p.custom_style not in valid_styles and p.custom_style != "Normal":
+                        p.custom_style = ""
 
                 p.is_deleted = should_delete
                 p.processed_text = transformed
@@ -108,6 +114,8 @@ class PropagationEngine:
                         transformed = self._split_circled_numbers(transformed)
 
                 elif rule.action == "inject_badge" and rule.inject_prefix_badge:
+                    if is_preamble:
+                        continue
                     badge_clean = rule.inject_prefix_badge.strip("【】[] ")
                     if badge_clean not in flattened_badges and rule.trigger_regex:
                         if re.search(rule.trigger_regex, transformed):

@@ -109,9 +109,11 @@ _H1_PART_RE = re.compile(r'^(?:[上下中]\s*篇(?:\s+[^\n]+)?)$')
 _H1_SPECIAL_RE = re.compile(r'^(?:目\s*录|目录|序|后\s*记|后记|结\s*语|结语|主要参考文献)$')
 _H1_CHAPTER_RE = re.compile(r'^(?:第[一二三四五六七八九十百零\d]+[章卷篇]|(?:Chapter|Part)\s*\d+)(?:\s+[^\n]+)?$', re.I)
 _H2_SECTION_RE = re.compile(r'^第[一二三四五六七八九十百零\d]+[节節回讲講](?:\s+[^\n]+)?$')
-_H2_NUM_RE = re.compile(r'^[一二三四五六七八九十百\d]+[、. ][^\n]{2,30}$')
+_H2_NUM_RE = re.compile(r'^[一二三四五六七八九十百]+[、.· ][^\n]{2,30}$')
+_H2_DECIMAL_RE = re.compile(r'^\d+\.\d+(?:[\s\u3000]+[^\n]{1,40})?$')
+_H3_DECIMAL_RE = re.compile(r'^\d+\.\d+\.\d+(?:[\s\u3000]+[^\n]{1,40})?$')
+_LIST_NUM_PREFIX_RE = re.compile(r'^\d+[、.·](?!\d)')
 _H3_SUB_RE1 = re.compile(r'^[（(][一二三四五六七八九十\d]+[)）]')
-_H3_SUB_RE2 = re.compile(r'^\d+\.\d+')
 _CHART_TABLE_END_RE = re.compile(r'示意图|表$')
 _CIRCLED_START_RE = re.compile(r'^[①-⑩]')
 _IMG_PLACEHOLDER_RE = re.compile(r'!\[__IMG_PLACEHOLDER_(\d+)_(\d+)__\]\(\)')
@@ -425,6 +427,7 @@ def _parse_pdf_layout_flow(
     enable_footnotes: bool = True,
     ai_kaiti_classifier: Optional[Any] = None,
     progress_callback: Optional[Callable[[int, str], None]] = None,
+    page_range: Optional[Tuple[int, int]] = None,
 ) -> Tuple[List[str], List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]]:
     """
     純記憶體版面與流式閱讀解析核心 (Pure Parsing Core)。
@@ -470,7 +473,13 @@ def _parse_pdf_layout_flow(
     all_image_blocks = []
     layout_records = []
 
-    for page_idx in range(total_pages):
+    start_page_idx = 0
+    end_page_idx = total_pages
+    if page_range:
+        start_page_idx = max(0, page_range[0] - 1)
+        end_page_idx = min(total_pages, page_range[1])
+
+    for page_idx in range(start_page_idx, end_page_idx):
         page_num = page_idx + 1
         if progress_callback:
             progress_pct = int((page_num / total_pages) * 85)
@@ -555,8 +564,8 @@ def _parse_pdf_layout_flow(
             is_fn = False
             if enable_footnotes:
                 starts_with_fn_marker = bool(_STARTS_WITH_FN_MARKER_RE.match(block_text))
-                if bbox[1] >= page_h * 0.65:
-                    if starts_with_fn_marker:
+                if bbox[1] >= page_h * 0.65 and avg_size < body_size:
+                    if starts_with_fn_marker and not _H3_DECIMAL_RE.match(block_text) and not _H2_DECIMAL_RE.match(block_text):
                         is_fn = True
                     elif footnote_blocks and avg_size <= 10.0:
                         # Immediate subsequent block below a footnote block with small font
@@ -843,7 +852,13 @@ def _parse_pdf_layout_flow(
 
             # ── 啟發式標題判定（Fallback）：僅在字體未在字體分析中指定時才執行 ──
             if not heading_level and not is_toc_line and not _has_font_mapping and not _is_ignored_font:
-                is_candidate_heading = (len(lines) <= 2 and 2 <= len(clean_for_heading) <= 35 and not has_sentence_punct)
+                is_candidate_heading = (
+                    len(lines) <= 2
+                    and 2 <= len(clean_for_heading) <= 35
+                    and not has_sentence_punct
+                    and not _LIST_NUM_PREFIX_RE.match(bb_text)
+                    and not re.match(r'^(?:[¡•●◆■※★\-]|（?[一二三四五六七八九十\d]+）?[、.·\s]+[是為有在]|[圖表]\s*\d+[-_.]\d+[\s　]+[是為有在])', bb_text)
+                )
 
                 # Priority 1: 目錄索引 / PDF 原生書籤直接命中（100% 命中無規則標題）
                 if is_candidate_heading and toc_index:
@@ -861,9 +876,13 @@ def _parse_pdf_layout_flow(
                         heading_level = 2
                     elif _H2_SECTION_RE.match(bb_text):
                         heading_level = 2
+                    elif _H3_DECIMAL_RE.match(bb_text) and not has_sentence_punct:
+                        heading_level = 3
+                    elif _H2_DECIMAL_RE.match(bb_text) and not has_sentence_punct:
+                        heading_level = 2
                     elif _H2_NUM_RE.match(bb_text) and not has_sentence_punct:
                         heading_level = 3
-                    elif (_H3_SUB_RE1.match(bb_text) or _H3_SUB_RE2.match(bb_text)) and 2 <= len(clean_for_heading) <= 30 and not has_sentence_punct:
+                    elif _H3_SUB_RE1.match(bb_text) and 2 <= len(clean_for_heading) <= 30 and not has_sentence_punct:
                         heading_level = 3
 
                 # Priority 3: 相對字級與黑體/粗體幾何特徵判定（取代死板的 avg_size >= 10.8）
@@ -876,7 +895,8 @@ def _parse_pdf_layout_flow(
                             for fn in [(s.get("font") or "").lower()]
                         )
                         body_font_clean = body_font.lower() if body_font else ""
-                        is_different_font_from_body = bool(body_font_clean and any(fn and fn != body_font_clean for fn in span_fonts))
+                        cjk_span_fonts = [fn for fn in span_fonts if not any(w in fn for w in ("times", "arial", "helvetica", "georgia", "courier", "symbol"))]
+                        is_different_font_from_body = bool(body_font_clean and cjk_span_fonts and any(fn != body_font_clean for fn in cjk_span_fonts))
 
                         # 真正置中判定：左右邊距平衡且兩側有明顯留白，絕非貼齊左邊界之普通正文
                         left_margin = bbox[0]
@@ -1443,6 +1463,7 @@ def extract_book_vector_ast(
     ai_kaiti_threshold: Optional[float] = None,
     enable_footnotes: bool = True,
     split_level: int = 2,
+    page_range: Optional[Tuple[int, int]] = None,
 ) -> BookAST:
     """
     Extracts vector PDF into a structured BookAST in pure memory.
@@ -1510,6 +1531,7 @@ def extract_book_vector_ast(
             enable_footnotes=enable_footnotes,
             ai_kaiti_classifier=ai_kaiti_classifier,
             progress_callback=progress_callback,
+            page_range=page_range,
         )
         total_pages = len(doc)
     finally:

@@ -49,9 +49,10 @@ class DiffAligner:
                 # Find matching paragraph in raw_paras
                 for rp in raw_paras:
                     # If raw paragraph is contained in or contains inner_text
-                    if inner_text and (inner_text in rp or rp in inner_text):
-                        # Construct a leading regex trigger (first 6-12 chars)
-                        clean_start = re.sub(r'^[#\s【】\[\]\d\.\-、]+', '', rp).strip()
+                    clean_rp = re.sub(r':::\s*\{\s*custom-style="[^"]+"\s*\}\n?', '', rp)
+                    clean_rp = re.sub(r'\n?:::', '', clean_rp).strip()
+                    if inner_text and (inner_text in clean_rp or clean_rp in inner_text):
+                        clean_start = re.sub(r'^[#\s]+', '', clean_rp).strip()
                         prefix = clean_start[:8]
                         if len(prefix) >= 2:
                             escaped = re.escape(prefix)
@@ -198,12 +199,19 @@ class ExemplarLearner:
         for title, gold_md in gold_sections.items():
             if title == "__PREAMBLE__":
                 continue
+            clean_re = re.compile(r'^(?:第[一二三四五六七八九十百零\d]+[章节條条回讲講篇卷]|(?:Chapter|Part)\s*\d+|[一二三四五六七八九十百\d]+[、.· ]|[（(][一二三四五六七八九十\d]+[)）]|\d+\.\d+(?:\.\d+)?)\s*', re.I)
             raw_match = raw_sections.get(title)
             if not raw_match:
-                clean_title = re.sub(r'^[一二三四五六七八九十0-9\s、.·]+', '', title).strip()
+                clean_title = clean_re.sub('', re.sub(r'[\s①-⑩\u2460-\u2473\u3000]+', '', title)).strip()
                 for r_title, r_content in raw_sections.items():
-                    clean_r = re.sub(r'^[一二三四五六七八九十0-9\s、.·]+', '', r_title).strip()
-                    if clean_title and (clean_title in clean_r or clean_r in clean_title):
+                    if r_title == "__PREAMBLE__":
+                        continue
+                    clean_r = clean_re.sub('', re.sub(r'[\s①-⑩\u2460-\u2473\u3000]+', '', r_title)).strip()
+                    if clean_title and clean_r and len(clean_title) >= 2 and len(clean_r) >= 2:
+                        if clean_title in clean_r or clean_r in clean_title:
+                            raw_match = r_content
+                            break
+                    elif len(title) >= 4 and len(r_title) >= 4 and (title in r_title or r_title in title):
                         raw_match = r_content
                         break
 
@@ -218,6 +226,38 @@ class ExemplarLearner:
                 all_inferred_rules.extend(rules_from_sec)
                 if len(few_shots) >= sample_chapters:
                     break
+
+        # Fallback: if no H2 sections matched (e.g. slice inside a single chapter), align directly across available raw and golden text
+        if not all_inferred_rules and raw_sections:
+            all_raw_text = "\n\n".join(raw_sections.values())
+            rules_from_fallback = DiffAligner.align_paragraphs(all_raw_text, full_golden_text)
+            all_inferred_rules.extend(rules_from_fallback)
+
+        # Structural custom style induction from golden document
+        structural_patterns = [
+            ("pattern_chinese_num", r'^[一二三四五六七八九十百]+[、.· ]', 15),
+            ("pattern_paren_num", r'^[（(][一二三四五六七八九十\d]+[)）]', 15),
+            ("pattern_fig_caption", r'^[圖图]\s*\d+(?:[-_.]\d+)?(?:[\s\u3000]+|$)', 12),
+            ("pattern_tbl_caption", r'^表\s*\d+(?:[-_.]\d+)?(?:[\s\u3000]+|$)', 12),
+            ("pattern_composition", r'^【(?:组成|組成)】', 10),
+            ("pattern_arabic_num", r'^\d+[\.、]\s*[^\d]', 14),
+        ]
+        for pat_name, pat_regex, pat_priority in structural_patterns:
+            matched_styles = [
+                p.style.name for p in gold_doc.paragraphs
+                if p.text.strip() and re.match(pat_regex, p.text.strip()) and p.style and p.style.name not in ("Normal", "Body Text", "內文", "標準")
+            ]
+            if matched_styles:
+                from collections import Counter
+                dom_style, count = Counter(matched_styles).most_common(1)[0]
+                if count >= 2:
+                    all_inferred_rules.append(StyleTriggerRule(
+                        rule_id=f"rule_struct_{pat_name}",
+                        action="apply_style",
+                        target_docx_style=dom_style,
+                        trigger_regex=pat_regex,
+                        priority=pat_priority,
+                    ))
 
         # Numbering check enabled only if circled numbers are regularly used
         enable_numbering = circled_number_count >= max(2, int(sec_count * 0.4))

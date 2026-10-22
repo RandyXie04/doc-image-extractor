@@ -12,11 +12,14 @@ from __future__ import annotations
 import re
 import json
 import uuid
-import shutil
+import os
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 import fitz
 import docx
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.shared import Inches
 
 from .blueprint_schema import BookBlueprint, StyleTriggerRule, ValidationConfig
 from .section_ast import SectionAST, SectionUnit, ParagraphUnit, BookAST, SectionAdapter
@@ -42,6 +45,7 @@ def extract_raw_from_pdf(
     use_vector_ast: bool = False,
     ai_kaiti: bool = False,
     enable_footnotes: bool = True,
+    page_range: Optional[Tuple[int, int]] = None,
 ) -> Tuple[List[SectionUnit], Path, Path]:
     """
     Extracts text and geometric coordinates from PDF.
@@ -65,8 +69,38 @@ def extract_raw_from_pdf(
             split_level=split_level,
             ai_kaiti=ai_kaiti,
             enable_footnotes=enable_footnotes,
+            page_range=page_range,
         )
+
+        # Automated layout architecture mode: extract raster images to session_dir / "images"
+        images_dir = s_dir / "images"
+        image_path_map = {}
+        if getattr(book_ast, "image_blocks", None):
+            try:
+                from src.scripts.pdf_image_extractor import extract_pdf_images
+                image_path_map = extract_pdf_images(
+                    pdf_path=str(pdf_p),
+                    image_blocks=book_ast.image_blocks,
+                    output_dir=str(images_dir),
+                )
+            except Exception:
+                image_path_map = {}
+
+        def _repl_img(m):
+            pn = int(m.group(1))
+            bn = int(m.group(2))
+            saved = image_path_map.get((pn, bn))
+            if saved:
+                rel = os.path.relpath(saved, str(s_dir)).replace("\\", "/")
+                return f"![]({rel}){{width=80%}}"
+            return ""
+
         sections = SectionAdapter.to_sections(book_ast)
+        for sec in sections:
+            for p in sec.paragraphs:
+                if "_IMG_PLACEHOLDER_" in p.raw_text:
+                    p.raw_text = re.sub(r'!\[__IMG_PLACEHOLDER_(\d+)_(\d+)__\]\(\)', _repl_img, p.raw_text)
+            sec.raw_content = sec.effective_content
 
         # Save Book_raw_ast.json
         ast_path = s_dir / "Book_raw_ast.json"
@@ -81,9 +115,17 @@ def extract_raw_from_pdf(
                 doc_out.add_paragraph(sec.title, style=h_style)
             for p in sec.paragraphs:
                 p_txt = p.raw_text.strip()
-                if not p_txt or re.match(r'^#+\s+', p_txt):
+                if not p_txt:
                     continue
-                doc_out.add_paragraph(p_txt)
+                m_h = re.match(r'^(#+)\s+(.+)$', p_txt)
+                if m_h:
+                    h_txt = m_h.group(2).strip()
+                    if sec.title != "__PREAMBLE__" and h_txt == sec.title:
+                        continue
+                    h_lvl = min(len(m_h.group(1)), 3)
+                    doc_out.add_paragraph(h_txt, style=f"Heading {h_lvl}")
+                else:
+                    doc_out.add_paragraph(p_txt)
         doc_out.save(str(raw_docx_path))
 
         return sections, ast_path, raw_docx_path
@@ -103,6 +145,8 @@ def extract_raw_from_pdf(
         para_counter = 1
 
         for page_idx, page in enumerate(doc, 1):
+            if page_range and not (page_range[0] <= page_idx <= page_range[1]):
+                continue
             # Extract structured text blocks with font and coordinates
             blocks = page.get_text("dict").get("blocks", [])
             for b in blocks:
@@ -202,6 +246,7 @@ def extract_raw_from_pdf_ast(
     split_level: int = 2,
     ai_kaiti: bool = False,
     enable_footnotes: bool = True,
+    page_range: Optional[Tuple[int, int]] = None,
 ) -> Tuple[List[SectionUnit], Path, Path]:
     """
     Convenience function that explicitly invokes the high-precision BookAST extraction path.
@@ -213,6 +258,7 @@ def extract_raw_from_pdf_ast(
         use_vector_ast=True,
         ai_kaiti=ai_kaiti,
         enable_footnotes=enable_footnotes,
+        page_range=page_range,
     )
 
 
@@ -361,21 +407,88 @@ def propagate_and_validate_session(
     with open(audit_path, "w", encoding="utf-8") as f:
         json.dump(report.to_dict(), f, ensure_ascii=False, indent=2)
 
-    # Generate Book_POD_Final.docx
+    # Automated layout architecture mode: Export Book_POD_Final.md
+    final_md_path = s_dir / "Book_POD_Final.md"
+    full_md_content = "\n\n".join(sec.effective_content for sec in processed_sections)
+    final_md_path.write_text(full_md_content, encoding="utf-8")
+
+    # Generate Book_POD_Final.docx with full image, table, heading, and custom-style support
     final_docx_path = s_dir / "Book_POD_Final.docx"
-    doc_final = docx.Document(str(template_docx_path)) if template_docx_path and Path(template_docx_path).exists() else docx.Document()
+    if template_docx_path and Path(template_docx_path).exists():
+        doc_final = docx.Document(str(template_docx_path))
+        # Clear template body paragraphs and tables while preserving styles.xml, fonts, and geometry
+        for p in list(doc_final.paragraphs):
+            p._element.getparent().remove(p._element)
+        for t in list(doc_final.tables):
+            t._element.getparent().remove(t._element)
+    else:
+        doc_final = docx.Document()
 
     for sec in processed_sections:
         if sec.title != "__PREAMBLE__":
             doc_final.add_paragraph(sec.title, style=f"Heading {min(sec.level, 3)}")
 
-        # Split content by paragraphs and inspect custom-style fences
+        # Split content by paragraphs and inspect headings, images, tables, and custom-style fences
         paras = sec.effective_content.split("\n\n")
         for p_txt in paras:
             p_strip = p_txt.strip()
-            if not p_strip or re.match(r'^#+\s+', p_strip):
+            if not p_strip:
                 continue
 
+            # Heading match
+            m_h = re.match(r'^(#+)\s+(.+)$', p_strip)
+            if m_h:
+                h_txt = m_h.group(2).strip()
+                h_txt = re.sub(r'\{custom-style="[^"]+"\}', '', h_txt).strip()
+                if sec.title != "__PREAMBLE__" and h_txt == sec.title:
+                    continue
+                h_lvl = min(len(m_h.group(1)), 3)
+                doc_final.add_paragraph(h_txt, style=f"Heading {h_lvl}")
+                continue
+
+            # Image token match: ![](images/...) or ![alt](path){...}
+            m_img = re.search(r'!\[.*?\]\((.*?)\)', p_strip)
+            if m_img:
+                img_rel = m_img.group(1).split('{')[0].strip()
+                img_full = (s_dir / img_rel).resolve()
+                if img_full.exists():
+                    p_img = doc_final.add_paragraph()
+                    try:
+                        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    except Exception:
+                        pass
+                    run = p_img.add_run()
+                    run.add_picture(str(img_full), width=Inches(4.5))
+                    continue
+
+            # Table match: markdown table
+            tbl_lines = [l.strip() for l in p_strip.splitlines() if l.strip()]
+            if len(tbl_lines) >= 2 and tbl_lines[0].startswith('|') and tbl_lines[0].endswith('|') and re.match(r'^\|[\s\-:|]+\|$', tbl_lines[1]):
+                rows_data = []
+                for line in tbl_lines:
+                    if re.match(r'^\|[\s\-:|]+\|$', line):
+                        continue
+                    cells = [c.strip() for c in line.strip('|').split('|')]
+                    rows_data.append(cells)
+                if rows_data:
+                    max_cols = max(len(r) for r in rows_data)
+                    tbl = doc_final.add_table(rows=len(rows_data), cols=max_cols)
+                    try:
+                        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+                    except Exception:
+                        pass
+                    try:
+                        tbl.style = 'Table Grid'
+                    except Exception:
+                        pass
+                    for r_idx, r_data in enumerate(rows_data):
+                        row = tbl.rows[r_idx]
+                        for c_idx, cell_val in enumerate(r_data):
+                            if c_idx < len(row.cells):
+                                row.cells[c_idx].text = cell_val
+                    continue
+
+            # Custom-style block: ::: {custom-style="名稱"} ... :::
             m_st = re.search(r':::\s*\{\s*custom-style="([^"]+)"\s*\}\n?(.*?)\n?:::', p_strip, re.DOTALL)
             if m_st:
                 style_name = m_st.group(1)
