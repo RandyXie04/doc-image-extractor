@@ -73,12 +73,16 @@ def convert_to_grayscale_helper(img: Image.Image, ext: str = ".png") -> Image.Im
         return img.convert("L")
 
 
-def get_active_docx_media_entries(z: zipfile.ZipFile) -> List[str]:
+def get_active_docx_media_entries(z: zipfile.ZipFile, duplicate_policy: str = "every_occurrence") -> List[str]:
     """
     從 Word (.docx) ZIP 結構中解析所有被實際引用的圖片檔案路徑。
     Word 在使用者刪除圖片後，往往不會自 word/media/ 目錄物理刪除檔案；
     本函式透過解析 document.xml、頁首、頁尾、註腳等活躍 XML 部件及其 .rels 關聯，
     僅提取正文中真正被引用的圖片，排除已刪除的孤立圖片。
+
+    支援 duplicate_policy:
+      - "every_occurrence": 提取文檔中每一次出現的圖片（包含在不同段落/位置重複引用的相同圖檔，依出現順序保留）。
+      - "unique": 針對同一媒體檔案僅保留第一份引用。
     回傳按文件出現順序排列的 ZIP 內路徑列表 (例: ['word/media/image1.png', ...])。
     """
     namelist = set(z.namelist())
@@ -142,13 +146,25 @@ def get_active_docx_media_entries(z: zipfile.ZipFile) -> List[str]:
         except Exception:
             continue
 
+        # MCE (Markup Compatibility and Extensibility) 規範：
+        # 若 AlternateContent 中已有 Choice，則 Fallback 僅供舊版相容顯示用之重複備援，應移除以避免單一圖片被重複計數
+        for ac in part_root.findall(".//{http://schemas.openxmlformats.org/markup-compatibility/2006}AlternateContent"):
+            choice = ac.find("{http://schemas.openxmlformats.org/markup-compatibility/2006}Choice")
+            fallback = ac.find("{http://schemas.openxmlformats.org/markup-compatibility/2006}Fallback")
+            if choice is not None and fallback is not None:
+                ac.remove(fallback)
+
         for elem in part_root.iter():
             for attr_val in elem.attrib.values():
                 if attr_val in rel_map:
                     img_path = rel_map[attr_val]
-                    if img_path not in seen:
-                        seen.add(img_path)
+                    if duplicate_policy == "unique":
+                        if img_path not in seen:
+                            seen.add(img_path)
+                            active_images.append(img_path)
+                    else:
                         active_images.append(img_path)
+                    break
 
     # 降級保護：若未成功解析任何 XML 或非標準結構，但 word/media/ 存在，才作為最後備用回退
     if not parsed_any_xml and not active_images:
@@ -161,10 +177,16 @@ def get_active_docx_media_entries(z: zipfile.ZipFile) -> List[str]:
     return active_images
 
 
-def extract_from_docx(docx_path: str, output_dir: str, to_grayscale: bool = False) -> int:
+def extract_from_docx(
+    docx_path: str,
+    output_dir: str,
+    to_grayscale: bool = False,
+    duplicate_policy: str = "every_occurrence"
+) -> int:
     """
     從 Word (.docx) 文件中無損提取所有內嵌圖片。
     .docx 本質為 OpenXML ZIP 封裝，透過解析正文與關聯表過濾已被刪除的孤立圖片。
+    支援 duplicate_policy: "unique" | "every_occurrence" (預設)。
     """
     if not zipfile.is_zipfile(docx_path):
         raise ValueError(f"檔案不是有效的 DOCX 或 ZIP 格式: {docx_path}")
@@ -173,24 +195,23 @@ def extract_from_docx(docx_path: str, output_dir: str, to_grayscale: bool = Fals
     count = 0
 
     with zipfile.ZipFile(docx_path, "r") as z:
-        media_entries = get_active_docx_media_entries(z)
+        media_entries = get_active_docx_media_entries(z, duplicate_policy=duplicate_policy)
 
         for entry in media_entries:
-            filename = os.path.basename(entry)
-            ext = os.path.splitext(filename)[1].lower()
+            ext = os.path.splitext(entry)[1].lower()
 
             if ext not in IMAGE_EXTENSIONS:
                 continue
 
+            count += 1
+            filename = f"image{count}{ext}"
             save_path = os.path.join(output_dir, filename)
 
-            # 防檔名衝突重複命名
-            if os.path.exists(save_path):
-                base, extension = os.path.splitext(filename)
-                i = 2
-                while os.path.exists(save_path):
-                    save_path = os.path.join(output_dir, f"{base}_{i}{extension}")
-                    i += 1
+            # 若目錄已存在同名檔案，遞增計數避免覆蓋
+            while os.path.exists(save_path):
+                count += 1
+                filename = f"image{count}{ext}"
+                save_path = os.path.join(output_dir, filename)
 
             raw_data = z.read(entry)
 
@@ -209,8 +230,6 @@ def extract_from_docx(docx_path: str, output_dir: str, to_grayscale: bool = Fals
             else:
                 with open(save_path, "wb") as f:
                     f.write(raw_data)
-
-            count += 1
 
     return count
 
@@ -389,7 +408,7 @@ def process_document_images(
     os.makedirs(temp_dir, exist_ok=True)
 
     if ext == ".docx":
-        count = extract_from_docx(file_path, temp_dir, to_grayscale=to_grayscale)
+        count = extract_from_docx(file_path, temp_dir, to_grayscale=to_grayscale, duplicate_policy=duplicate_policy)
     elif ext == ".pdf":
         count = extract_from_pdf(file_path, temp_dir, to_grayscale=to_grayscale, duplicate_policy=duplicate_policy)
     else:

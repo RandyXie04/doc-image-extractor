@@ -136,6 +136,92 @@ class TestExtractImages(unittest.TestCase):
         # 藍色處轉灰階亮度應為 29 (255*0.114)
         self.assertEqual(res.getpixel((5, 5)), 29)
 
+    def test_docx_duplicate_image_references_all_extracted(self):
+        """測試 Word 中同一圖檔於不同位置被多次引用時，預設全部提取每一張"""
+        img_path = os.path.join(self.test_dir, "shared.png")
+        Image.new("RGB", (20, 20), (120, 180, 240)).save(img_path)
+
+        doc_path = os.path.join(self.test_dir, "multi_ref.docx")
+        doc = docx.Document()
+        doc.add_paragraph("Paragraph 1").add_run().add_picture(img_path)
+        doc.add_paragraph("Paragraph 2 without image")
+        doc.add_paragraph("Paragraph 3").add_run().add_picture(img_path)
+        doc.save(doc_path)
+
+        # 1. 預設模式 (every_occurrence) 應提取 2 張圖
+        out_every = os.path.join(self.test_dir, "out_every")
+        count_every = extract_from_docx(doc_path, out_every)
+        self.assertEqual(count_every, 2)
+        files_every = sorted(os.listdir(out_every))
+        self.assertEqual(files_every, ["image1.png", "image2.png"])
+
+        # 2. 指定 unique 模式時僅提取 1 張圖
+        out_unique = os.path.join(self.test_dir, "out_unique")
+        count_unique = extract_from_docx(doc_path, out_unique, duplicate_policy="unique")
+        self.assertEqual(count_unique, 1)
+        files_unique = sorted(os.listdir(out_unique))
+        self.assertEqual(files_unique, ["image1.png"])
+
+    def test_docx_alternate_content_fallback_not_double_counted(self):
+        """測試 Word 的 AlternateContent (Choice + Fallback) 不會被誤判為重複引用兩次"""
+        img_path = os.path.join(self.test_dir, "single.png")
+        Image.new("RGB", (20, 20), (200, 50, 50)).save(img_path)
+
+        base_docx = os.path.join(self.test_dir, "base.docx")
+        doc = docx.Document()
+        doc.add_paragraph("Img").add_run().add_picture(img_path)
+        doc.save(base_docx)
+
+        # 將 drawing 封裝入 AlternateContent (含 Choice 與 Fallback)
+        ac_docx = os.path.join(self.test_dir, "ac.docx")
+        with zipfile.ZipFile(base_docx, "r") as z_in:
+            doc_xml = z_in.read("word/document.xml").decode("utf-8")
+            draw_start = doc_xml.find("<w:drawing>")
+            draw_end = doc_xml.find("</w:drawing>") + len("</w:drawing>")
+            drawing_xml = doc_xml[draw_start:draw_end]
+
+            ac_xml = (
+                f'<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006">'
+                f'<mc:Choice Requires="wps">{drawing_xml}</mc:Choice>'
+                f'<mc:Fallback>{drawing_xml}</mc:Fallback>'
+                f'</mc:AlternateContent>'
+            )
+            doc_xml_modified = doc_xml[:draw_start] + ac_xml + doc_xml[draw_end:]
+
+            with zipfile.ZipFile(ac_docx, "w") as z_out:
+                for item in z_in.infolist():
+                    if item.filename == "word/document.xml":
+                        z_out.writestr(item, doc_xml_modified.encode("utf-8"))
+                    else:
+                        z_out.writestr(item, z_in.read(item.filename))
+
+        out_ac = os.path.join(self.test_dir, "out_ac")
+        count = extract_from_docx(ac_docx, out_ac)
+        # 即使含 Choice 與 Fallback，單一圖片應仍只提取 1 張，不可誤計為 2 張
+        self.assertEqual(count, 1)
+        self.assertEqual(os.listdir(out_ac), ["image1.png"])
+
+    def test_docx_process_document_images_pipeline(self):
+        """測試 process_document_images 整合流程自動打包多引用圖片"""
+        img_path = os.path.join(self.test_dir, "pipeline_img.png")
+        Image.new("RGB", (20, 20), (0, 100, 200)).save(img_path)
+
+        doc_path = os.path.join(self.test_dir, "pipeline_doc.docx")
+        doc = docx.Document()
+        doc.add_paragraph("P1").add_run().add_picture(img_path)
+        doc.add_paragraph("P2").add_run().add_picture(img_path)
+        doc.save(doc_path)
+
+        zip_out = os.path.join(self.test_dir, "result.zip")
+        temp_extract = os.path.join(self.test_dir, "temp_extract")
+        count, out_zip = process_document_images(doc_path, zip_out, temp_extract)
+        self.assertEqual(count, 2)
+        self.assertTrue(os.path.exists(out_zip))
+
+        with zipfile.ZipFile(out_zip, "r") as z:
+            extracted_names = sorted(z.namelist())
+            self.assertEqual(extracted_names, ["image1.png", "image2.png"])
+
 
 if __name__ == "__main__":
     unittest.main()
