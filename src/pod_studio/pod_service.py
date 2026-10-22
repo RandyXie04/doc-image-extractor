@@ -19,128 +19,201 @@ import fitz
 import docx
 
 from .blueprint_schema import BookBlueprint, StyleTriggerRule, ValidationConfig
-from .section_ast import SectionAST, SectionUnit, ParagraphUnit
+from .section_ast import SectionAST, SectionUnit, ParagraphUnit, BookAST, SectionAdapter
 from .exemplar_learner import ExemplarLearner, DiffAligner
 from .propagation_engine import PropagationEngine
 from .pod_validator import PodValidator, ValidationReport
 from .cjk_validator import PODIntegrityValidator
 from .visual_fallback_repair import repair_corrupted_section_with_vlm
 
+try:
+    from src.scripts.book_layout_extractor import extract_book_vector_ast
+except ImportError:
+    try:
+        from scripts.book_layout_extractor import extract_book_vector_ast
+    except ImportError:
+        extract_book_vector_ast = None
+
 
 def extract_raw_from_pdf(
     pdf_path: str | Path,
     session_dir: str | Path,
     split_level: int = 2,
+    use_vector_ast: bool = False,
+    ai_kaiti: bool = False,
+    enable_footnotes: bool = True,
 ) -> Tuple[List[SectionUnit], Path, Path]:
     """
-    Extracts text and geometric coordinates from PDF using PyMuPDF.
-    Produces Book_raw_ast.json and Book_raw.docx.
+    Extracts text and geometric coordinates from PDF.
+    Produces Book_raw_ast.json and Book_raw.docx in session_dir.
+
+    When use_vector_ast is True, uses the high-precision BookAST engine
+    (extract_book_vector_ast) preserving paragraph bbox, 1-based page_num,
+    font metadata, and footnotes while session_dir owns file outputs.
+    When use_vector_ast is False, falls back to legacy loop for backward parity.
     """
     s_dir = Path(session_dir)
     s_dir.mkdir(parents=True, exist_ok=True)
+    pdf_p = Path(pdf_path)
 
+    if not pdf_p.exists():
+        raise FileNotFoundError(f"PDF file not found: {pdf_p}")
+
+    if use_vector_ast and extract_book_vector_ast is not None:
+        book_ast = extract_book_vector_ast(
+            pdf_path=pdf_p,
+            split_level=split_level,
+            ai_kaiti=ai_kaiti,
+            enable_footnotes=enable_footnotes,
+        )
+        sections = SectionAdapter.to_sections(book_ast)
+
+        # Save Book_raw_ast.json
+        ast_path = s_dir / "Book_raw_ast.json"
+        SectionAST.dump_book_ast_json(sections, ast_path)
+
+        # Save Book_raw.docx
+        raw_docx_path = s_dir / "Book_raw.docx"
+        doc_out = docx.Document()
+        for sec in sections:
+            if sec.title != "__PREAMBLE__":
+                h_style = f"Heading {min(sec.level, 3)}"
+                doc_out.add_paragraph(sec.title, style=h_style)
+            for p in sec.paragraphs:
+                p_txt = p.raw_text.strip()
+                if not p_txt or re.match(r'^#+\s+', p_txt):
+                    continue
+                doc_out.add_paragraph(p_txt)
+        doc_out.save(str(raw_docx_path))
+
+        return sections, ast_path, raw_docx_path
+
+    # Legacy loop (ensures fitz.Document is closed properly)
     doc = fitz.open(str(pdf_path))
-    sections: List[SectionUnit] = []
-    current_sec = SectionUnit(
-        section_id="sec_000",
-        title="__PREAMBLE__",
-        level=0,
+    try:
+        sections: List[SectionUnit] = []
+        current_sec = SectionUnit(
+            section_id="sec_000",
+            title="__PREAMBLE__",
+            level=0,
+        )
+        sections.append(current_sec)
+
+        heading_re = re.compile(r'^(#{1,' + str(split_level) + r'})\s+(.+)$')
+        para_counter = 1
+
+        for page_idx, page in enumerate(doc, 1):
+            # Extract structured text blocks with font and coordinates
+            blocks = page.get_text("dict").get("blocks", [])
+            for b in blocks:
+                if b.get("type") != 0:  # Text blocks only
+                    continue
+                lines = b.get("lines", [])
+                block_lines_text = []
+                primary_font = ""
+                primary_size = 0.0
+
+                for l in lines:
+                    spans = l.get("spans", [])
+                    line_text = "".join(s.get("text", "") for s in spans).strip()
+                    if line_text:
+                        block_lines_text.append(line_text)
+                        if spans and not primary_font:
+                            primary_font = spans[0].get("font", "")
+                            primary_size = spans[0].get("size", 0.0)
+
+                full_block_text = " ".join(block_lines_text).strip()
+                if not full_block_text:
+                    continue
+
+                bbox = list(b.get("bbox", [0, 0, 0, 0]))
+
+                # Check if block acts as a section heading (or starts with #)
+                m = heading_re.match(full_block_text)
+                if m:
+                    level = len(m.group(1))
+                    title = m.group(2).strip()
+                    sec_id = f"sec_{len(sections):03d}"
+                    current_sec = SectionUnit(
+                        section_id=sec_id,
+                        title=title,
+                        level=level,
+                        raw_content=f"{m.group(1)} {title}",
+                    )
+                    sections.append(current_sec)
+                    para_counter = 1
+                    continue
+                elif primary_size >= 14.0 and len(full_block_text) <= 30:
+                    # Potential title by font size
+                    sec_id = f"sec_{len(sections):03d}"
+                    current_sec = SectionUnit(
+                        section_id=sec_id,
+                        title=full_block_text,
+                        level=2,
+                        raw_content=f"## {full_block_text}",
+                    )
+                    sections.append(current_sec)
+                    para_counter = 1
+                    continue
+
+                # Standard paragraph
+                p_unit = ParagraphUnit(
+                    para_id=f"{current_sec.section_id}_p{para_counter:03d}",
+                    raw_text=full_block_text,
+                    page_num=page_idx,
+                    bbox=bbox,
+                    font_name=primary_font,
+                    font_size=primary_size,
+                )
+                current_sec.paragraphs.append(p_unit)
+                para_counter += 1
+
+        # Reconstruct raw_content for all sections
+        for sec in sections:
+            para_texts = [p.raw_text for p in sec.paragraphs]
+            if sec.title != "__PREAMBLE__":
+                sec.raw_content = f"{'#' * sec.level} {sec.title}\n\n" + "\n\n".join(para_texts)
+            else:
+                sec.raw_content = "\n\n".join(para_texts)
+
+        # Save Book_raw_ast.json
+        ast_path = s_dir / "Book_raw_ast.json"
+        SectionAST.dump_book_ast_json(sections, ast_path)
+
+        # Save Book_raw.docx
+        raw_docx_path = s_dir / "Book_raw.docx"
+        doc_out = docx.Document()
+        for sec in sections:
+            if sec.title != "__PREAMBLE__":
+                h_style = f"Heading {min(sec.level, 3)}"
+                doc_out.add_paragraph(sec.title, style=h_style)
+            for p in sec.paragraphs:
+                doc_out.add_paragraph(p.raw_text)
+        doc_out.save(str(raw_docx_path))
+
+        return sections, ast_path, raw_docx_path
+    finally:
+        doc.close()
+
+
+def extract_raw_from_pdf_ast(
+    pdf_path: str | Path,
+    session_dir: str | Path,
+    split_level: int = 2,
+    ai_kaiti: bool = False,
+    enable_footnotes: bool = True,
+) -> Tuple[List[SectionUnit], Path, Path]:
+    """
+    Convenience function that explicitly invokes the high-precision BookAST extraction path.
+    """
+    return extract_raw_from_pdf(
+        pdf_path=pdf_path,
+        session_dir=session_dir,
+        split_level=split_level,
+        use_vector_ast=True,
+        ai_kaiti=ai_kaiti,
+        enable_footnotes=enable_footnotes,
     )
-    sections.append(current_sec)
-
-    heading_re = re.compile(r'^(#{1,' + str(split_level) + r'})\s+(.+)$')
-    para_counter = 1
-
-    for page_idx, page in enumerate(doc, 1):
-        # Extract structured text blocks with font and coordinates
-        blocks = page.get_text("dict").get("blocks", [])
-        for b in blocks:
-            if b.get("type") != 0:  # Text blocks only
-                continue
-            lines = b.get("lines", [])
-            block_lines_text = []
-            primary_font = ""
-            primary_size = 0.0
-
-            for l in lines:
-                spans = l.get("spans", [])
-                line_text = "".join(s.get("text", "") for s in spans).strip()
-                if line_text:
-                    block_lines_text.append(line_text)
-                    if spans and not primary_font:
-                        primary_font = spans[0].get("font", "")
-                        primary_size = spans[0].get("size", 0.0)
-
-            full_block_text = " ".join(block_lines_text).strip()
-            if not full_block_text:
-                continue
-
-            bbox = list(b.get("bbox", [0, 0, 0, 0]))
-
-            # Check if block acts as a section heading (or starts with #)
-            m = heading_re.match(full_block_text)
-            if m:
-                level = len(m.group(1))
-                title = m.group(2).strip()
-                sec_id = f"sec_{len(sections):03d}"
-                current_sec = SectionUnit(
-                    section_id=sec_id,
-                    title=title,
-                    level=level,
-                    raw_content=f"{m.group(1)} {title}",
-                )
-                sections.append(current_sec)
-                para_counter = 1
-                continue
-            elif primary_size >= 14.0 and len(full_block_text) <= 30:
-                # Potential title by font size
-                sec_id = f"sec_{len(sections):03d}"
-                current_sec = SectionUnit(
-                    section_id=sec_id,
-                    title=full_block_text,
-                    level=2,
-                    raw_content=f"## {full_block_text}",
-                )
-                sections.append(current_sec)
-                para_counter = 1
-                continue
-
-            # Standard paragraph
-            p_unit = ParagraphUnit(
-                para_id=f"{current_sec.section_id}_p{para_counter:03d}",
-                raw_text=full_block_text,
-                page_num=page_idx,
-                bbox=bbox,
-                font_name=primary_font,
-                font_size=primary_size,
-            )
-            current_sec.paragraphs.append(p_unit)
-            para_counter += 1
-
-    # Reconstruct raw_content for all sections
-    for sec in sections:
-        para_texts = [p.raw_text for p in sec.paragraphs]
-        if sec.title != "__PREAMBLE__":
-            sec.raw_content = f"{'#' * sec.level} {sec.title}\n\n" + "\n\n".join(para_texts)
-        else:
-            sec.raw_content = "\n\n".join(para_texts)
-
-    # Save Book_raw_ast.json
-    ast_path = s_dir / "Book_raw_ast.json"
-    SectionAST.dump_book_ast_json(sections, ast_path)
-
-    # Save Book_raw.docx
-    raw_docx_path = s_dir / "Book_raw.docx"
-    doc_out = docx.Document()
-    for sec in sections:
-        if sec.title != "__PREAMBLE__":
-            h_style = f"Heading {min(sec.level, 3)}"
-            doc_out.add_paragraph(sec.title, style=h_style)
-        for p in sec.paragraphs:
-            doc_out.add_paragraph(p.raw_text)
-    doc_out.save(str(raw_docx_path))
-
-    return sections, ast_path, raw_docx_path
 
 
 def extract_raw_from_markdown(

@@ -19,6 +19,13 @@ from .section_ast import SectionUnit, ParagraphUnit, SectionAST, BookAST, Sectio
 from .propagation_engine import PropagationEngine
 from .visual_fallback_repair import render_page_crop, build_vlm_repair_prompt, repair_corrupted_section_with_vlm
 from .pod_validator import PodValidator, ValidationReport, ValidationViolation
+from .pod_service import (
+    extract_raw_from_pdf,
+    extract_raw_from_pdf_ast,
+    extract_raw_from_markdown,
+    compile_blueprint_from_seed,
+    propagate_and_validate_session,
+)
 
 __all__ = [
     "StyleTriggerRule",
@@ -41,4 +48,9 @@ __all__ = [
     "PodValidator",
     "ValidationReport",
     "ValidationViolation",
+    "extract_raw_from_pdf",
+    "extract_raw_from_pdf_ast",
+    "extract_raw_from_markdown",
+    "compile_blueprint_from_seed",
+    "propagate_and_validate_session",
 ]
