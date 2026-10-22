@@ -319,8 +319,15 @@ class TestVisualFallbackRepair:
 
 
 class TestPODProductionAPI:
-    def test_3_stage_api_pipeline(self, tmp_path):
+    def _get_client(self):
+        from config.settings import CFG
         client = TestClient(app)
+        if CFG.auth_enabled and CFG.auth_password:
+            client.headers["X-API-Key"] = CFG.auth_password
+        return client
+
+    def test_3_stage_api_pipeline(self, tmp_path):
+        client = self._get_client()
 
         # Stage 1: Extract Raw
         sample_md = "# 第一章 雲原生架構\n\n## 服務註冊中心\n\n註冊中心維護節點清單。\n\n注意安全防護。"
@@ -364,7 +371,7 @@ class TestPODProductionAPI:
         assert len(dl_res.content) > 0
 
     def test_pod_studio_frontend_serves_html(self):
-        client = TestClient(app)
+        client = self._get_client()
         res = client.get("/static/pod_studio.html")
         assert res.status_code == 200
         text = res.text

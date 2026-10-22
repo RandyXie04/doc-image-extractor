@@ -198,7 +198,10 @@ class TestWebAPIQueueEndpoints(unittest.TestCase):
     def setUpClass(cls):
         from fastapi.testclient import TestClient
         from src.web.app import app
+        from config.settings import CFG
         cls.client = TestClient(app)
+        if CFG.auth_enabled and CFG.auth_password:
+            cls.client.headers["X-API-Key"] = CFG.auth_password
 
     def test_queue_tasks_endpoint(self):
         resp = self.client.get("/api/queue/tasks")

@@ -85,7 +85,10 @@ async def test_save_upload_file_safely_success(tmp_path: Path):
 
 def test_system_config_endpoint():
     """驗證 /api/system_config 端點回傳各項上限與留存週期配置"""
+    from config.settings import CFG
     client = TestClient(app)
+    if CFG.auth_enabled and CFG.auth_password:
+        client.headers["X-API-Key"] = CFG.auth_password
     resp = client.get("/api/system_config")
     assert resp.status_code == 200
     data = resp.json()

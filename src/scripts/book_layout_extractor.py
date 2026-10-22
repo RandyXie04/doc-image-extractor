@@ -13,6 +13,7 @@ import re
 import json
 from pathlib import Path
 from collections import Counter
+from typing import Optional, Dict, Any, List, Tuple, Callable
 
 # pyrefly: ignore [missing-import]
 import fitz
@@ -354,6 +355,628 @@ def parse_footnote_marker(text):
         return num, marker_str, text[m.end():].strip()
     return None, None, text
 
+def _parse_pdf_layout_flow(
+    doc: fitz.Document,
+    pdf_name: str = "",
+    style_mapping: Optional[Dict[str, str]] = None,
+    font_role_map: Optional[Dict[str, Any]] = None,
+    enable_footnotes: bool = True,
+    ai_kaiti_classifier: Optional[Any] = None,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+) -> Tuple[List[str], List[Dict[str, Any]], Dict[str, Any]]:
+    """
+    純記憶體版面與流式閱讀解析核心 (Pure Parsing Core)。
+    
+    職責：
+    - 遍歷 PDF 頁面結構，執行表格偵測、頁眉/頁尾剔除、腳注解析、標題識別、段落防黏連重流。
+    - 產出未嵌入圖檔路徑之 Markdown 頁面字串（含圖片佔位符號）、待提取圖檔幾何資訊清單與稽核數據。
+    - 絕不執行任何檔案建立、磁碟寫入（images/、.md、稀有字報告）或目錄變更等副作用。
+    """
+    if style_mapping is None:
+        style_mapping = {}
+    total_pages = len(doc)
+    
+    # ── 全書特徵探勘與目錄索引建立 ──
+    doc_profile = build_document_profile(doc)
+    body_size = doc_profile.get("body_size", 10.5)
+    body_font = doc_profile.get("body_font", "")
+    toc_index = doc_profile.get("toc_index", {})
+    toc_page_offset = [0 if doc_profile.get("is_native_toc") else None]
+    if toc_index:
+        print(f"[DocProfile] 成功建立標題索引共 {len(toc_index)} 筆 (原生書籤: {doc_profile.get('is_native_toc')})，正文基準: {body_size}pt / '{body_font}'")
+
+    audit_data = {
+        "pdf_name": pdf_name,
+        "total_pages": total_pages,
+        "headers_removed": 0,
+        "footers_removed": 0,
+        "headings_detected": [],
+        "footnotes_matched": 0,
+        "footnotes_fallback": 0,
+        "footnotes_detail": [],
+        "paragraphs_reflowed": 0,
+        "doc_profile": {
+            "body_size": body_size,
+            "body_font": body_font,
+            "toc_entries": len(toc_index),
+            "is_native_toc": doc_profile.get("is_native_toc", False),
+        }
+    }
+    
+    final_md_pages = []
+    all_image_blocks = []
+
+    for page_idx in range(total_pages):
+        page_num = page_idx + 1
+        if progress_callback:
+            progress_pct = int((page_num / total_pages) * 85)
+            progress_callback(progress_pct, f"[INFO] 正在解析第 {page_num}/{total_pages} 頁 (版面/樣式/腳注抽取)...")
+            
+        page = doc[page_idx]
+        page_h = page.rect.height
+        page_w = page.rect.width
+        
+        blocks = page.get_text("dict").get("blocks", [])
+
+        # ── Step 0: Detect tables via PyMuPDF find_tables() ──────────────────
+        # Collect table bbox regions so we can exclude their text from body_blocks.
+        page_tables = []  # list of fitz.table.Table objects
+        table_bboxes = []  # list of fitz.Rect for overlap checks
+        try:
+            tabs = page.find_tables()
+            if tabs and tabs.tables:
+                page_tables = tabs.tables
+                table_bboxes = [fitz.Rect(t.bbox) for t in page_tables]
+        except Exception:
+            pass  # find_tables() not available in older PyMuPDF – graceful fallback
+
+        def _block_overlaps_any_table(bbox_list, block_bbox):
+            """Return True if block_bbox overlaps any known table region by >30%."""
+            b = fitz.Rect(block_bbox)
+            for tr in bbox_list:
+                inter = b & tr
+                if inter.is_empty:
+                    continue
+                inter_area = inter.width * inter.height
+                b_area = b.width * b.height
+                if inter_area / max(b_area, 1.0) > 0.30:
+                    return True
+            return False
+
+        # Step 1: Collect valid text blocks, separate header/footer/footnote
+        body_blocks = []
+        footnote_blocks = []
+        figure_blocks = []
+
+        for b in blocks:
+            block_type = b.get("type")
+            
+            if block_type == 1:
+                if not is_page_header(b, page_h, page_w) and not is_page_footer(b, page_h):
+                    if not (table_bboxes and _block_overlaps_any_table(table_bboxes, b.get("bbox", [0, 0, 0, 0]))):
+                        figure_blocks.append(b)
+                continue
+                
+            if block_type != 0:
+                continue
+
+            # Clean duplicate spans within lines
+            for line in b.get("lines", []):
+                line["spans"] = clean_span_duplicates(line.get("spans", []))
+
+            block_text = "".join(s.get("text", "") for l in b.get("lines", []) for s in l.get("spans", [])).strip()
+            if not block_text:
+                continue
+
+            if is_page_header(b, page_h, page_w):
+                audit_data["headers_removed"] += 1
+                continue
+            if is_page_footer(b, page_h):
+                audit_data["footers_removed"] += 1
+                continue
+
+            bbox = b.get("bbox", [0, 0, 0, 0])
+
+            # Skip blocks that belong to a detected table region
+            # (they will be rendered via _table_to_markdown instead)
+            if table_bboxes and _block_overlaps_any_table(table_bboxes, bbox):
+                continue
+
+            # Check if block is in footnote area:
+            # Footnotes are located near bottom of page (y >= page_h * 0.72)
+            # and MUST START with a footnote marker or be an immediate continuation of one
+            sizes = [s.get("size", 0) for l in b.get("lines", []) for s in l.get("spans", [])]
+            avg_size = sum(sizes) / len(sizes) if sizes else 10.0
+
+            is_fn = False
+            if enable_footnotes:
+                starts_with_fn_marker = bool(_STARTS_WITH_FN_MARKER_RE.match(block_text))
+                if bbox[1] >= page_h * 0.65:
+                    if starts_with_fn_marker:
+                        is_fn = True
+                    elif footnote_blocks and avg_size <= 10.0:
+                        # Immediate subsequent block below a footnote block with small font
+                        is_fn = True
+
+            if is_fn:
+                footnote_blocks.append(b)
+            else:
+                body_blocks.append(b)
+                
+        # Step 2: Parse footnotes on this page
+        page_footnotes = []  # list of {id, marker, content, matched}
+        current_fn_entry = None
+
+        for fb in footnote_blocks:
+            fb_text = "".join(
+                s.get("text", "") for l in fb.get("lines", []) for s in l.get("spans", [])
+            ).strip()
+            if not fb_text:
+                continue
+
+            # Split block text by ANY recognised footnote marker
+            # This handles both circled numbers and [n] / (n) / n. styles
+            parts = _FN_MARKER_SPLIT_RE.split(fb_text)
+
+            # parts[0] — text before the first marker (may be empty)
+            prefix = parts[0]
+            m_start = _STARTS_WITH_FN_MARKER_RE.match(prefix)
+            if m_start:
+                # The prefix itself *is* a marker (split captured it)
+                pass  # handled below in the loop
+            elif prefix.strip():
+                # Plain continuation text before any marker
+                if current_fn_entry:
+                    sep = " " if current_fn_entry["content"] else ""
+                    current_fn_entry["content"] = str(current_fn_entry["content"]) + sep + prefix.strip()
+                else:
+                    # Orphaned text — treat as footnote #1 continuation
+                    current_fn_entry = {"id": 1, "marker": "", "content": prefix.strip()}
+
+            # Iterate: parts alternates [text, marker, text, marker, text ...]
+            for i in range(1, len(parts), 2):
+                marker_str = parts[i].strip()
+                content_str = parts[i + 1].strip() if (i + 1) < len(parts) else ""
+
+                num = _circled_to_int(marker_str)
+
+                if current_fn_entry:
+                    page_footnotes.append(current_fn_entry)
+
+                current_fn_entry = {"id": num, "marker": marker_str, "content": content_str}
+
+        if current_fn_entry:
+            page_footnotes.append(current_fn_entry)
+
+        # Step 3: Determine base_x0 and max_x1 for body paragraphs on this page
+        normal_x0s = []
+        normal_x1s = []
+        for bb in body_blocks:
+            lines = bb.get("lines", [])
+            bb_text = "".join(s.get("text", "") for l in lines for s in l.get("spans", [])).strip()
+            bbox = bb.get("bbox", [0, 0, 0, 0])
+            center_x = (bbox[0] + bbox[2]) / 2.0
+            is_centered = abs(center_x - (page_w / 2.0)) < (page_w * 0.12)
+            if not is_centered and len(bb_text) > 10:
+                normal_x0s.append(bbox[0])
+                normal_x1s.append(bbox[2])
+        base_x0 = min(normal_x0s) if normal_x0s else 65.0
+        max_x1 = max(normal_x1s) if normal_x1s else (page_w - base_x0)
+
+        page_paragraphs = []
+        current_para_lines = []
+        current_para_is_kaiti = False
+        current_para_custom_style = None
+        last_block_x0 = 0.0
+        last_block_x1 = 0.0
+        last_block_y1 = 0.0
+        last_block_last_line_x1 = 0.0
+        last_heading_text = ""
+
+        def flush_current_para():
+            nonlocal current_para_lines, current_para_is_kaiti, current_para_custom_style
+            if current_para_lines:
+                # Splice lines smoothly
+                para_text = ""
+                for line_txt in current_para_lines:
+                    if not para_text:
+                        para_text = line_txt
+                    else:
+                        cjk_end = bool(_CJK_END_RE.search(para_text))
+                        cjk_start = bool(_CJK_START_RE.search(line_txt))
+                        if cjk_end and cjk_start:
+                            para_text += line_txt
+                            audit_data["paragraphs_reflowed"] += 1
+                        else:
+                            para_text += " " + line_txt
+                if current_para_custom_style:
+                    # Apply specific custom Word style from font mapping
+                    para_text = f'::: {{custom-style="{current_para_custom_style}"}}\n{para_text}\n:::'
+                elif current_para_is_kaiti:
+                    # Apply custom Word style instead of basic blockquote
+                    kaiti_style = style_mapping.get("kaiti") or "楷體2"
+                    para_text = f'::: {{custom-style="{kaiti_style}"}}\n{para_text}\n:::'
+                page_paragraphs.append(para_text)
+                current_para_lines = []
+                current_para_is_kaiti = False
+                current_para_custom_style = None
+        
+        # ── Step 3: Interleave body_blocks, figure_blocks, and page_tables by reading order ──
+        flow_items = []
+        for bb in body_blocks:
+            flow_items.append({
+                "type": "text",
+                "bbox": bb.get("bbox", [0, 0, 0, 0]),
+                "data": bb
+            })
+
+        for block_idx, fig_b in enumerate(figure_blocks):
+            flow_items.append({
+                "type": "figure",
+                "bbox": fig_b.get("bbox", [0, 0, 0, 0]),
+                "data": (block_idx, fig_b)
+            })
+
+        for tbl in page_tables:
+            flow_items.append({
+                "type": "table",
+                "bbox": list(tbl.bbox),
+                "data": tbl
+            })
+
+        # Sort by top-to-bottom reading order (y0, then x0)
+        flow_items.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
+
+        for item in flow_items:
+            itype = item["type"]
+            if itype == "figure":
+                flush_current_para()
+                block_idx, fig_b = item["data"]
+                fig_bbox = item["bbox"]
+                all_image_blocks.append({
+                    "page_num": page_num,
+                    "block_idx": block_idx,
+                    "bbox": fig_bbox,
+                    "page_w": page_w,
+                    "page_h": page_h,
+                })
+                page_paragraphs.append(f"![__IMG_PLACEHOLDER_{page_num}_{block_idx}__]()")
+                last_block_x0 = fig_bbox[0]
+                last_block_x1 = fig_bbox[2]
+                last_block_y1 = fig_bbox[3]
+                last_block_last_line_x1 = 0.0
+                last_heading_text = ""
+                continue
+            elif itype == "table":
+                flush_current_para()
+                tbl = item["data"]
+                tbl_md = _table_to_markdown(tbl, page_footnotes, page_num)
+                if tbl_md:
+                    page_paragraphs.append(tbl_md)
+                tbl_bbox = item["bbox"]
+                last_block_x0 = tbl_bbox[0]
+                last_block_x1 = tbl_bbox[2]
+                last_block_y1 = tbl_bbox[3]
+                last_block_last_line_x1 = 0.0
+                last_heading_text = ""
+                continue
+
+            # ── Regular Text Block ──
+            bb = item["data"]
+            lines = bb.get("lines", [])
+            if not lines:
+                continue
+            
+            bb_text = "".join(s.get("text", "") for l in lines for s in l.get("spans", [])).strip()
+            
+            # De-duplicate doubled words caused by PDF rendering (e.g. 生命线生命线 -> 生命线)
+            if len(bb_text) >= 4 and len(bb_text) % 2 == 0:
+                half = len(bb_text) // 2
+                if bb_text[:half] == bb_text[half:]:
+                    bb_text = bb_text[:half]
+                    
+            sizes = [s.get("size", 0) for l in lines for s in l.get("spans", [])]
+            avg_size = sum(sizes) / len(sizes) if sizes else 10.0
+            bbox = bb.get("bbox", [0, 0, 0, 0])
+            center_x = (bbox[0] + bbox[2]) / 2.0
+            is_centered = abs(center_x - (page_w / 2.0)) < (page_w * 0.12)
+            
+            # Heading Detection
+            heading_level = 0
+            is_toc_line = bool(_TOC_LINE_RE.search(bb_text))
+            
+            clean_for_heading = _CLEAN_FOR_HEADING_RE.sub('', bb_text)
+            # 排除前端編號（如「一、」、「1、」、「（一）」）後的純文字內容，避免「、」誤判為句中標點
+            clean_content = _HEADING_PREFIX_CLEAN_RE.sub('', clean_for_heading)
+            has_sentence_punct = bool(_SENTENCE_PUNCT_RE.search(clean_content))
+            
+            # ── Priority 0: 人工字體角色對應（優先權最高，直接覆蓋規則型判定）──
+            # 取此 block 第一個命中 font_role_map 的字體角色
+            _block_font_role = None
+            _block_docx_style = None
+            if font_role_map and not is_toc_line:
+                for _line in lines:
+                    for _span in _line.get('spans', []):
+                        _raw_fn = (_span.get('font') or '').split('+', 1)[-1]
+                        _size = round(_span.get('size', 0) * 2) / 2
+                        _candidates = [
+                            f"{_raw_fn} ({_size}pt)",
+                            f"{_raw_fn} ({_size:.1f}pt)",
+                            f"{_raw_fn}_{_size}",
+                            _raw_fn
+                        ]
+                        for _cand in _candidates:
+                            if _cand in font_role_map:
+                                _entry = font_role_map[_cand]
+                                _block_font_role = _entry.get('role')
+                                _block_docx_style = _entry.get('docx_style')
+                                break
+                        if _block_font_role or _block_docx_style:
+                            break
+                    if _block_font_role or _block_docx_style:
+                        break
+
+            _is_ignored_font = bool(_block_font_role and str(_block_font_role).strip().lower() in ('忽略', 'ignore', 'none'))
+            _has_font_mapping = bool((_block_font_role or _block_docx_style) and not _is_ignored_font)
+
+            if _is_ignored_font:
+                heading_level = 0
+            elif _block_font_role and not is_toc_line:
+                _role_upper = _block_font_role.upper()
+                if _role_upper == 'H1':
+                    heading_level = 1
+                elif _role_upper == 'H2':
+                    heading_level = 2
+                elif _role_upper == 'H3':
+                    heading_level = 3
+                # 「圖說」、「楷體」、「正文」等不轉為標題
+            elif _block_docx_style and not is_toc_line:
+                if _STYLE_HEADING1_RE.search(_block_docx_style):
+                    heading_level = 1
+                elif _STYLE_HEADING2_RE.search(_block_docx_style):
+                    heading_level = 2
+                elif _STYLE_HEADING3_RE.search(_block_docx_style):
+                    heading_level = 3
+
+            cur_last_line_x1 = lines[-1].get("bbox", bbox)[2] if lines else bbox[2]
+
+            # ── 啟發式標題判定（Fallback）：僅在字體未在字體分析中指定時才執行 ──
+            if not heading_level and not is_toc_line and not _has_font_mapping and not _is_ignored_font:
+                is_candidate_heading = (len(lines) <= 2 and 2 <= len(clean_for_heading) <= 35 and not has_sentence_punct)
+
+                # Priority 1: 目錄索引 / PDF 原生書籤直接命中（100% 命中無規則標題）
+                if is_candidate_heading and toc_index:
+                    toc_lvl = _match_toc_heading(clean_for_heading, page_num, toc_index, toc_page_offset)
+                    if not toc_lvl:
+                        toc_lvl = _match_toc_heading(bb_text, page_num, toc_index, toc_page_offset)
+                    if toc_lvl > 0:
+                        heading_level = toc_lvl
+
+                # Priority 2: 原有標準 Regex 規則
+                if not heading_level:
+                    if _H1_PART_RE.match(bb_text) or _H1_SPECIAL_RE.match(bb_text):
+                        heading_level = 1
+                    elif _H1_CHAPTER_RE.match(bb_text):
+                        heading_level = 2
+                    elif _H2_SECTION_RE.match(bb_text):
+                        heading_level = 2
+                    elif _H2_NUM_RE.match(bb_text) and not has_sentence_punct:
+                        heading_level = 3
+                    elif (_H3_SUB_RE1.match(bb_text) or _H3_SUB_RE2.match(bb_text)) and 2 <= len(clean_for_heading) <= 30 and not has_sentence_punct:
+                        heading_level = 3
+
+                # Priority 3: 相對字級與黑體/粗體幾何特徵判定（取代死板的 avg_size >= 10.8）
+                if not heading_level and is_candidate_heading:
+                    if not _CHART_TABLE_END_RE.search(bb_text) and not _CIRCLED_START_RE.search(bb_text):
+                        span_fonts = [(s.get("font") or "").split("+", 1)[-1].lower() for l in lines for s in l.get("spans", [])]
+                        is_heiti_or_bold = any(
+                            ("hei" in fn or "黑" in fn or "bold" in fn or "bd" in fn or "heavy" in fn or (s.get("flags", 0) & 16))
+                            for l in lines for s in l.get("spans", [])
+                            for fn in [(s.get("font") or "").lower()]
+                        )
+                        body_font_clean = body_font.lower() if body_font else ""
+                        is_different_font_from_body = bool(body_font_clean and any(fn and fn != body_font_clean for fn in span_fonts))
+
+                        if avg_size >= body_size + 1.5:
+                            heading_level = 2  # 字級明顯大於正文基準
+                        elif is_centered or avg_size >= body_size + 0.5:
+                            heading_level = 2  # 居中或字級微大於正文
+                        elif is_heiti_or_bold and (is_different_font_from_body or avg_size >= body_size):
+                            # 與正文同字級但換成黑體/粗體的短句標題（排除以助詞結尾的普通句）
+                            if not re.search(r'[的了在]$', clean_content):
+                                heading_level = 3
+                        elif is_centered and avg_size >= body_size - 0.5:
+                            heading_level = 2
+
+            if heading_level > 0:
+                flush_current_para()
+                last_block_x0 = bbox[0]
+                last_block_x1 = bbox[2]
+                last_block_y1 = bbox[3]
+                last_block_last_line_x1 = cur_last_line_x1
+                # Deduplicate identical consecutive headings on the same page
+                if bb_text == last_heading_text:
+                    continue
+                last_heading_text = bb_text
+                
+                audit_data["headings_detected"].append({
+                    "page": page_num,
+                    "level": f"H{heading_level}",
+                    "text": bb_text
+                })
+                # Custom style annotation: font mapping docx_style takes highest priority
+                custom_style = _block_docx_style or style_mapping.get(f"h{heading_level}")
+                if custom_style:
+                    formatted_heading = f"{'#' * heading_level} {bb_text} {{custom-style=\"{custom_style}\"}}"
+                else:
+                    formatted_heading = f"{'#' * heading_level} {bb_text}"
+                page_paragraphs.append(formatted_heading)
+                continue
+            else:
+                last_heading_text = ""
+                
+            # ── Regular Body Text ──────────────────────────────────────────────
+            # ── 圖說（Caption）判斷：人工字體角色優先 ──
+            is_block_caption = (not _is_ignored_font and (
+                (_block_font_role and _block_font_role.lower() in ('圖說', '图说', 'caption')) or
+                (_block_docx_style and bool(_STYLE_CAPTION_RE.search(_block_docx_style)))
+            ))
+            if is_block_caption:
+                # 用 custom-style 輸出圖說段落，讓 Pandoc 套用對應 Word 樣式
+                flush_current_para()
+                _caption_style = _block_docx_style or style_mapping.get("image_caption")
+                if not _caption_style and font_role_map:
+                    for line in lines:
+                        for span in line.get('spans', []):
+                            raw_fn = (span.get('font') or '').split('+', 1)[-1]
+                            size_v = round(span.get('size', 0) * 2) / 2
+                            _candidates = [
+                                f"{raw_fn} ({size_v}pt)",
+                                f"{raw_fn} ({size_v:.1f}pt)",
+                                f"{raw_fn}_{size_v}",
+                                raw_fn
+                            ]
+                            for _cand in _candidates:
+                                if _cand in font_role_map:
+                                    _caption_style = font_role_map[_cand].get('docx_style')
+                                    break
+                            if _caption_style:
+                                break
+                        if _caption_style:
+                            break
+                if _caption_style:
+                    page_paragraphs.append(f'::: {{custom-style="{_caption_style}"}}\n{bb_text}\n:::')
+                else:
+                    page_paragraphs.append(f'*{bb_text}*')  # fallback: 斜體
+                last_block_x0 = bbox[0]
+                last_block_x1 = bbox[2]
+                last_block_y1 = bbox[3]
+                last_block_last_line_x1 = cur_last_line_x1
+                continue
+
+            # Check font for KaiTi (Rule-based + AI Vision fallback)
+            total_chars = 0
+            kaiti_chars = 0
+            block_font_names = set()  # 收集此 block 的所有 font name
+            for line in lines:
+                for span in line.get("spans", []):
+                    span_text = span.get("text", "").strip()
+                    if not span_text: continue
+                    total_chars += len(span_text)
+                    font_name = span.get("font", "").lower()
+                    if font_name:
+                        block_font_names.add(font_name)
+                    if "kai" in font_name or "楷" in font_name or "kt" in font_name:
+                        kaiti_chars += len(span_text)
+
+            # ── 人工字體角色：楷體優先 ──
+            if _is_ignored_font:
+                is_block_kaiti = False
+            elif _block_font_role and _block_font_role.lower() in ('楷體', '楷体', 'kaiti', 'blockquote'):
+                is_block_kaiti = True
+            elif _block_docx_style and bool(_STYLE_KAI_RE.search(_block_docx_style)):
+                is_block_kaiti = True
+            elif _has_font_mapping:
+                # 已明確映射為其他樣式者，不再觸發楷體規則
+                is_block_kaiti = False
+            else:
+                is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
+            
+            # AI Vision fallback: 若規則型判定失敗且 AI 可用，且該字型未人工指定
+            if not is_block_kaiti and not _has_font_mapping and not _is_ignored_font and ai_kaiti_classifier is not None:
+                try:
+                    is_block_kaiti = ai_kaiti_classifier.is_block_kaiti(
+                        page=page, block_bbox=bbox, block_text=bb_text,
+                        font_names=list(block_font_names),
+                    )
+                except Exception:
+                    pass  # AI 失敗時靜默降級，使用規則型結果
+
+            # Determine custom style for regular paragraph (if not caption)
+            block_custom_style = _block_docx_style if (_has_font_mapping and not _is_ignored_font and not is_block_caption) else None
+
+            # Check indentation to determine whether this block starts a new paragraph
+            is_indented = (bbox[0] - base_x0) >= 12.0
+
+            vertical_gap = (bbox[1] - last_block_y1) if last_block_y1 > 0 else 0.0
+            prev_ref_x1 = last_block_last_line_x1 if last_block_last_line_x1 > 0 else last_block_x1
+            prev_block_was_short_line = bool(prev_ref_x1 > 0 and prev_ref_x1 < max_x1 - max(avg_size * 2.0, 20.0))
+            is_large_vertical_gap = bool(vertical_gap > avg_size * 1.45)
+
+            if current_para_lines:
+                should_flush = False
+                if is_block_kaiti != current_para_is_kaiti:
+                    should_flush = True
+                elif block_custom_style != current_para_custom_style:
+                    should_flush = True
+                # A new paragraph is indicated by an increase in indentation (e.g. from 2 chars to 4 chars)
+                # or a large jump in indent. We use > 5.0 instead of abs() to avoid breaking on hanging indents
+                elif is_indented and (bbox[0] - last_block_x0) >= 5.0:
+                    should_flush = True
+                # ✅ 防黏連 1：垂直段距跳躍（段前距/空行），強制獨立成段
+                elif is_large_vertical_gap:
+                    should_flush = True
+                # ✅ 防黏連 2：前一區塊未滿行（提早換行），代表上一段已結束或是獨立小標，絕不硬接！
+                elif prev_block_was_short_line:
+                    should_flush = True
+
+                if should_flush:
+                    flush_current_para()
+
+            if not current_para_lines:
+                current_para_is_kaiti = is_block_kaiti
+                current_para_custom_style = block_custom_style
+
+            # Process lines in this block, replacing footnote anchors
+            for line in lines:
+                line_str = "".join(s.get("text", "") for s in line.get("spans", [])).strip()
+                if not line_str:
+                    continue
+                line_str = _replace_fn_markers_in_text(line_str, page_footnotes, page_num)
+                current_para_lines.append(line_str)
+
+            last_block_x0 = bbox[0]
+            last_block_x1 = bbox[2]
+            last_block_y1 = bbox[3]
+            last_block_last_line_x1 = cur_last_line_x1
+                
+        # Flush any remaining body text
+        flush_current_para()
+
+        # Step 4: Handle footnotes that didn't match any body/table marker (Fallback anchoring)
+        for fn in page_footnotes:
+            fn_id = fn["id"]
+            fn_tag = f"[^p{page_num}_{fn_id}]"
+            if not fn.get("matched", False):
+                # Safely anchor footnote to last paragraph on page
+                if page_paragraphs:
+                    page_paragraphs[-1] += fn_tag
+                else:
+                    page_paragraphs.append(fn_tag)
+                audit_data["footnotes_fallback"] += 1
+                audit_data["footnotes_detail"].append({
+                    "page": page_num,
+                    "id": fn_id,
+                    "status": "FALLBACK (正文上標模糊，降級錨定段末)",
+                    "content": fn["content"][:60]
+                })
+            else:
+                audit_data["footnotes_matched"] += 1
+                audit_data["footnotes_detail"].append({
+                    "page": page_num,
+                    "id": fn_id,
+                    "status": "MATCHED (雙向匹配精準錨定)",
+                    "content": fn["content"][:60]
+                })
+
+            # Append Pandoc footnote definition
+            page_paragraphs.append(f"{fn_tag}: {fn['content']}")
+
+        if page_paragraphs:
+            final_md_pages.append("\n\n".join(page_paragraphs))
+    return final_md_pages, all_image_blocks, audit_data
+
+
 def process_book_vector_pdf(
     pdf_path,
     output_dir,
@@ -404,20 +1027,9 @@ def process_book_vector_pdf(
     if font_role_map:
         print(f"[FontMap] 已載入人工字體對應表，共 {len(font_role_map)} 筆")
 
-    doc = fitz.open(pdf_path)
-    total_pages = len(doc)
     stem = output_stem or os.path.basename(pdf_path).rsplit(".", 1)[0]
-    
     os.makedirs(output_dir, exist_ok=True)
-
-    # ── 全書特徵探勘與目錄索引建立 ──
-    doc_profile = build_document_profile(doc)
-    body_size = doc_profile.get("body_size", 10.5)
-    body_font = doc_profile.get("body_font", "")
-    toc_index = doc_profile.get("toc_index", {})
-    toc_page_offset = [0 if doc_profile.get("is_native_toc") else None]
-    if toc_index:
-        print(f"[DocProfile] 成功建立標題索引共 {len(toc_index)} 筆 (原生書籤: {doc_profile.get('is_native_toc')})，正文基準: {body_size}pt / '{body_font}'")
+    out_md_path = os.path.join(output_dir, f"{stem}.md")
 
     # ── AI Kaiti Classifier 初始化（若啟用且可用）──
     ai_kaiti_classifier = None
@@ -438,598 +1050,18 @@ def process_book_vector_pdf(
                 ai_kaiti_classifier = None
     except ImportError:
         pass
-    out_md_path = os.path.join(output_dir, f"{stem}.md")
-    
-    audit_data = {
-        "pdf_name": os.path.basename(pdf_path),
-        "total_pages": total_pages,
-        "headers_removed": 0,
-        "footers_removed": 0,
-        "headings_detected": [],
-        "footnotes_matched": 0,
-        "footnotes_fallback": 0,
-        "footnotes_detail": [],
-        "paragraphs_reflowed": 0,
-        "doc_profile": {
-            "body_size": body_size,
-            "body_font": body_font,
-            "toc_entries": len(toc_index),
-            "is_native_toc": doc_profile.get("is_native_toc", False),
-        }
-    }
-    
-    final_md_pages = []
-    all_image_blocks = []
-    
+
+    doc = fitz.open(pdf_path)
     try:
-        for page_idx in range(total_pages):
-            page_num = page_idx + 1
-            if progress_callback:
-                progress_pct = int((page_num / total_pages) * 85)
-                progress_callback(progress_pct, f"[INFO] 正在解析第 {page_num}/{total_pages} 頁 (版面/樣式/腳注抽取)...")
-                
-            page = doc[page_idx]
-            page_h = page.rect.height
-            page_w = page.rect.width
-            
-            blocks = page.get_text("dict").get("blocks", [])
-    
-            # ── Step 0: Detect tables via PyMuPDF find_tables() ──────────────────
-            # Collect table bbox regions so we can exclude their text from body_blocks.
-            page_tables = []  # list of fitz.table.Table objects
-            table_bboxes = []  # list of fitz.Rect for overlap checks
-            try:
-                tabs = page.find_tables()
-                if tabs and tabs.tables:
-                    page_tables = tabs.tables
-                    table_bboxes = [fitz.Rect(t.bbox) for t in page_tables]
-            except Exception:
-                pass  # find_tables() not available in older PyMuPDF – graceful fallback
-    
-            def _block_overlaps_any_table(bbox_list, block_bbox):
-                """Return True if block_bbox overlaps any known table region by >30%."""
-                b = fitz.Rect(block_bbox)
-                for tr in bbox_list:
-                    inter = b & tr
-                    if inter.is_empty:
-                        continue
-                    inter_area = inter.width * inter.height
-                    b_area = b.width * b.height
-                    if inter_area / max(b_area, 1.0) > 0.30:
-                        return True
-                return False
-    
-            # Step 1: Collect valid text blocks, separate header/footer/footnote
-            body_blocks = []
-            footnote_blocks = []
-            figure_blocks = []
-    
-            for b in blocks:
-                block_type = b.get("type")
-                
-                if block_type == 1:
-                    if not is_page_header(b, page_h, page_w) and not is_page_footer(b, page_h):
-                        if not (table_bboxes and _block_overlaps_any_table(table_bboxes, b.get("bbox", [0, 0, 0, 0]))):
-                            figure_blocks.append(b)
-                    continue
-                    
-                if block_type != 0:
-                    continue
-    
-                # Clean duplicate spans within lines
-                for line in b.get("lines", []):
-                    line["spans"] = clean_span_duplicates(line.get("spans", []))
-    
-                block_text = "".join(s.get("text", "") for l in b.get("lines", []) for s in l.get("spans", [])).strip()
-                if not block_text:
-                    continue
-    
-                if is_page_header(b, page_h, page_w):
-                    audit_data["headers_removed"] += 1
-                    continue
-                if is_page_footer(b, page_h):
-                    audit_data["footers_removed"] += 1
-                    continue
-    
-                bbox = b.get("bbox", [0, 0, 0, 0])
-    
-                # Skip blocks that belong to a detected table region
-                # (they will be rendered via _table_to_markdown instead)
-                if table_bboxes and _block_overlaps_any_table(table_bboxes, bbox):
-                    continue
-    
-                # Check if block is in footnote area:
-                # Footnotes are located near bottom of page (y >= page_h * 0.72)
-                # and MUST START with a footnote marker or be an immediate continuation of one
-                sizes = [s.get("size", 0) for l in b.get("lines", []) for s in l.get("spans", [])]
-                avg_size = sum(sizes) / len(sizes) if sizes else 10.0
-    
-                is_fn = False
-                if enable_footnotes:
-                    starts_with_fn_marker = bool(_STARTS_WITH_FN_MARKER_RE.match(block_text))
-                    if bbox[1] >= page_h * 0.65:
-                        if starts_with_fn_marker:
-                            is_fn = True
-                        elif footnote_blocks and avg_size <= 10.0:
-                            # Immediate subsequent block below a footnote block with small font
-                            is_fn = True
-    
-                if is_fn:
-                    footnote_blocks.append(b)
-                else:
-                    body_blocks.append(b)
-                    
-            # Step 2: Parse footnotes on this page
-            page_footnotes = []  # list of {id, marker, content, matched}
-            current_fn_entry = None
-    
-            for fb in footnote_blocks:
-                fb_text = "".join(
-                    s.get("text", "") for l in fb.get("lines", []) for s in l.get("spans", [])
-                ).strip()
-                if not fb_text:
-                    continue
-    
-                # Split block text by ANY recognised footnote marker
-                # This handles both circled numbers and [n] / (n) / n. styles
-                parts = _FN_MARKER_SPLIT_RE.split(fb_text)
-    
-                # parts[0] — text before the first marker (may be empty)
-                prefix = parts[0]
-                m_start = _STARTS_WITH_FN_MARKER_RE.match(prefix)
-                if m_start:
-                    # The prefix itself *is* a marker (split captured it)
-                    pass  # handled below in the loop
-                elif prefix.strip():
-                    # Plain continuation text before any marker
-                    if current_fn_entry:
-                        sep = " " if current_fn_entry["content"] else ""
-                        current_fn_entry["content"] = str(current_fn_entry["content"]) + sep + prefix.strip()
-                    else:
-                        # Orphaned text — treat as footnote #1 continuation
-                        current_fn_entry = {"id": 1, "marker": "", "content": prefix.strip()}
-    
-                # Iterate: parts alternates [text, marker, text, marker, text ...]
-                for i in range(1, len(parts), 2):
-                    marker_str = parts[i].strip()
-                    content_str = parts[i + 1].strip() if (i + 1) < len(parts) else ""
-    
-                    num = _circled_to_int(marker_str)
-    
-                    if current_fn_entry:
-                        page_footnotes.append(current_fn_entry)
-    
-                    current_fn_entry = {"id": num, "marker": marker_str, "content": content_str}
-    
-            if current_fn_entry:
-                page_footnotes.append(current_fn_entry)
-    
-            # Step 3: Determine base_x0 and max_x1 for body paragraphs on this page
-            normal_x0s = []
-            normal_x1s = []
-            for bb in body_blocks:
-                lines = bb.get("lines", [])
-                bb_text = "".join(s.get("text", "") for l in lines for s in l.get("spans", [])).strip()
-                bbox = bb.get("bbox", [0, 0, 0, 0])
-                center_x = (bbox[0] + bbox[2]) / 2.0
-                is_centered = abs(center_x - (page_w / 2.0)) < (page_w * 0.12)
-                if not is_centered and len(bb_text) > 10:
-                    normal_x0s.append(bbox[0])
-                    normal_x1s.append(bbox[2])
-            base_x0 = min(normal_x0s) if normal_x0s else 65.0
-            max_x1 = max(normal_x1s) if normal_x1s else (page_w - base_x0)
-    
-            page_paragraphs = []
-            current_para_lines = []
-            current_para_is_kaiti = False
-            current_para_custom_style = None
-            last_block_x0 = 0.0
-            last_block_x1 = 0.0
-            last_block_y1 = 0.0
-            last_block_last_line_x1 = 0.0
-            last_heading_text = ""
-    
-            def flush_current_para():
-                nonlocal current_para_lines, current_para_is_kaiti, current_para_custom_style
-                if current_para_lines:
-                    # Splice lines smoothly
-                    para_text = ""
-                    for line_txt in current_para_lines:
-                        if not para_text:
-                            para_text = line_txt
-                        else:
-                            cjk_end = bool(_CJK_END_RE.search(para_text))
-                            cjk_start = bool(_CJK_START_RE.search(line_txt))
-                            if cjk_end and cjk_start:
-                                para_text += line_txt
-                                audit_data["paragraphs_reflowed"] += 1
-                            else:
-                                para_text += " " + line_txt
-                    if current_para_custom_style:
-                        # Apply specific custom Word style from font mapping
-                        para_text = f'::: {{custom-style="{current_para_custom_style}"}}\n{para_text}\n:::'
-                    elif current_para_is_kaiti:
-                        # Apply custom Word style instead of basic blockquote
-                        kaiti_style = style_mapping.get("kaiti") or "楷體2"
-                        para_text = f'::: {{custom-style="{kaiti_style}"}}\n{para_text}\n:::'
-                    page_paragraphs.append(para_text)
-                    current_para_lines = []
-                    current_para_is_kaiti = False
-                    current_para_custom_style = None
-            
-            # ── Step 3: Interleave body_blocks, figure_blocks, and page_tables by reading order ──
-            flow_items = []
-            for bb in body_blocks:
-                flow_items.append({
-                    "type": "text",
-                    "bbox": bb.get("bbox", [0, 0, 0, 0]),
-                    "data": bb
-                })
-
-            for block_idx, fig_b in enumerate(figure_blocks):
-                flow_items.append({
-                    "type": "figure",
-                    "bbox": fig_b.get("bbox", [0, 0, 0, 0]),
-                    "data": (block_idx, fig_b)
-                })
-
-            for tbl in page_tables:
-                flow_items.append({
-                    "type": "table",
-                    "bbox": list(tbl.bbox),
-                    "data": tbl
-                })
-
-            # Sort by top-to-bottom reading order (y0, then x0)
-            flow_items.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
-
-            for item in flow_items:
-                itype = item["type"]
-                if itype == "figure":
-                    flush_current_para()
-                    block_idx, fig_b = item["data"]
-                    fig_bbox = item["bbox"]
-                    all_image_blocks.append({
-                        "page_num": page_num,
-                        "block_idx": block_idx,
-                        "bbox": fig_bbox,
-                        "page_w": page_w,
-                        "page_h": page_h,
-                    })
-                    page_paragraphs.append(f"![__IMG_PLACEHOLDER_{page_num}_{block_idx}__]()")
-                    last_block_x0 = fig_bbox[0]
-                    last_block_x1 = fig_bbox[2]
-                    last_block_y1 = fig_bbox[3]
-                    last_block_last_line_x1 = 0.0
-                    last_heading_text = ""
-                    continue
-                elif itype == "table":
-                    flush_current_para()
-                    tbl = item["data"]
-                    tbl_md = _table_to_markdown(tbl, page_footnotes, page_num)
-                    if tbl_md:
-                        page_paragraphs.append(tbl_md)
-                    tbl_bbox = item["bbox"]
-                    last_block_x0 = tbl_bbox[0]
-                    last_block_x1 = tbl_bbox[2]
-                    last_block_y1 = tbl_bbox[3]
-                    last_block_last_line_x1 = 0.0
-                    last_heading_text = ""
-                    continue
-
-                # ── Regular Text Block ──
-                bb = item["data"]
-                lines = bb.get("lines", [])
-                if not lines:
-                    continue
-                
-                bb_text = "".join(s.get("text", "") for l in lines for s in l.get("spans", [])).strip()
-                
-                # De-duplicate doubled words caused by PDF rendering (e.g. 生命线生命线 -> 生命线)
-                if len(bb_text) >= 4 and len(bb_text) % 2 == 0:
-                    half = len(bb_text) // 2
-                    if bb_text[:half] == bb_text[half:]:
-                        bb_text = bb_text[:half]
-                        
-                sizes = [s.get("size", 0) for l in lines for s in l.get("spans", [])]
-                avg_size = sum(sizes) / len(sizes) if sizes else 10.0
-                bbox = bb.get("bbox", [0, 0, 0, 0])
-                center_x = (bbox[0] + bbox[2]) / 2.0
-                is_centered = abs(center_x - (page_w / 2.0)) < (page_w * 0.12)
-                
-                # Heading Detection
-                heading_level = 0
-                is_toc_line = bool(_TOC_LINE_RE.search(bb_text))
-                
-                clean_for_heading = _CLEAN_FOR_HEADING_RE.sub('', bb_text)
-                # 排除前端編號（如「一、」、「1、」、「（一）」）後的純文字內容，避免「、」誤判為句中標點
-                clean_content = _HEADING_PREFIX_CLEAN_RE.sub('', clean_for_heading)
-                has_sentence_punct = bool(_SENTENCE_PUNCT_RE.search(clean_content))
-                
-                # ── Priority 0: 人工字體角色對應（優先權最高，直接覆蓋規則型判定）──
-                # 取此 block 第一個命中 font_role_map 的字體角色
-                _block_font_role = None
-                _block_docx_style = None
-                if font_role_map and not is_toc_line:
-                    for _line in lines:
-                        for _span in _line.get('spans', []):
-                            _raw_fn = (_span.get('font') or '').split('+', 1)[-1]
-                            _size = round(_span.get('size', 0) * 2) / 2
-                            _candidates = [
-                                f"{_raw_fn} ({_size}pt)",
-                                f"{_raw_fn} ({_size:.1f}pt)",
-                                f"{_raw_fn}_{_size}",
-                                _raw_fn
-                            ]
-                            for _cand in _candidates:
-                                if _cand in font_role_map:
-                                    _entry = font_role_map[_cand]
-                                    _block_font_role = _entry.get('role')
-                                    _block_docx_style = _entry.get('docx_style')
-                                    break
-                            if _block_font_role or _block_docx_style:
-                                break
-                        if _block_font_role or _block_docx_style:
-                            break
-    
-                _is_ignored_font = bool(_block_font_role and str(_block_font_role).strip().lower() in ('忽略', 'ignore', 'none'))
-                _has_font_mapping = bool((_block_font_role or _block_docx_style) and not _is_ignored_font)
-    
-                if _is_ignored_font:
-                    heading_level = 0
-                elif _block_font_role and not is_toc_line:
-                    _role_upper = _block_font_role.upper()
-                    if _role_upper == 'H1':
-                        heading_level = 1
-                    elif _role_upper == 'H2':
-                        heading_level = 2
-                    elif _role_upper == 'H3':
-                        heading_level = 3
-                    # 「圖說」、「楷體」、「正文」等不轉為標題
-                elif _block_docx_style and not is_toc_line:
-                    if _STYLE_HEADING1_RE.search(_block_docx_style):
-                        heading_level = 1
-                    elif _STYLE_HEADING2_RE.search(_block_docx_style):
-                        heading_level = 2
-                    elif _STYLE_HEADING3_RE.search(_block_docx_style):
-                        heading_level = 3
-    
-                cur_last_line_x1 = lines[-1].get("bbox", bbox)[2] if lines else bbox[2]
-
-                # ── 啟發式標題判定（Fallback）：僅在字體未在字體分析中指定時才執行 ──
-                if not heading_level and not is_toc_line and not _has_font_mapping and not _is_ignored_font:
-                    is_candidate_heading = (len(lines) <= 2 and 2 <= len(clean_for_heading) <= 35 and not has_sentence_punct)
-
-                    # Priority 1: 目錄索引 / PDF 原生書籤直接命中（100% 命中無規則標題）
-                    if is_candidate_heading and toc_index:
-                        toc_lvl = _match_toc_heading(clean_for_heading, page_num, toc_index, toc_page_offset)
-                        if not toc_lvl:
-                            toc_lvl = _match_toc_heading(bb_text, page_num, toc_index, toc_page_offset)
-                        if toc_lvl > 0:
-                            heading_level = toc_lvl
-
-                    # Priority 2: 原有標準 Regex 規則
-                    if not heading_level:
-                        if _H1_PART_RE.match(bb_text) or _H1_SPECIAL_RE.match(bb_text):
-                            heading_level = 1
-                        elif _H1_CHAPTER_RE.match(bb_text):
-                            heading_level = 2
-                        elif _H2_SECTION_RE.match(bb_text):
-                            heading_level = 2
-                        elif _H2_NUM_RE.match(bb_text) and not has_sentence_punct:
-                            heading_level = 3
-                        elif (_H3_SUB_RE1.match(bb_text) or _H3_SUB_RE2.match(bb_text)) and 2 <= len(clean_for_heading) <= 30 and not has_sentence_punct:
-                            heading_level = 3
-
-                    # Priority 3: 相對字級與黑體/粗體幾何特徵判定（取代死板的 avg_size >= 10.8）
-                    if not heading_level and is_candidate_heading:
-                        if not _CHART_TABLE_END_RE.search(bb_text) and not _CIRCLED_START_RE.search(bb_text):
-                            span_fonts = [(s.get("font") or "").split("+", 1)[-1].lower() for l in lines for s in l.get("spans", [])]
-                            is_heiti_or_bold = any(
-                                ("hei" in fn or "黑" in fn or "bold" in fn or "bd" in fn or "heavy" in fn or (s.get("flags", 0) & 16))
-                                for l in lines for s in l.get("spans", [])
-                                for fn in [(s.get("font") or "").lower()]
-                            )
-                            body_font_clean = body_font.lower() if body_font else ""
-                            is_different_font_from_body = bool(body_font_clean and any(fn and fn != body_font_clean for fn in span_fonts))
-
-                            if avg_size >= body_size + 1.5:
-                                heading_level = 2  # 字級明顯大於正文基準
-                            elif is_centered or avg_size >= body_size + 0.5:
-                                heading_level = 2  # 居中或字級微大於正文
-                            elif is_heiti_or_bold and (is_different_font_from_body or avg_size >= body_size):
-                                # 與正文同字級但換成黑體/粗體的短句標題（排除以助詞結尾的普通句）
-                                if not re.search(r'[的了在]$', clean_content):
-                                    heading_level = 3
-                            elif is_centered and avg_size >= body_size - 0.5:
-                                heading_level = 2
-
-                if heading_level > 0:
-                    flush_current_para()
-                    last_block_x0 = bbox[0]
-                    last_block_x1 = bbox[2]
-                    last_block_y1 = bbox[3]
-                    last_block_last_line_x1 = cur_last_line_x1
-                    # Deduplicate identical consecutive headings on the same page
-                    if bb_text == last_heading_text:
-                        continue
-                    last_heading_text = bb_text
-                    
-                    audit_data["headings_detected"].append({
-                        "page": page_num,
-                        "level": f"H{heading_level}",
-                        "text": bb_text
-                    })
-                    # Custom style annotation: font mapping docx_style takes highest priority
-                    custom_style = _block_docx_style or style_mapping.get(f"h{heading_level}")
-                    if custom_style:
-                        formatted_heading = f"{'#' * heading_level} {bb_text} {{custom-style=\"{custom_style}\"}}"
-                    else:
-                        formatted_heading = f"{'#' * heading_level} {bb_text}"
-                    page_paragraphs.append(formatted_heading)
-                    continue
-                else:
-                    last_heading_text = ""
-                    
-                # ── Regular Body Text ──────────────────────────────────────────────
-                # ── 圖說（Caption）判斷：人工字體角色優先 ──
-                is_block_caption = (not _is_ignored_font and (
-                    (_block_font_role and _block_font_role.lower() in ('圖說', '图说', 'caption')) or
-                    (_block_docx_style and bool(_STYLE_CAPTION_RE.search(_block_docx_style)))
-                ))
-                if is_block_caption:
-                    # 用 custom-style 輸出圖說段落，讓 Pandoc 套用對應 Word 樣式
-                    flush_current_para()
-                    _caption_style = _block_docx_style or style_mapping.get("image_caption")
-                    if not _caption_style and font_role_map:
-                        for line in lines:
-                            for span in line.get('spans', []):
-                                raw_fn = (span.get('font') or '').split('+', 1)[-1]
-                                size_v = round(span.get('size', 0) * 2) / 2
-                                _candidates = [
-                                    f"{raw_fn} ({size_v}pt)",
-                                    f"{raw_fn} ({size_v:.1f}pt)",
-                                    f"{raw_fn}_{size_v}",
-                                    raw_fn
-                                ]
-                                for _cand in _candidates:
-                                    if _cand in font_role_map:
-                                        _caption_style = font_role_map[_cand].get('docx_style')
-                                        break
-                                if _caption_style:
-                                    break
-                            if _caption_style:
-                                break
-                    if _caption_style:
-                        page_paragraphs.append(f'::: {{custom-style="{_caption_style}"}}\n{bb_text}\n:::')
-                    else:
-                        page_paragraphs.append(f'*{bb_text}*')  # fallback: 斜體
-                    last_block_x0 = bbox[0]
-                    last_block_x1 = bbox[2]
-                    last_block_y1 = bbox[3]
-                    last_block_last_line_x1 = cur_last_line_x1
-                    continue
-    
-                # Check font for KaiTi (Rule-based + AI Vision fallback)
-                total_chars = 0
-                kaiti_chars = 0
-                block_font_names = set()  # 收集此 block 的所有 font name
-                for line in lines:
-                    for span in line.get("spans", []):
-                        span_text = span.get("text", "").strip()
-                        if not span_text: continue
-                        total_chars += len(span_text)
-                        font_name = span.get("font", "").lower()
-                        if font_name:
-                            block_font_names.add(font_name)
-                        if "kai" in font_name or "楷" in font_name or "kt" in font_name:
-                            kaiti_chars += len(span_text)
-    
-                # ── 人工字體角色：楷體優先 ──
-                if _is_ignored_font:
-                    is_block_kaiti = False
-                elif _block_font_role and _block_font_role.lower() in ('楷體', '楷体', 'kaiti', 'blockquote'):
-                    is_block_kaiti = True
-                elif _block_docx_style and bool(_STYLE_KAI_RE.search(_block_docx_style)):
-                    is_block_kaiti = True
-                elif _has_font_mapping:
-                    # 已明確映射為其他樣式者，不再觸發楷體規則
-                    is_block_kaiti = False
-                else:
-                    is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
-                
-                # AI Vision fallback: 若規則型判定失敗且 AI 可用，且該字型未人工指定
-                if not is_block_kaiti and not _has_font_mapping and not _is_ignored_font and ai_kaiti_classifier is not None:
-                    try:
-                        is_block_kaiti = ai_kaiti_classifier.is_block_kaiti(
-                            page=page, block_bbox=bbox, block_text=bb_text,
-                            font_names=list(block_font_names),
-                        )
-                    except Exception:
-                        pass  # AI 失敗時靜默降級，使用規則型結果
-    
-                # Determine custom style for regular paragraph (if not caption)
-                block_custom_style = _block_docx_style if (_has_font_mapping and not _is_ignored_font and not is_block_caption) else None
-    
-                # Check indentation to determine whether this block starts a new paragraph
-                is_indented = (bbox[0] - base_x0) >= 12.0
-
-                vertical_gap = (bbox[1] - last_block_y1) if last_block_y1 > 0 else 0.0
-                prev_ref_x1 = last_block_last_line_x1 if last_block_last_line_x1 > 0 else last_block_x1
-                prev_block_was_short_line = bool(prev_ref_x1 > 0 and prev_ref_x1 < max_x1 - max(avg_size * 2.0, 20.0))
-                is_large_vertical_gap = bool(vertical_gap > avg_size * 1.45)
-
-                if current_para_lines:
-                    should_flush = False
-                    if is_block_kaiti != current_para_is_kaiti:
-                        should_flush = True
-                    elif block_custom_style != current_para_custom_style:
-                        should_flush = True
-                    # A new paragraph is indicated by an increase in indentation (e.g. from 2 chars to 4 chars)
-                    # or a large jump in indent. We use > 5.0 instead of abs() to avoid breaking on hanging indents
-                    elif is_indented and (bbox[0] - last_block_x0) >= 5.0:
-                        should_flush = True
-                    # ✅ 防黏連 1：垂直段距跳躍（段前距/空行），強制獨立成段
-                    elif is_large_vertical_gap:
-                        should_flush = True
-                    # ✅ 防黏連 2：前一區塊未滿行（提早換行），代表上一段已結束或是獨立小標，絕不硬接！
-                    elif prev_block_was_short_line:
-                        should_flush = True
-
-                    if should_flush:
-                        flush_current_para()
-
-                if not current_para_lines:
-                    current_para_is_kaiti = is_block_kaiti
-                    current_para_custom_style = block_custom_style
-
-                # Process lines in this block, replacing footnote anchors
-                for line in lines:
-                    line_str = "".join(s.get("text", "") for s in line.get("spans", [])).strip()
-                    if not line_str:
-                        continue
-                    line_str = _replace_fn_markers_in_text(line_str, page_footnotes, page_num)
-                    current_para_lines.append(line_str)
-
-                last_block_x0 = bbox[0]
-                last_block_x1 = bbox[2]
-                last_block_y1 = bbox[3]
-                last_block_last_line_x1 = cur_last_line_x1
-                    
-            # Flush any remaining body text
-            flush_current_para()
-    
-            # Step 4: Handle footnotes that didn't match any body/table marker (Fallback anchoring)
-            for fn in page_footnotes:
-                fn_id = fn["id"]
-                fn_tag = f"[^p{page_num}_{fn_id}]"
-                if not fn.get("matched", False):
-                    # Safely anchor footnote to last paragraph on page
-                    if page_paragraphs:
-                        page_paragraphs[-1] += fn_tag
-                    else:
-                        page_paragraphs.append(fn_tag)
-                    audit_data["footnotes_fallback"] += 1
-                    audit_data["footnotes_detail"].append({
-                        "page": page_num,
-                        "id": fn_id,
-                        "status": "FALLBACK (正文上標模糊，降級錨定段末)",
-                        "content": fn["content"][:60]
-                    })
-                else:
-                    audit_data["footnotes_matched"] += 1
-                    audit_data["footnotes_detail"].append({
-                        "page": page_num,
-                        "id": fn_id,
-                        "status": "MATCHED (雙向匹配精準錨定)",
-                        "content": fn["content"][:60]
-                    })
-    
-                # Append Pandoc footnote definition
-                page_paragraphs.append(f"{fn_tag}: {fn['content']}")
-    
-            if page_paragraphs:
-                final_md_pages.append("\n\n".join(page_paragraphs))
+        final_md_pages, all_image_blocks, audit_data = _parse_pdf_layout_flow(
+            doc=doc,
+            pdf_name=os.path.basename(pdf_path),
+            style_mapping=style_mapping,
+            font_role_map=font_role_map,
+            enable_footnotes=enable_footnotes,
+            ai_kaiti_classifier=ai_kaiti_classifier,
+            progress_callback=progress_callback,
+        )
     finally:
         doc.close()
             

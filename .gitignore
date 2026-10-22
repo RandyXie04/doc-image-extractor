@@ -56,6 +56,7 @@ text_Doc/
 _archive/
 _originals/
 backup_originals/
+tests/
 
 # Model weights
 *.pt
