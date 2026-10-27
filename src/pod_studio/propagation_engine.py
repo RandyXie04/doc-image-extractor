@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import argparse
 from pathlib import Path
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, Sequence, Tuple
 
 from .blueprint_schema import BookBlueprint, StyleTriggerRule, IndexTaggingInstruction
 from .section_ast import SectionUnit, SectionAST, ParagraphUnit
@@ -243,6 +243,154 @@ class PropagationEngine:
         ])
 
         return "\n".join(prompt_parts)
+
+    def classify_paragraphs_hybrid(
+        self,
+        paragraphs: Sequence[Tuple[int, str]],
+        ai_client: Optional[Any] = None,
+        model: Optional[str] = None,
+        batch_size: int = 70,
+    ) -> Dict[int, str]:
+        """
+        Classifies paragraphs into target docx styles using:
+        1. High-speed deterministic rules learned from exemplar.
+        2. Gemini API / LLM intelligence for unclassified or ambiguous paragraphs.
+
+        paragraphs: sequence of (paragraph_index, paragraph_text)
+        Returns: mapping of {paragraph_index: target_style}
+        """
+        import os
+        import json
+        import time
+
+        results: Dict[int, str] = {}
+        unclassified: List[Tuple[int, str]] = []
+
+        # ── Step 1: High-Speed Deterministic Regex Evaluation ──
+        for idx, text in paragraphs:
+            t = text.strip()
+            if not t:
+                continue
+            matched_style = None
+            for rule in self.rules:
+                if rule.action == "apply_style" and rule.target_docx_style and rule.trigger_regex:
+                    if re.search(rule.trigger_regex, t):
+                        matched_style = rule.target_docx_style
+                        break
+            if matched_style:
+                results[idx] = matched_style
+            else:
+                unclassified.append((idx, t))
+
+        # ── Step 2: Intelligent Gemini API Classification for Remaining Paragraphs ──
+        if unclassified:
+            if ai_client is None:
+                api_key = os.getenv("GEMINI_API_KEY")
+                if not api_key:
+                    try:
+                        from config.settings import AI
+                        api_key = AI.gemini_key
+                    except Exception:
+                        pass
+                if not api_key:
+                    try:
+                        from pathlib import Path
+                        from dotenv import load_dotenv
+                        for parent in Path(__file__).resolve().parents:
+                            cand_env = parent / ".env"
+                            if cand_env.exists():
+                                load_dotenv(dotenv_path=cand_env)
+                                break
+                        api_key = os.getenv("GEMINI_API_KEY")
+                    except Exception:
+                        pass
+                if api_key:
+                    try:
+                        from google import genai
+                        ai_client = genai.Client(api_key=api_key)
+                    except Exception:
+                        pass
+
+            if ai_client is not None:
+                target_model = model or os.getenv("DEFAULT_AI_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
+                valid_styles = list(self.blueprint.template_styles_used)
+                if "Normal" not in valid_styles:
+                    valid_styles.append("Normal")
+
+                # Prepare style definitions / few-shot cues
+                style_cues = []
+                style_defs = self.blueprint.metadata.get("style_definitions", {})
+                for s, samples in style_defs.items():
+                    sample_str = "、".join([f'"{samp[:40]}"' for samp in samples[:3]])
+                    style_cues.append(f"- 【{s}】範例: {sample_str}")
+
+                total_batches = (len(unclassified) + batch_size - 1) // batch_size
+                for b_idx, i in enumerate(range(0, len(unclassified), batch_size), 1):
+                    batch = unclassified[i : i + batch_size]
+                    batch_payload = [{"id": p_idx, "text": p_txt[:90]} for p_idx, p_txt in batch]
+                    print(f"[POD Studio AI] Batch {b_idx}/{total_batches}: Classifying {len(batch)} ambiguous paragraphs via {target_model}...", flush=True)
+
+                    prompt = (
+                        "你是一位專精於中文圖書出版與 POD 數位整稿的專家。\n"
+                        "請根據以下人工精修範本歸納出的自訂樣式定義與範例，為段落列表標記最適用的樣式名稱：\n\n"
+                        f"可用樣式清單：{json.dumps(valid_styles, ensure_ascii=False)}\n"
+                        "樣式特徵與範例：\n"
+                        + "\n".join(style_cues[:8])
+                        + "\n\n"
+                        "待標記段落列表：\n"
+                        + json.dumps(batch_payload, ensure_ascii=False, indent=2)
+                        + "\n\n"
+                        "要求：\n"
+                        "1. 若為普通正文敘述或段落，請標記為 'Normal'。\n"
+                        "2. 請僅輸出 JSON 陣列，不要包含任何開場白或解釋：\n"
+                        '[{"id": 188, "style": "Heading 3"}, ...]'
+                    )
+
+                    for attempt in range(4):
+                        try:
+                            resp_text = ""
+                            if hasattr(ai_client, "models") and hasattr(ai_client.models, "generate_content"):
+                                resp = ai_client.models.generate_content(
+                                    model=target_model,
+                                    contents=prompt,
+                                )
+                                resp_text = resp.text.strip()
+                            elif hasattr(ai_client, "generate_content"):
+                                resp = ai_client.generate_content(prompt)
+                                resp_text = resp.text.strip()
+                            elif callable(ai_client):
+                                resp_text = str(ai_client(prompt)).strip()
+
+                            if resp_text:
+                                clean_json = re.sub(r'^```(?:json)?\s*', '', resp_text)
+                                clean_json = re.sub(r'\s*```$', '', clean_json).strip()
+                                parsed = json.loads(clean_json)
+                                if isinstance(parsed, list):
+                                    for item in parsed:
+                                        if isinstance(item, dict) and "id" in item and "style" in item:
+                                            p_id = int(item["id"])
+                                            s_name = str(item["style"]).strip()
+                                            if s_name in valid_styles or s_name == "Normal":
+                                                results[p_id] = s_name
+                                    print(f"[POD Studio AI] Batch {b_idx}/{total_batches} done: processed {len(parsed)} paragraphs.", flush=True)
+                            break
+                        except Exception as e:
+                            err_str = str(e)
+                            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                                wait_sec = 16.0
+                                match = re.search(r'retry in ([0-9.]+)', err_str)
+                                if match:
+                                    try:
+                                        wait_sec = float(match.group(1)) + 1.0
+                                    except Exception:
+                                        pass
+                                print(f"[POD Studio AI] Batch {b_idx}/{total_batches}: 429 rate limit hit. Waiting {wait_sec:.1f}s before retry...", flush=True)
+                                time.sleep(wait_sec)
+                            else:
+                                print(f"[POD Studio AI] Batch {b_idx}/{total_batches} warning: {e}", flush=True)
+                                break
+
+        return results
 
 
 def main():

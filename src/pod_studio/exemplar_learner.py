@@ -143,7 +143,7 @@ class ExemplarLearner:
         sample_chapters: int = 3,
     ) -> BookBlueprint:
         """Learns blueprint dynamically from raw and golden DOCX files."""
-        raw_doc = docx.Document(str(raw_docx_path))
+        raw_doc = docx.Document(str(raw_docx_path)) if raw_docx_path and Path(raw_docx_path).exists() else None
         gold_doc = docx.Document(str(golden_docx_path))
 
         used_styles: Set[str] = set()
@@ -169,8 +169,54 @@ class ExemplarLearner:
 
         full_golden_text = "\n".join(all_text_chunks)
 
+        # Generic Word styles that can appear globally
+        GENERIC_STYLES = {
+            "normal", "body text", "內文", "標準",
+            "heading 1", "heading 2", "heading 3", "heading 4", "heading 5",
+            "title", "subtitle", "標題 1", "標題 2", "標題 3"
+        }
+
+        # Detect human-modified paragraphs and exemplar boundary
+        custom_style_indices: List[int] = []
+        modified_indices: List[int] = []
+        raw_paras_texts = [p.text.strip() for p in raw_doc.paragraphs] if raw_doc else []
+
+        for i, p in enumerate(gold_doc.paragraphs):
+            s_name = p.style.name if p.style else "Normal"
+            txt = p.text.strip()
+            if not txt:
+                continue
+            is_non_normal = s_name not in ("Normal", "Body Text", "內文", "標準")
+            is_true_custom = s_name.strip().lower() not in GENERIC_STYLES
+            is_diff = False
+            if raw_doc and i < len(raw_paras_texts):
+                raw_s = raw_doc.paragraphs[i].style.name if raw_doc.paragraphs[i].style else "Normal"
+                if txt != raw_paras_texts[i] or s_name != raw_s:
+                    is_diff = True
+
+            if is_true_custom:
+                custom_style_indices.append(i)
+            if is_non_normal or is_diff:
+                modified_indices.append(i)
+
+        # Prioritize boundary of true custom domain-specific styles (e.g. 藥方特點, 楷體2)
+        if custom_style_indices:
+            last_modified_idx = max(custom_style_indices)
+        else:
+            last_modified_idx = max(modified_indices) if modified_indices else 0
+
+        # Collect exemplar samples grouped by style
+        style_samples: Dict[str, List[str]] = {}
+        target_indices = modified_indices if modified_indices else list(range(min(200, len(gold_doc.paragraphs))))
+        for i in target_indices:
+            p = gold_doc.paragraphs[i]
+            s_name = p.style.name if p.style else "Normal"
+            txt = p.text.strip()
+            if txt and s_name not in ("Normal", "Body Text", "內文", "標準"):
+                style_samples.setdefault(s_name, []).append(txt)
+
         # 2. Extract sections from both documents
-        raw_sections = cls._split_docx_by_h2(raw_doc)
+        raw_sections = cls._split_docx_by_h2(raw_doc) if raw_doc else {}
         gold_sections = cls._split_docx_by_h2(gold_doc)
 
         # Count badge occurrences across sections
@@ -233,6 +279,69 @@ class ExemplarLearner:
             rules_from_fallback = DiffAligner.align_paragraphs(all_raw_text, full_golden_text)
             all_inferred_rules.extend(rules_from_fallback)
 
+        # ── Generalized Keyword & Content Trigger Rule Induction ──
+        for s_name, texts in style_samples.items():
+            # 1. Recurring short keyword labels (e.g. 方剂出处, 原文记载, 适用证候, 加减应用, 方剂组成, 按语)
+            kw_candidates = set()
+            for t in texts:
+                m = re.match(r'^([^\s　：:()（）]{2,8})(?:[\s　：:]|$)', t)
+                if m:
+                    kw = m.group(1).strip()
+                    if not re.match(r'^(?:第[一二三四五六七八九十百\d]+|[一二三四五六七八九十百\d]+[、.· ]|[（(])', kw):
+                        kw_candidates.add(kw)
+            clean_kws = [k for k in kw_candidates if len(k) <= 8 and not re.search(r'《|“|”', k)]
+            if clean_kws and len(clean_kws) <= 10:
+                pattern = r'^(?:' + '|'.join(re.escape(k) for k in sorted(clean_kws, key=len, reverse=True)) + r')(?:[\s　：:]|$)'
+                all_inferred_rules.append(StyleTriggerRule(
+                    rule_id=f"rule_kw_{s_name}",
+                    target_docx_style=s_name,
+                    trigger_regex=pattern,
+                    action="apply_style",
+                    priority=8,
+                ))
+
+            # 2. Quotes / ancient literature quotes (e.g. 《伤寒论》, 《金匮要略》)
+            quote_matches = [t for t in texts if re.match(r'^(?:《.+?》|“)', t)]
+            if len(quote_matches) >= 2 or (len(quote_matches) >= 1 and len(quote_matches) == len(texts)):
+                all_inferred_rules.append(StyleTriggerRule(
+                    rule_id=f"rule_quote_{s_name}",
+                    target_docx_style=s_name,
+                    trigger_regex=r'^(?:《.+?》|“)',
+                    action="apply_style",
+                    priority=9,
+                ))
+
+            # 3. Dosage / recipe ingredient lists (e.g. 茯苓30g，泽泻12g...)
+            dosage_matches = [t for t in texts if re.search(r'\d+\s*(?:g|克|枚|片|根|钱)', t) and len(re.findall(r'[，,、\s]', t)) >= 2]
+            if len(dosage_matches) >= 2 or (len(dosage_matches) >= 1 and len(dosage_matches) == len(texts)):
+                all_inferred_rules.append(StyleTriggerRule(
+                    rule_id=f"rule_dosage_{s_name}",
+                    target_docx_style=s_name,
+                    trigger_regex=r'\d+\s*(?:g|克|枚|片|根|钱)',
+                    action="apply_style",
+                    priority=11,
+                ))
+
+            # 4. Notes and annotations (e.g. 注：, 附註：)
+            if any(re.match(r'^(?:注|附註|附注|註|Note)[：:]', t) for t in texts):
+                all_inferred_rules.append(StyleTriggerRule(
+                    rule_id=f"rule_note_{s_name}",
+                    target_docx_style=s_name,
+                    trigger_regex=r'^(?:注|附註|附注|註|Note)[：:]',
+                    action="apply_style",
+                    priority=10,
+                ))
+
+            # 5. Major chapter headings
+            if any(re.match(r'^第[一二三四五六七八九十百\d]+[章节條条回讲講篇卷]', t) for t in texts):
+                all_inferred_rules.append(StyleTriggerRule(
+                    rule_id=f"rule_chapter_{s_name}",
+                    target_docx_style=s_name,
+                    trigger_regex=r'^第[一二三四五六七八九十百\d]+[章节條条回讲講篇卷]',
+                    action="apply_style",
+                    priority=13,
+                ))
+
         # Structural custom style induction from golden document
         structural_patterns = [
             ("pattern_chinese_num", r'^[一二三四五六七八九十百]+[、.· ]', 15),
@@ -288,6 +397,14 @@ class ExemplarLearner:
                 seen_rules.add(sig)
                 deduped_rules.append(r)
 
+        # Compile rich style definitions and paragraph few-shots for AI classification
+        style_definitions = {s: texts[:4] for s, texts in style_samples.items()}
+        paragraph_few_shots = [
+            {"text": t[:100], "style": s}
+            for s, texts in style_samples.items()
+            for t in texts[:3]
+        ]
+
         return BookBlueprint(
             book_name=Path(golden_docx_path).stem.replace("_前處理", "").replace("_golden", ""),
             book_type=book_type,
@@ -300,8 +417,14 @@ class ExemplarLearner:
             metadata={
                 "source_golden": str(golden_docx_path),
                 "gold_section_count": len(gold_sections),
+                "seed_last_modified_idx": last_modified_idx,
+                "seed_modified_count": len(modified_indices),
+                "seed_total_paragraphs": len(gold_doc.paragraphs),
+                "style_definitions": style_definitions,
+                "paragraph_few_shots": paragraph_few_shots,
             }
         )
+
 
     @classmethod
     def learn_from_md_pair(

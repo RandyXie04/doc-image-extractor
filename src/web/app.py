@@ -1,4 +1,4 @@
-﻿import os
+import os
 import io
 import sys
 import shutil
@@ -1436,19 +1436,39 @@ async def pod_1_extract_raw(
 
 @app.post("/api/pod/2_compile_blueprint")
 async def pod_2_compile_blueprint(
-    session_id: str = Form(...),
     seed_file: UploadFile = File(...),
+    session_id: Optional[str] = Form(None),
 ):
     """
-    階段二：規則合成 API
-    比對前 5% 人工精修範本與生稿 AST，以 LCS 差分合成通用出版藍圖 book_blueprint.json。
+    範本學習與藍圖合成 API
+    比對人工精修範本推導樣式定義與狀態機轉換規則。
+    若未提供 session_id 則直接根據精修檔建立獨立 Session 與 AST。
     """
+    if not session_id:
+        session_id = f"pod_{uuid.uuid4().hex[:12]}"
     session_dir = PATHS.output_dir / "pod_workspaces" / session_id
-    if not session_dir.exists():
-        raise HTTPException(status_code=404, detail="Session 不存在或已過期")
+    session_dir.mkdir(parents=True, exist_ok=True)
 
     seed_path = session_dir / (seed_file.filename or "Book_seed.docx")
     await save_upload_file_safely(seed_file, seed_path, max_mb=CFG.max_template_size_mb)
+
+    # When starting directly from docx without prior extraction, construct paragraph AST
+    ast_path = session_dir / "Book_raw_ast.json"
+    if not ast_path.exists() and seed_path.suffix.lower() == ".docx":
+        import docx
+        from src.pod_studio.section_ast import SectionAST, SectionUnit, ParagraphUnit
+        seed_doc = docx.Document(str(seed_path))
+        sections = [
+            SectionUnit(
+                section_id=f"sec_{i:03d}",
+                title=p.text[:30],
+                level=1,
+                paragraphs=[ParagraphUnit(para_id=f"p_{i}", raw_text=p.text)],
+                raw_content=p.text,
+            )
+            for i, p in enumerate(seed_doc.paragraphs)
+        ]
+        SectionAST.dump_book_ast_json(sections, ast_path)
 
     blueprint = compile_blueprint_from_seed(session_dir, seed_path)
 
@@ -1459,6 +1479,8 @@ async def pod_2_compile_blueprint(
         "inferred_rules_count": len(blueprint.style_rules),
         "mandatory_badges": blueprint.mandatory_section_badges,
         "detected_styles": blueprint.template_styles_used,
+        "boundary_idx": blueprint.metadata.get("seed_last_modified_idx", 0),
+        "total_paragraphs": blueprint.metadata.get("seed_total_paragraphs", 0),
     }
 
 

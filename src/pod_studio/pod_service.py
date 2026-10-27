@@ -13,6 +13,7 @@ import re
 import json
 import uuid
 import os
+import shutil
 from pathlib import Path
 from typing import Dict, List, Any, Optional, Tuple
 import fitz
@@ -300,12 +301,26 @@ def compile_blueprint_from_seed(
     s_dir = Path(session_dir)
     seed_p = Path(seed_file_path)
 
+    # Ensure seed docx is saved as Book_seed.docx in session_dir
+    standard_seed = s_dir / "Book_seed.docx"
+    if seed_p.suffix.lower() == ".docx" and seed_p.resolve() != standard_seed.resolve():
+        try:
+            shutil.copy2(str(seed_p), str(standard_seed))
+        except Exception:
+            pass
+
     ast_path = s_dir / "Book_raw_ast.json"
     raw_docx_path = s_dir / "Book_raw.docx"
 
     if seed_p.suffix.lower() == ".docx" and raw_docx_path.exists():
         blueprint = ExemplarLearner.learn_from_docx_pair(
             raw_docx_path=raw_docx_path,
+            golden_docx_path=seed_p,
+            sample_chapters=sample_chapters,
+        )
+    elif seed_p.suffix.lower() == ".docx":
+        blueprint = ExemplarLearner.learn_from_docx_pair(
+            raw_docx_path="",
             golden_docx_path=seed_p,
             sample_chapters=sample_chapters,
         )
@@ -328,6 +343,10 @@ def compile_blueprint_from_seed(
             golden_md_path=gold_md_path,
             sample_chapters=sample_chapters,
         )
+
+    # Record seed docx path in blueprint metadata
+    if seed_p.suffix.lower() == ".docx":
+        blueprint.metadata["seed_docx_path"] = str(standard_seed.resolve() if standard_seed.exists() else seed_p.resolve())
 
     # Save blueprint
     bp_path = s_dir / "book_blueprint.json"
@@ -395,6 +414,166 @@ def propagate_and_validate_session(
                     except Exception:
                         pass
 
+    # ── Step B2: Automatic Completion & Refinement of Subsequent Unmodified Paragraphs in Seed DOCX ──
+    seed_docx_candidates = [
+        s_dir / "Book_seed.docx",
+    ]
+    if blueprint.metadata and blueprint.metadata.get("seed_docx_path"):
+        seed_docx_candidates.append(Path(blueprint.metadata["seed_docx_path"]))
+    for f in s_dir.glob("*.docx"):
+        if f.name not in ("Book_raw.docx", "Book_POD_Final.docx", "template.docx"):
+            seed_docx_candidates.append(f)
+
+    seed_docx_path = None
+    for cand in seed_docx_candidates:
+        if cand and Path(cand).exists() and Path(cand).suffix.lower() == ".docx":
+            seed_docx_path = Path(cand)
+            break
+
+    final_docx_path = s_dir / "Book_POD_Final.docx"
+
+    if seed_docx_path:
+        seed_doc = docx.Document(str(seed_docx_path))
+        last_modified_idx = int(blueprint.metadata.get("seed_last_modified_idx", 0)) if blueprint.metadata else 0
+        if last_modified_idx == 0:
+            generic_styles = {
+                "normal", "body text", "內文", "標準",
+                "heading 1", "heading 2", "heading 3", "heading 4", "heading 5",
+                "title", "subtitle", "標題 1", "標題 2", "標題 3"
+            }
+            custom_indices = [
+                i for i, p in enumerate(seed_doc.paragraphs)
+                if p.style and p.style.name.strip().lower() not in generic_styles and p.text.strip()
+            ]
+            if custom_indices:
+                last_modified_idx = max(custom_indices)
+            else:
+                non_normal = [
+                    i for i, p in enumerate(seed_doc.paragraphs)
+                    if p.style and p.style.name not in ("Normal", "Body Text", "內文", "標準") and p.text.strip()
+                ]
+                last_modified_idx = max(non_normal) if non_normal else 0
+
+        # Extract subsequent paragraphs that were unmodified by human editor
+        subsequent_paras = [
+            (i, p.text.strip())
+            for i, p in enumerate(seed_doc.paragraphs)
+            if i > last_modified_idx and p.text.strip()
+        ]
+
+        # Hybrid deterministic + Gemini AI paragraph classification
+        classified_styles = engine.classify_paragraphs_hybrid(
+            subsequent_paras,
+            ai_client=ai_client,
+            model=model,
+        )
+
+        # Apply target styles to subsequent paragraphs in seed_doc
+        text_to_style: Dict[str, str] = {}
+        for p_idx, target_style in classified_styles.items():
+            if target_style and target_style != "Normal":
+                p_obj = seed_doc.paragraphs[p_idx]
+                try:
+                    p_obj.style = target_style
+                except Exception:
+                    pass
+                text_to_style[p_obj.text.strip()] = target_style
+
+        # Direct perfection of the same .docx as final output
+        seed_doc.save(str(final_docx_path))
+
+        # Synchronize AST processed_sections for Markdown & Validator
+        if text_to_style:
+            for sec in processed_sections:
+                for p_ast in sec.paragraphs:
+                    raw_txt = p_ast.raw_text.strip()
+                    if not p_ast.custom_style and raw_txt in text_to_style:
+                        p_ast.custom_style = text_to_style[raw_txt]
+                sec.processed_content = sec.effective_content
+    else:
+        # Fallback to synthesizing new document from processed sections
+        if template_docx_path and Path(template_docx_path).exists():
+            doc_final = docx.Document(str(template_docx_path))
+            for p in list(doc_final.paragraphs):
+                p._element.getparent().remove(p._element)
+            for t in list(doc_final.tables):
+                t._element.getparent().remove(t._element)
+        else:
+            doc_final = docx.Document()
+
+        for sec in processed_sections:
+            if sec.title != "__PREAMBLE__":
+                doc_final.add_paragraph(sec.title, style=f"Heading {min(sec.level, 3)}")
+
+            paras = sec.effective_content.split("\n\n")
+            for p_txt in paras:
+                p_strip = p_txt.strip()
+                if not p_strip:
+                    continue
+
+                m_h = re.match(r'^(#+)\s+(.+)$', p_strip)
+                if m_h:
+                    h_txt = m_h.group(2).strip()
+                    h_txt = re.sub(r'\{custom-style="[^"]+"\}', '', h_txt).strip()
+                    if sec.title != "__PREAMBLE__" and h_txt == sec.title:
+                        continue
+                    h_lvl = min(len(m_h.group(1)), 3)
+                    doc_final.add_paragraph(h_txt, style=f"Heading {h_lvl}")
+                    continue
+
+                m_img = re.search(r'!\[.*?\]\((.*?)\)', p_strip)
+                if m_img:
+                    img_rel = m_img.group(1).split('{')[0].strip()
+                    img_full = (s_dir / img_rel).resolve()
+                    if img_full.exists():
+                        p_img = doc_final.add_paragraph()
+                        try:
+                            p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                        except Exception:
+                            pass
+                        run = p_img.add_run()
+                        run.add_picture(str(img_full), width=Inches(4.5))
+                        continue
+
+                tbl_lines = [l.strip() for l in p_strip.splitlines() if l.strip()]
+                if len(tbl_lines) >= 2 and tbl_lines[0].startswith('|') and tbl_lines[0].endswith('|') and re.match(r'^\|[\s\-:|]+\|$', tbl_lines[1]):
+                    rows_data = []
+                    for line in tbl_lines:
+                        if re.match(r'^\|[\s\-:|]+\|$', line):
+                            continue
+                        cells = [c.strip() for c in line.strip('|').split('|')]
+                        rows_data.append(cells)
+                    if rows_data:
+                        max_cols = max(len(r) for r in rows_data)
+                        tbl = doc_final.add_table(rows=len(rows_data), cols=max_cols)
+                        try:
+                            tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
+                        except Exception:
+                            pass
+                        try:
+                            tbl.style = 'Table Grid'
+                        except Exception:
+                            pass
+                        for r_idx, r_data in enumerate(rows_data):
+                            row = tbl.rows[r_idx]
+                            for c_idx, cell_val in enumerate(r_data):
+                                if c_idx < len(row.cells):
+                                    row.cells[c_idx].text = cell_val
+                        continue
+
+                m_st = re.search(r':::\s*\{\s*custom-style="([^"]+)"\s*\}\n?(.*?)\n?:::', p_strip, re.DOTALL)
+                if m_st:
+                    style_name = m_st.group(1)
+                    body = m_st.group(2).strip()
+                    try:
+                        doc_final.add_paragraph(body, style=style_name)
+                    except Exception:
+                        doc_final.add_paragraph(body)
+                else:
+                    doc_final.add_paragraph(p_strip)
+
+        doc_final.save(str(final_docx_path))
+
     # Step C: Defensive Verification Gatekeeper
     validator = PodValidator(
         blueprint=blueprint,
@@ -411,95 +590,5 @@ def propagate_and_validate_session(
     final_md_path = s_dir / "Book_POD_Final.md"
     full_md_content = "\n\n".join(sec.effective_content for sec in processed_sections)
     final_md_path.write_text(full_md_content, encoding="utf-8")
-
-    # Generate Book_POD_Final.docx with full image, table, heading, and custom-style support
-    final_docx_path = s_dir / "Book_POD_Final.docx"
-    if template_docx_path and Path(template_docx_path).exists():
-        doc_final = docx.Document(str(template_docx_path))
-        # Clear template body paragraphs and tables while preserving styles.xml, fonts, and geometry
-        for p in list(doc_final.paragraphs):
-            p._element.getparent().remove(p._element)
-        for t in list(doc_final.tables):
-            t._element.getparent().remove(t._element)
-    else:
-        doc_final = docx.Document()
-
-    for sec in processed_sections:
-        if sec.title != "__PREAMBLE__":
-            doc_final.add_paragraph(sec.title, style=f"Heading {min(sec.level, 3)}")
-
-        # Split content by paragraphs and inspect headings, images, tables, and custom-style fences
-        paras = sec.effective_content.split("\n\n")
-        for p_txt in paras:
-            p_strip = p_txt.strip()
-            if not p_strip:
-                continue
-
-            # Heading match
-            m_h = re.match(r'^(#+)\s+(.+)$', p_strip)
-            if m_h:
-                h_txt = m_h.group(2).strip()
-                h_txt = re.sub(r'\{custom-style="[^"]+"\}', '', h_txt).strip()
-                if sec.title != "__PREAMBLE__" and h_txt == sec.title:
-                    continue
-                h_lvl = min(len(m_h.group(1)), 3)
-                doc_final.add_paragraph(h_txt, style=f"Heading {h_lvl}")
-                continue
-
-            # Image token match: ![](images/...) or ![alt](path){...}
-            m_img = re.search(r'!\[.*?\]\((.*?)\)', p_strip)
-            if m_img:
-                img_rel = m_img.group(1).split('{')[0].strip()
-                img_full = (s_dir / img_rel).resolve()
-                if img_full.exists():
-                    p_img = doc_final.add_paragraph()
-                    try:
-                        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    except Exception:
-                        pass
-                    run = p_img.add_run()
-                    run.add_picture(str(img_full), width=Inches(4.5))
-                    continue
-
-            # Table match: markdown table
-            tbl_lines = [l.strip() for l in p_strip.splitlines() if l.strip()]
-            if len(tbl_lines) >= 2 and tbl_lines[0].startswith('|') and tbl_lines[0].endswith('|') and re.match(r'^\|[\s\-:|]+\|$', tbl_lines[1]):
-                rows_data = []
-                for line in tbl_lines:
-                    if re.match(r'^\|[\s\-:|]+\|$', line):
-                        continue
-                    cells = [c.strip() for c in line.strip('|').split('|')]
-                    rows_data.append(cells)
-                if rows_data:
-                    max_cols = max(len(r) for r in rows_data)
-                    tbl = doc_final.add_table(rows=len(rows_data), cols=max_cols)
-                    try:
-                        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-                    except Exception:
-                        pass
-                    try:
-                        tbl.style = 'Table Grid'
-                    except Exception:
-                        pass
-                    for r_idx, r_data in enumerate(rows_data):
-                        row = tbl.rows[r_idx]
-                        for c_idx, cell_val in enumerate(r_data):
-                            if c_idx < len(row.cells):
-                                row.cells[c_idx].text = cell_val
-                    continue
-
-            # Custom-style block: ::: {custom-style="名稱"} ... :::
-            m_st = re.search(r':::\s*\{\s*custom-style="([^"]+)"\s*\}\n?(.*?)\n?:::', p_strip, re.DOTALL)
-            if m_st:
-                style_name = m_st.group(1)
-                body = m_st.group(2).strip()
-                try:
-                    doc_final.add_paragraph(body, style=style_name)
-                except Exception:
-                    doc_final.add_paragraph(body)
-            else:
-                doc_final.add_paragraph(p_strip)
-
-    doc_final.save(str(final_docx_path))
 
     return final_docx_path, report, blueprint

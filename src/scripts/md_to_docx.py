@@ -32,6 +32,75 @@ except OSError:
     except Exception as e:
         print(f"Error downloading pandoc: {e}")
 
+def apply_table_styles_to_docx(docx_path: str) -> None:
+    """
+    修改表格製作樣式：
+    1. 表格樣式設為「表格格線」 (Table Grid)
+    2. 表格內文字段落無任何特殊樣式設定 (重設為預設內文 Normal，移除 Compact 或其他 pStyle)
+    """
+    if not os.path.exists(docx_path):
+        return
+
+    try:
+        import docx
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+    except ImportError:
+        return
+
+    try:
+        doc = docx.Document(docx_path)
+        if not doc.tables:
+            return
+
+        grid_style = None
+        for s_name in ['Table Grid', '表格格線', 'TableGrid']:
+            if s_name in doc.styles:
+                grid_style = doc.styles[s_name]
+                break
+
+        def _set_tbl_style_xml(table_elem):
+            tblPr = table_elem._tbl.tblPr
+            tblStyle = tblPr.find(qn('w:tblStyle'))
+            if tblStyle is None:
+                tblStyle = OxmlElement('w:tblStyle')
+                tblPr.insert(0, tblStyle)
+            tblStyle.set(qn('w:val'), 'TableGrid')
+
+        def _format_table(tbl):
+            if grid_style is not None:
+                try:
+                    tbl.style = grid_style
+                except Exception:
+                    _set_tbl_style_xml(tbl)
+            else:
+                _set_tbl_style_xml(tbl)
+
+            for row in tbl.rows:
+                for cell in row.cells:
+                    for p in cell.paragraphs:
+                        try:
+                            p.style = 'Normal'
+                        except Exception:
+                            pass
+                        pPr = p._p.pPr
+                        if pPr is not None:
+                            pStyle = pPr.find(qn('w:pStyle'))
+                            if pStyle is not None:
+                                pPr.remove(pStyle)
+                            if len(pPr) == 0:
+                                p._p.remove(pPr)
+                    for nested in cell.tables:
+                        _format_table(nested)
+
+        for tbl in doc.tables:
+            _format_table(tbl)
+
+        doc.save(docx_path)
+        print(f"Applied 'Table Grid' style to {len(doc.tables)} table(s) in {docx_path}")
+    except Exception as e:
+        print(f"[Warning] 表格樣式後處理失敗: {e}")
+
 def main():
     parser = argparse.ArgumentParser(description="Convert Markdown to Word Document.")
     parser.add_argument('--files', '--target', nargs='+', help="Specific markdown files to convert")
@@ -251,6 +320,7 @@ def main():
                 outputfile=out_path,
                 extra_args=pandoc_extra
             )
+            apply_table_styles_to_docx(out_path)
             print(f"Saved DOCX to {out_path}")
         except Exception as e:
             import traceback
