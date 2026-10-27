@@ -122,7 +122,9 @@ class BookAST:
 class SectionAdapter:
     """Adapts a BookAST to existing consumers expecting List[SectionUnit]."""
     @staticmethod
-    def to_sections(ast: BookAST) -> List[SectionUnit]:
+    def to_sections(ast: Optional[BookAST]) -> List[SectionUnit]:
+        if ast is None:
+            return []
         return ast.sections
 
 

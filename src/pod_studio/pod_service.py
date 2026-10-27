@@ -72,6 +72,8 @@ def extract_raw_from_pdf(
             enable_footnotes=enable_footnotes,
             page_range=page_range,
         )
+        if book_ast is None:
+            raise RuntimeError(f"Failed to extract vector AST from PDF: {pdf_p}")
 
         # Automated layout architecture mode: extract raster images to session_dir / "images"
         images_dir = s_dir / "images"

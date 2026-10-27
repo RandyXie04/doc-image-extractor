@@ -13,21 +13,24 @@ import re
 import json
 from pathlib import Path
 from collections import Counter
-from typing import Optional, Dict, Any, List, Tuple, Callable, Sequence
+from typing import Optional, Dict, Any, List, Tuple, Callable, Sequence, TYPE_CHECKING
 
 # pyrefly: ignore [missing-import]
 import fitz
 
-try:
+if TYPE_CHECKING:
     from src.pod_studio.section_ast import BookAST, SectionAdapter, SectionUnit, ParagraphUnit
-except ImportError:
+else:
     try:
-        from pod_studio.section_ast import BookAST, SectionAdapter, SectionUnit, ParagraphUnit
+        from src.pod_studio.section_ast import BookAST, SectionAdapter, SectionUnit, ParagraphUnit
     except ImportError:
-        BookAST = None
-        SectionAdapter = None
-        SectionUnit = None
-        ParagraphUnit = None
+        try:
+            from pod_studio.section_ast import BookAST, SectionAdapter, SectionUnit, ParagraphUnit
+        except ImportError:
+            BookAST = Any
+            SectionAdapter = Any
+            SectionUnit = Any
+            ParagraphUnit = Any
 
 # Try to import project helpers
 try:
