@@ -419,19 +419,50 @@
         <div class="card-stage" id="stage3Section" style="opacity: 0.6; pointer-events: none;">
             <div class="stage-title">
                 <h2>階段三：批量擴散與 CJK 骨架守恆硬性驗收</h2>
+                <span class="badge-pill" style="background: var(--primary); color: #fff;">雙軌策略引擎</span>
+            </div>
+
+            <!-- 擴散引擎模式選擇 -->
+            <div class="form-row">
+                <label>選擇擴散引擎模式 (Execution Engine)</label>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px;">
+                    <label class="traffic-card" id="engineModeRuleCard" style="cursor: pointer; text-align: left; border: 2px solid var(--primary); background: rgba(37, 99, 235, 0.04); display: flex; align-items: flex-start; gap: 8px;">
+                        <input type="radio" name="engineMode" value="rule_first" checked style="margin-top: 3px;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 0.95rem; color: var(--text-main);">⚡ 高效狀態機擴散 (推薦)</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">零 Token 成本，秒級全書擴散，僅在轉曲徽標遺失時調度局部 VLM 補字。</div>
+                        </div>
+                    </label>
+                    <label class="traffic-card" id="engineModeVlmCard" style="cursor: pointer; text-align: left; border: 1px solid var(--border); display: flex; align-items: flex-start; gap: 8px;">
+                        <input type="radio" name="engineMode" value="vlm_continuation" style="margin-top: 3px;">
+                        <div>
+                            <div style="font-weight: 600; font-size: 0.95rem; color: var(--text-main);">🎯 多模態視覺全段接續</div>
+                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">複雜多欄圖文專用，對照原版 PDF 頁面截圖，調度 Gemini / Ollama 進行整稿。</div>
+                        </div>
+                    </label>
+                </div>
             </div>
 
             <!-- 模型選擇區塊 -->
-            <div class="form-row">
-                <label for="vlmModelSelect">視覺補字與修復模型選擇 (VLM Model)</label>
+            <div class="form-row" id="modelSelectRow">
+                <label for="vlmModelSelect" id="vlmModelLabel">AI 視覺模型 (VLM Model)</label>
                 <select id="vlmModelSelect" class="select-input">
-                    <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash (推薦，預設)</option>
-                    <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                    <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash (出版級品質，預設推薦)</option>
+                    <option value="gemini-2.5-flash">Gemini 2.5 Flash (超高速、視覺推薦)</option>
                     <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                    <option value="qwen2.5-vl:7b">Ollama 本地端: Qwen 2.5 VL (7B)</option>
+                    <option value="llama3.2-vision">Ollama 本地端: Llama 3.2 Vision</option>
                     <option value="custom">自訂模型名稱...</option>
                 </select>
                 <input type="text" id="customModelInput" class="text-input" placeholder="請輸入自訂模型名稱（例如 gemini-3.1-pro-preview）" style="display:none; margin-top: 6px;">
-                <span class="form-hint">僅在單元缺乏必備轉曲徽標或檢測到異常短少時，依幾何座標裁切 150 DPI 截圖送交該模型修復。</span>
+                <span class="form-hint" id="vlmModelHint">僅在單元缺乏必備轉曲徽標或檢測到異常短少時，依幾何座標裁切 150 DPI 截圖送交該模型修復。</span>
+            </div>
+
+            <!-- 測試接續章節上限 (僅在 VLM 接續模式下顯示) -->
+            <div class="form-row" id="maxSectionsRow" style="display: none;">
+                <label for="vlmMaxSections">測試接續章節上限 (選填)</label>
+                <input type="number" id="vlmMaxSections" class="text-input" placeholder="留空代表全書處理 (例如填 3 僅測試前 3 章)" min="1">
+                <span class="form-hint">建議初次測試先填入 2~3 章驗證視覺接續效果與樣式對齊度。</span>
             </div>
 
             <div class="form-row">
@@ -449,6 +480,7 @@
             <div id="stage3Result" class="results-box" style="display:none;"></div>
         </div>
     </div>
+
 
     <script src="/static/sidebar.js?v=20261016_v5"></script>
     <script>
@@ -592,11 +624,54 @@
             }
         });
 
+        // ==========================================
+        // 階段三：雙軌策略引擎選擇切換
+        // ==========================================
+        const engineModeRadios = document.querySelectorAll('input[name="engineMode"]');
+        const engineModeRuleCard = document.getElementById("engineModeRuleCard");
+        const engineModeVlmCard = document.getElementById("engineModeVlmCard");
+        const maxSectionsRow = document.getElementById("maxSectionsRow");
+        const vlmMaxSections = document.getElementById("vlmMaxSections");
+        const vlmModelHint = document.getElementById("vlmModelHint");
+
+        function getSelectedEngineMode() {
+            const checked = document.querySelector('input[name="engineMode"]:checked');
+            return checked ? checked.value : "rule_first";
+        }
+
+        engineModeRadios.forEach(radio => {
+            radio.addEventListener("change", () => {
+                const mode = getSelectedEngineMode();
+                if (mode === "vlm_continuation") {
+                    engineModeVlmCard.style.border = "2px solid var(--primary)";
+                    engineModeVlmCard.style.background = "rgba(37, 99, 235, 0.04)";
+                    engineModeRuleCard.style.border = "1px solid var(--border)";
+                    engineModeRuleCard.style.background = "transparent";
+
+                    maxSectionsRow.style.display = "block";
+                    vlmModelHint.textContent = "對照原版 PDF 頁面截圖，調度 Gemini / Ollama 視覺多模態模型完成全書各單元接續整稿。";
+                    propagateBtn.textContent = "啟動多模態接續與硬性驗收";
+                } else {
+                    engineModeRuleCard.style.border = "2px solid var(--primary)";
+                    engineModeRuleCard.style.background = "rgba(37, 99, 235, 0.04)";
+                    engineModeVlmCard.style.border = "1px solid var(--border)";
+                    engineModeVlmCard.style.background = "transparent";
+
+                    maxSectionsRow.style.display = "none";
+                    vlmModelHint.textContent = "僅在單元缺乏必備轉曲徽標或檢測到異常短少時，依幾何座標裁切 150 DPI 截圖送交該模型修復。";
+                    propagateBtn.textContent = "執行批量擴散與硬性驗收";
+                }
+            });
+        });
+
         propagateBtn.addEventListener("click", async () => {
             if (!currentSessionId) return;
 
+            const engineMode = getSelectedEngineMode();
             propagateBtn.disabled = true;
-            propagateBtn.textContent = "正在批量擴散並執行 CJK 骨架校驗...";
+            propagateBtn.textContent = engineMode === "vlm_continuation"
+                ? "⏳ 正在啟動多模態視覺接續排版並校驗 (可能需要數十秒至數分鐘)..."
+                : "正在批量擴散並執行 CJK 骨架校驗...";
 
             const selectedModel = vlmModelSelect.value === "custom"
                 ? (customModelInput.value.trim() || "gemini-3.8-flash")
@@ -604,7 +679,12 @@
 
             const formData = new FormData();
             formData.append("session_id", currentSessionId);
+            formData.append("engine_mode", engineMode);
             formData.append("model", selectedModel);
+
+            if (engineMode === "vlm_continuation" && vlmMaxSections && vlmMaxSections.value.trim()) {
+                formData.append("max_continuation_sections", vlmMaxSections.value.trim());
+            }
 
             if (templateFileInput.files && templateFileInput.files[0]) {
                 formData.append("template_file", templateFileInput.files[0]);
@@ -621,12 +701,16 @@
                 const summary = data.audit_summary;
                 const statusColor = data.is_valid ? "var(--success)" : "var(--danger)";
                 const statusText = data.is_valid ? "驗收合格 (PASS)" : "需人工複查 (FLAGGED)";
+                const modeLabel = engineMode === "vlm_continuation" ? "🎯 多模態視覺全段接續" : "⚡ 高效狀態機擴散";
 
                 stage3Result.style.display = "block";
                 stage3Result.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.8rem;">
                         <h3 style="margin: 0; font-size: 1.1rem; color: ${statusColor};">${statusText}</h3>
-                        <span style="font-size: 0.85rem; color: var(--text-muted);">使用模型: <code>${selectedModel}</code></span>
+                        <div style="font-size: 0.85rem; color: var(--text-muted);">
+                            <span class="badge-pill" style="background: rgba(37,99,235,0.08); color: var(--primary);">${modeLabel}</span>
+                            模型: <code>${selectedModel}</code>
+                        </div>
                     </div>
 
                     <div class="traffic-lights">
@@ -646,10 +730,13 @@
 
                     <div style="display: flex; gap: 12px; margin-top: 1rem; flex-wrap: wrap;">
                         <a href="/api/pod/download/${currentSessionId}/${data.final_docx_name}" target="_blank" class="btn-action" style="text-decoration: none;">
-                            下載成品 ${data.final_docx_name}
+                            📥 下載成品 ${data.final_docx_name}
+                        </a>
+                        <a href="/api/pod/download/${currentSessionId}/Book_POD_Final.md" target="_blank" class="btn-action btn-secondary" style="text-decoration: none;">
+                            📄 下載成品 Markdown
                         </a>
                         <a href="/api/pod/download/${currentSessionId}/audit_report.json" target="_blank" class="btn-action btn-secondary" style="text-decoration: none;">
-                            下載審計報告 (audit_report.json)
+                            🔍 下載審計報告 (audit_report.json)
                         </a>
                     </div>
                 `;
@@ -659,9 +746,12 @@
                 alert("階段三執行失敗: " + err.message);
             } finally {
                 propagateBtn.disabled = false;
-                propagateBtn.textContent = "執行批量擴散與硬性驗收";
+                propagateBtn.textContent = engineMode === "vlm_continuation"
+                    ? "啟動多模態接續與硬性驗收"
+                    : "執行批量擴散與硬性驗收";
             }
         });
     </script>
+
 </body>
 </html>

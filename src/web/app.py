@@ -1,6 +1,7 @@
-﻿import os
+import os
 import io
 import sys
+import time
 import shutil
 import uuid
 import asyncio
@@ -1394,6 +1395,8 @@ from src.pod_studio.pod_service import (
     propagate_and_validate_session,
 )
 from src.pod_studio.blueprint_schema import BookBlueprint
+from src.pod_studio.vlm_continuation_engine import SecureVLMContinuationEngine
+
 
 
 @app.post("/api/pod/1_extract_raw")
@@ -1465,14 +1468,15 @@ async def pod_2_compile_blueprint(
 @app.post("/api/pod/3_propagate_and_validate")
 async def pod_3_propagate_and_validate(
     session_id: str = Form(...),
+    engine_mode: str = Form("rule_first"),
     template_file: Optional[UploadFile] = File(None),
     blueprint_json: Optional[str] = Form(None),
     model: Optional[str] = Form(None),
+    max_continuation_sections: Optional[int] = Form(None),
 ):
     """
-    階段三：批量擴散與硬性驗收 API
-    依藍圖執行確定性 AST 標記索引套用，並由 CJK 骨架守恆閘門校驗輸出。
-    預設使用 gemini-3.8-flash 模型或環境變數指定之模型。
+    階段三：批量擴散與硬性驗收 API (支援 Dual-Engine: rule_first 與 vlm_continuation)
+    依藍圖執行確定性 AST 標記索引套用或 VLM 接續，並由 CJK 骨架守恆閘門校驗輸出。
     """
     session_dir = PATHS.output_dir / "pod_workspaces" / session_id
     if not session_dir.exists():
@@ -1495,15 +1499,18 @@ async def pod_3_propagate_and_validate(
 
     final_docx_path, report, bp = propagate_and_validate_session(
         session_dir=session_dir,
+        engine_mode=engine_mode,
         template_docx_path=template_path,
         custom_blueprint=custom_bp,
         pdf_path=pdf_path,
         model=model,
+        max_sections=max_continuation_sections,
     )
 
     return {
         "status": "success",
         "session_id": session_id,
+        "engine_mode": engine_mode,
         "is_valid": report.is_valid,
         "final_docx_name": final_docx_path.name,
         "audit_summary": {
@@ -1539,6 +1546,92 @@ async def pod_download_file(session_id: str, filename: str):
         media_type = "text/markdown"
 
     return FileResponse(path=str(target_file), media_type=media_type, filename=filename)
+
+
+@app.post("/api/pod/vlm_continuation")
+async def pod_vlm_continuation(
+    session_id: Optional[str] = Form(None),
+    pdf_file: Optional[UploadFile] = File(None),
+    seed_file: UploadFile = File(...),
+    template_file: Optional[UploadFile] = File(None),
+    model_name: str = Form("gemini-2.5-flash"),
+    max_continuation_sections: Optional[int] = Form(None),
+    split_level: int = Form(2),
+):
+    """
+    POD 視覺整稿接續 API (VLM Continuation & Infilling)
+    結合階段一 PDF 與前 5%~10% 人工精修 DOCX (Golden Seed)，
+    利用 Gemini 或 Ollama 視覺多模態模型接續完成全書排版。
+    """
+    if session_id:
+        session_dir = (PATHS.output_dir / "pod_workspaces" / session_id).resolve()
+        if not session_dir.exists():
+            raise HTTPException(status_code=404, detail="指定 Session 不存在或已過期")
+    else:
+        session_id = f"pod_vlm_{uuid.uuid4().hex[:12]}"
+        session_dir = PATHS.output_dir / "pod_workspaces" / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+    # 1. 處理 PDF 檔案
+    pdf_path = None
+    if pdf_file and pdf_file.filename:
+        pdf_path = session_dir / pdf_file.filename
+        await save_upload_file_safely(pdf_file, pdf_path, max_mb=CFG.max_upload_size_mb)
+    else:
+        existing_pdfs = list(session_dir.glob("*.pdf"))
+        if existing_pdfs:
+            pdf_path = existing_pdfs[0]
+
+    if not pdf_path or not pdf_path.exists():
+        raise HTTPException(status_code=400, detail="請提供原始 PDF 檔案")
+
+    # 2. 確保 AST 存在，若不存在則自 PDF 剖析生稿
+    ast_path = session_dir / "Book_raw_ast.json"
+    if not ast_path.exists():
+        try:
+            sections, ast_path, _ = extract_raw_from_pdf(
+                pdf_path, session_dir, split_level=split_level
+            )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"PDF 生稿剖析失敗: {e}")
+
+    # 3. 處理前 5%~10% 精修範本檔案 (Seed DOCX)
+    seed_path = session_dir / (seed_file.filename or "Book_seed.docx")
+    await save_upload_file_safely(seed_file, seed_path, max_mb=CFG.max_template_size_mb)
+
+    # 4. 處理可選的 Template DOCX
+    template_path = None
+    if template_file and template_file.filename:
+        template_path = session_dir / "template.docx"
+        await save_upload_file_safely(template_file, template_path, max_mb=CFG.max_template_size_mb)
+
+    # 5. 調度 SecureVLMContinuationEngine
+    engine = SecureVLMContinuationEngine(
+        workspace_base=PATHS.output_dir / "pod_workspaces"
+    )
+
+    try:
+        result = await engine.execute_continuation(
+            pdf_path=pdf_path,
+            raw_ast_path=ast_path,
+            seed_docx_path=seed_path,
+            template_docx_path=template_path,
+            model_name=model_name,
+            max_continuation_sections=max_continuation_sections,
+            target_session_dir=session_dir,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"視覺接續流程執行異常: {str(e)}")
+
+    return {
+        "status": "success",
+        "session_id": session_id,
+        "result": result.to_dict(),
+        "download_docx_url": f"/api/pod/download/{session_id}/Book_VLM_Continued.docx",
+        "download_md_url": f"/api/pod/download/{session_id}/Book_VLM_Continued.md",
+        "audit_report_url": f"/api/pod/download/{session_id}/vlm_audit_report.json",
+    }
+
 
 
 

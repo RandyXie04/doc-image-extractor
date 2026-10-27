@@ -28,6 +28,7 @@ from .propagation_engine import PropagationEngine
 from .pod_validator import PodValidator, ValidationReport
 from .cjk_validator import PODIntegrityValidator
 from .visual_fallback_repair import repair_corrupted_section_with_vlm
+from .docx_writer import DocxSerializer
 
 try:
     from src.scripts.book_layout_extractor import extract_book_vector_ast
@@ -337,15 +338,21 @@ def compile_blueprint_from_seed(
 
 def propagate_and_validate_session(
     session_dir: str | Path,
+    engine_mode: str = "rule_first",
     template_docx_path: Optional[str | Path] = None,
     custom_blueprint: Optional[BookBlueprint] = None,
     pdf_path: Optional[str | Path] = None,
     ai_client: Optional[Any] = None,
     model: Optional[str] = None,
+    max_sections: Optional[int] = None,
 ) -> Tuple[Path, ValidationReport, BookBlueprint]:
     """
     Executes batch AST propagation across all sections, runs visual fallback if needed,
     and runs PODIntegrityValidator. Outputs Book_POD_Final.docx and audit_report.json.
+
+    engine_mode:
+        - "rule_first": High-speed 0-token state machine + targeted VLM badge fallback.
+        - "vlm_continuation": End-to-end multimodal visual infilling (Gemini / Ollama).
     """
     s_dir = Path(session_dir)
     ast_path = s_dir / "Book_raw_ast.json"
@@ -363,37 +370,101 @@ def propagate_and_validate_session(
             raise FileNotFoundError(f"Missing {bp_path} in session workspace.")
         blueprint = BookBlueprint.load(bp_path)
 
-    # Step A: Deterministic Rule Propagation
-    engine = PropagationEngine(blueprint)
-    processed_sections = engine.process_all(sections)
+    # Resolve PDF
+    resolved_pdf = None
+    if pdf_path and Path(pdf_path).exists():
+        resolved_pdf = Path(pdf_path)
+    else:
+        candidates = list(s_dir.glob("*.pdf"))
+        if candidates:
+            resolved_pdf = candidates[0]
 
-    # Step B: Visual Fallback Repair (if PDF provided and sections miss required badges)
-    if pdf_path and Path(pdf_path).exists() and blueprint.mandatory_section_badges:
-        for sec in processed_sections:
-            if sec.title == "__PREAMBLE__":
-                continue
-            existing_badges = set(re.findall(r'【([^】]+)】|\[([^\]]+)\]', sec.effective_content))
-            flattened = {b[0] or b[1] for b in existing_badges}
-            missing = [b for b in blueprint.mandatory_section_badges if b not in flattened]
-            if missing and sec.paragraphs:
-                # Find page_num and bbox from first paragraph
-                first_p = sec.paragraphs[0]
-                if first_p.page_num > 0:
-                    try:
-                        repaired_md = repair_corrupted_section_with_vlm(
-                            pdf_path=pdf_path,
-                            page_num=first_p.page_num,
-                            corrupted_raw_md=sec.effective_content,
-                            blueprint=blueprint,
-                            ai_client=ai_client,
-                            bbox=first_p.bbox,
-                            missing_badges=missing,
-                            model=model,
-                        )
-                        if not repaired_md.startswith("<!--"):
-                            sec.processed_content = repaired_md
-                    except Exception:
-                        pass
+    if engine_mode == "vlm_continuation":
+        # Resolve seed docx
+        seed_candidates = list(s_dir.glob("*seed*.docx")) + list(s_dir.glob("*Seed*.docx"))
+        seed_docx = seed_candidates[0] if seed_candidates else (s_dir / "Book_seed.docx")
+
+        from .vlm_continuation_engine import SecureVLMContinuationEngine
+        import asyncio
+
+        vlm_engine = SecureVLMContinuationEngine(workspace_base=s_dir.parent)
+        vlm_model = model or os.getenv("DEFAULT_AI_MODEL") or "gemini-3.8-flash"
+
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                # In nested event loop environment
+                import nest_asyncio
+                nest_asyncio.apply()
+                continuation_result = loop.run_until_complete(
+                    vlm_engine.execute_continuation(
+                        pdf_path=resolved_pdf,
+                        raw_ast_path=ast_path,
+                        seed_docx_path=seed_docx,
+                        template_docx_path=Path(template_docx_path) if template_docx_path else None,
+                        model_name=vlm_model,
+                        max_continuation_sections=max_sections,
+                        target_session_dir=s_dir,
+                    )
+                )
+            else:
+                continuation_result = loop.run_until_complete(
+                    vlm_engine.execute_continuation(
+                        pdf_path=resolved_pdf,
+                        raw_ast_path=ast_path,
+                        seed_docx_path=seed_docx,
+                        template_docx_path=Path(template_docx_path) if template_docx_path else None,
+                        model_name=vlm_model,
+                        max_continuation_sections=max_sections,
+                        target_session_dir=s_dir,
+                    )
+                )
+        except RuntimeError:
+            continuation_result = asyncio.run(
+                vlm_engine.execute_continuation(
+                    pdf_path=resolved_pdf,
+                    raw_ast_path=ast_path,
+                    seed_docx_path=seed_docx,
+                    template_docx_path=Path(template_docx_path) if template_docx_path else None,
+                    model_name=vlm_model,
+                    max_continuation_sections=max_sections,
+                    target_session_dir=s_dir,
+                )
+            )
+
+        processed_sections = continuation_result.processed_sections or sections
+
+    else:
+        # Step A: Deterministic Rule Propagation
+        engine = PropagationEngine(blueprint)
+        processed_sections = engine.process_all(sections)
+
+        # Step B: Visual Fallback Repair (if PDF provided and sections miss required badges)
+        if resolved_pdf and blueprint.mandatory_section_badges:
+            for sec in processed_sections:
+                if sec.title == "__PREAMBLE__":
+                    continue
+                existing_badges = set(re.findall(r'【([^】]+)】|\[([^\]]+)\]', sec.effective_content))
+                flattened = {b[0] or b[1] for b in existing_badges}
+                missing = [b for b in blueprint.mandatory_section_badges if b not in flattened]
+                if missing and sec.paragraphs:
+                    first_p = sec.paragraphs[0]
+                    if first_p.page_num > 0:
+                        try:
+                            repaired_md = repair_corrupted_section_with_vlm(
+                                pdf_path=resolved_pdf,
+                                page_num=first_p.page_num,
+                                corrupted_raw_md=sec.effective_content,
+                                blueprint=blueprint,
+                                ai_client=ai_client,
+                                bbox=first_p.bbox,
+                                missing_badges=missing,
+                                model=model,
+                            )
+                            if not repaired_md.startswith("<!--"):
+                                sec.processed_content = repaired_md
+                        except Exception:
+                            pass
 
     # Step C: Defensive Verification Gatekeeper
     validator = PodValidator(
@@ -412,94 +483,13 @@ def propagate_and_validate_session(
     full_md_content = "\n\n".join(sec.effective_content for sec in processed_sections)
     final_md_path.write_text(full_md_content, encoding="utf-8")
 
-    # Generate Book_POD_Final.docx with full image, table, heading, and custom-style support
+    # Generate Book_POD_Final.docx via unified DocxSerializer
     final_docx_path = s_dir / "Book_POD_Final.docx"
-    if template_docx_path and Path(template_docx_path).exists():
-        doc_final = docx.Document(str(template_docx_path))
-        # Clear template body paragraphs and tables while preserving styles.xml, fonts, and geometry
-        for p in list(doc_final.paragraphs):
-            p._element.getparent().remove(p._element)
-        for t in list(doc_final.tables):
-            t._element.getparent().remove(t._element)
-    else:
-        doc_final = docx.Document()
-
-    for sec in processed_sections:
-        if sec.title != "__PREAMBLE__":
-            doc_final.add_paragraph(sec.title, style=f"Heading {min(sec.level, 3)}")
-
-        # Split content by paragraphs and inspect headings, images, tables, and custom-style fences
-        paras = sec.effective_content.split("\n\n")
-        for p_txt in paras:
-            p_strip = p_txt.strip()
-            if not p_strip:
-                continue
-
-            # Heading match
-            m_h = re.match(r'^(#+)\s+(.+)$', p_strip)
-            if m_h:
-                h_txt = m_h.group(2).strip()
-                h_txt = re.sub(r'\{custom-style="[^"]+"\}', '', h_txt).strip()
-                if sec.title != "__PREAMBLE__" and h_txt == sec.title:
-                    continue
-                h_lvl = min(len(m_h.group(1)), 3)
-                doc_final.add_paragraph(h_txt, style=f"Heading {h_lvl}")
-                continue
-
-            # Image token match: ![](images/...) or ![alt](path){...}
-            m_img = re.search(r'!\[.*?\]\((.*?)\)', p_strip)
-            if m_img:
-                img_rel = m_img.group(1).split('{')[0].strip()
-                img_full = (s_dir / img_rel).resolve()
-                if img_full.exists():
-                    p_img = doc_final.add_paragraph()
-                    try:
-                        p_img.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                    except Exception:
-                        pass
-                    run = p_img.add_run()
-                    run.add_picture(str(img_full), width=Inches(4.5))
-                    continue
-
-            # Table match: markdown table
-            tbl_lines = [l.strip() for l in p_strip.splitlines() if l.strip()]
-            if len(tbl_lines) >= 2 and tbl_lines[0].startswith('|') and tbl_lines[0].endswith('|') and re.match(r'^\|[\s\-:|]+\|$', tbl_lines[1]):
-                rows_data = []
-                for line in tbl_lines:
-                    if re.match(r'^\|[\s\-:|]+\|$', line):
-                        continue
-                    cells = [c.strip() for c in line.strip('|').split('|')]
-                    rows_data.append(cells)
-                if rows_data:
-                    max_cols = max(len(r) for r in rows_data)
-                    tbl = doc_final.add_table(rows=len(rows_data), cols=max_cols)
-                    try:
-                        tbl.alignment = WD_TABLE_ALIGNMENT.CENTER
-                    except Exception:
-                        pass
-                    try:
-                        tbl.style = 'Table Grid'
-                    except Exception:
-                        pass
-                    for r_idx, r_data in enumerate(rows_data):
-                        row = tbl.rows[r_idx]
-                        for c_idx, cell_val in enumerate(r_data):
-                            if c_idx < len(row.cells):
-                                row.cells[c_idx].text = cell_val
-                    continue
-
-            # Custom-style block: ::: {custom-style="名稱"} ... :::
-            m_st = re.search(r':::\s*\{\s*custom-style="([^"]+)"\s*\}\n?(.*?)\n?:::', p_strip, re.DOTALL)
-            if m_st:
-                style_name = m_st.group(1)
-                body = m_st.group(2).strip()
-                try:
-                    doc_final.add_paragraph(body, style=style_name)
-                except Exception:
-                    doc_final.add_paragraph(body)
-            else:
-                doc_final.add_paragraph(p_strip)
-
-    doc_final.save(str(final_docx_path))
+    DocxSerializer.render_sections_to_docx(
+        sections=processed_sections,
+        output_docx_path=final_docx_path,
+        template_docx_path=template_docx_path,
+        base_dir=s_dir,
+    )
 
     return final_docx_path, report, blueprint

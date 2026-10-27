@@ -196,6 +196,45 @@ class TestPODStudioASTIntegration(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             extract_raw_from_pdf(self.test_dir / "nonexistent.pdf", s_dir, use_vector_ast=True)
 
+    def test_06_dual_engine_and_docx_serializer(self):
+        """Test Dual-Engine POD Pipeline parameter dispatch and DocxSerializer module."""
+        from src.pod_studio.docx_writer import DocxSerializer
+
+        s_dir = self.test_dir / "session_dual_engine"
+        sample_pdf2 = self.test_dir / "sample_book2.pdf"
+        self._generate_sample_pdf(sample_pdf2)
+        sections, ast_path, docx_path = extract_raw_from_pdf(
+            sample_pdf2, s_dir, split_level=2, use_vector_ast=False
+        )
+
+        seed_path = self.test_dir / "seed2.md"
+        seed_path.write_text(
+            "# 第一章 數位出版技術\n\n【導讀】這是第一章的第一段標準內文。\n",
+            encoding="utf-8",
+        )
+        blueprint = compile_blueprint_from_seed(s_dir, seed_path, sample_chapters=1)
+
+        # Test engine_mode="rule_first"
+        final_docx, report, _ = propagate_and_validate_session(
+            session_dir=s_dir,
+            engine_mode="rule_first",
+            custom_blueprint=blueprint,
+            pdf_path=self.sample_pdf,
+        )
+        self.assertTrue(final_docx.exists())
+        self.assertEqual(final_docx.name, "Book_POD_Final.docx")
+        self.assertIsNotNone(report)
+
+        # Test DocxSerializer directly
+        custom_out = s_dir / "test_custom_serializer.docx"
+        rendered_p = DocxSerializer.render_sections_to_docx(
+            sections=sections,
+            output_docx_path=custom_out,
+            base_dir=s_dir,
+        )
+        self.assertTrue(rendered_p.exists())
+        self.assertEqual(rendered_p.name, "test_custom_serializer.docx")
+
 
 if __name__ == "__main__":
     unittest.main()
