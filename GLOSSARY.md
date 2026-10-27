@@ -126,6 +126,10 @@ Decoupled Tkinter-based Windows native File Open / Save As dialog bridge (`src/s
 
 UI paradigm separating Publisher Editor Mode (focus on drag-and-drop, interactive crop sliders, Word template styling, native file dialogs) from Developer Debug Mode (GPU metrics, raw logs, AST outlines, font table inspection).
 
+### Dual-Engine POD Pipeline (POD 雙軌擴散策略)
+
+The third-stage execution architecture in POD Studio providing a parameter-driven choice between high-speed zero-token state machine propagation (`PropagationEngine` with localized VLM fallback) and multimodal few-shot visual infilling (`SecureVLMContinuationEngine`), while converging on a unified AST representation, `DocxSerializer`, and `PodValidator` defensive gatekeeper.
+
 ---
 
 ## 2. Architectural Design Vocabulary

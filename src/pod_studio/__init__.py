@@ -26,6 +26,12 @@ from .pod_service import (
     compile_blueprint_from_seed,
     propagate_and_validate_session,
 )
+from .vlm_continuation_engine import (
+    SecureVLMContinuationEngine,
+    ContinuationResult,
+    VisualExemplarPair,
+)
+from .docx_writer import DocxSerializer
 
 __all__ = [
     "StyleTriggerRule",
@@ -53,4 +59,9 @@ __all__ = [
     "extract_raw_from_markdown",
     "compile_blueprint_from_seed",
     "propagate_and_validate_session",
+    "SecureVLMContinuationEngine",
+    "ContinuationResult",
+    "VisualExemplarPair",
+    "DocxSerializer",
 ]
+
