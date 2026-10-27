@@ -130,6 +130,10 @@ UI paradigm separating Publisher Editor Mode (focus on drag-and-drop, interactiv
 
 The third-stage execution architecture in POD Studio providing a parameter-driven choice between high-speed zero-token state machine propagation (`PropagationEngine` with localized VLM fallback) and multimodal few-shot visual infilling (`SecureVLMContinuationEngine`), while converging on a unified AST representation, `DocxSerializer`, and `PodValidator` defensive gatekeeper.
 
+### DocxSerializer (OpenXML 高精度序列化深模組)
+
+A high-depth encapsulation module (`src/pod_studio/docx_writer.py`) providing a minimalistic single-call interface (`render_sections_to_docx`) that isolates python-docx and OpenXML DOM mutations, Pandoc custom-style block translations (`::: {custom-style="..."}`), image scaling, and table alignment across pipeline channels.
+
 ---
 
 ## 2. Architectural Design Vocabulary
