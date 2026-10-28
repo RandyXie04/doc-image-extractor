@@ -142,5 +142,30 @@
     "role": null,
     "docx_style": "標粗",
     "mapped_by": "user"
+  },
+  "SourceHanSerifCN-Bold (26.5pt)": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZBWKSJW--GB1-0 (20.0pt)": {
+    "role": "H2",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "SourceHanSerifCN-Bold (16.0pt)": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZBAOHTS_ZHUN--GB1-0 (13.0pt)": {
+    "role": "H3",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZBAOHTS_ZHUN--GB1-0 (11.0pt)": {
+    "role": null,
+    "docx_style": "標粗",
+    "mapped_by": "user"
   }
 }
