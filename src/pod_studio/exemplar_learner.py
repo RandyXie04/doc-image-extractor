@@ -96,8 +96,34 @@ class DiffAligner:
         return inferred_rules
 
 
+DEFAULT_BOUNDARY_TAGS: Tuple[str, ...] = (
+    "===HUMAN_EDITED_END===",
+    "<!-- END_OF_SEED -->",
+    "【人工整稿截止】",
+    "【人工修改截止】",
+    "===人工修改截止===",
+)
+
+
 class ExemplarLearner:
     """Extracts typography and semantic transformation blueprints from human golden seeds."""
+
+    BOUNDARY_TAGS: Tuple[str, ...] = DEFAULT_BOUNDARY_TAGS
+
+    @classmethod
+    def strip_boundary_tags(cls, text: str) -> str:
+        """Removes built-in manual boundary tags from text."""
+        cleaned = text
+        for tag in cls.BOUNDARY_TAGS:
+            cleaned = cleaned.replace(tag, "")
+        return cleaned.strip()
+
+    @classmethod
+    def is_pure_boundary_tag(cls, text: str) -> bool:
+        """Returns True if the paragraph text consists solely of a boundary marker tag."""
+        stripped = text.strip()
+        return bool(stripped) and stripped in cls.BOUNDARY_TAGS
+
 
     @classmethod
     def _extract_badges_from_text(cls, text: str) -> List[str]:
@@ -141,6 +167,8 @@ class ExemplarLearner:
         raw_docx_path: str | Path,
         golden_docx_path: str | Path,
         sample_chapters: int = 3,
+        manual_boundary_anchor: Optional[str] = None,
+        manual_boundary_idx: Optional[int] = None,
     ) -> BookBlueprint:
         """Learns blueprint dynamically from raw and golden DOCX files."""
         raw_doc = docx.Document(str(raw_docx_path)) if raw_docx_path and Path(raw_docx_path).exists() else None
@@ -153,9 +181,12 @@ class ExemplarLearner:
 
         for p in gold_doc.paragraphs:
             txt = p.text.strip()
-            if not txt:
+            if not txt or cls.is_pure_boundary_tag(txt):
                 continue
-            all_text_chunks.append(txt)
+            cleaned_txt = cls.strip_boundary_tags(txt)
+            if not cleaned_txt:
+                continue
+            all_text_chunks.append(cleaned_txt)
             s_name = p.style.name if p.style else "Normal"
             used_styles.add(s_name)
 
@@ -164,7 +195,7 @@ class ExemplarLearner:
                 level_num = level_match.group(0) if level_match else "1"
                 heading_hierarchy[f"H{level_num}"] = s_name
 
-            if re.search(r'[①②③④⑤⑥⑦⑧⑨⑩]', txt):
+            if re.search(r'[①②③④⑤⑥⑦⑧⑨⑩]', cleaned_txt):
                 circled_number_count += 1
 
         full_golden_text = "\n".join(all_text_chunks)
@@ -179,6 +210,7 @@ class ExemplarLearner:
         # Detect human-modified paragraphs and exemplar boundary
         custom_style_indices: List[int] = []
         modified_indices: List[int] = []
+        builtin_tag_matches: List[Tuple[int, str]] = []
         raw_paras_texts = [p.text.strip() for p in raw_doc.paragraphs] if raw_doc else []
 
         for i, p in enumerate(gold_doc.paragraphs):
@@ -186,6 +218,13 @@ class ExemplarLearner:
             txt = p.text.strip()
             if not txt:
                 continue
+            for tag in cls.BOUNDARY_TAGS:
+                if tag in txt:
+                    builtin_tag_matches.append((i, tag))
+
+            if cls.is_pure_boundary_tag(txt):
+                continue
+
             is_non_normal = s_name not in ("Normal", "Body Text", "內文", "標準")
             is_true_custom = s_name.strip().lower() not in GENERIC_STYLES
             is_diff = False
@@ -199,19 +238,63 @@ class ExemplarLearner:
             if is_non_normal or is_diff:
                 modified_indices.append(i)
 
-        # Prioritize boundary of true custom domain-specific styles (e.g. 藥方特點, 楷體2)
-        if custom_style_indices:
-            last_modified_idx = max(custom_style_indices)
+        # Resolve human-edited boundary with priority:
+        # 1. Explicit manual_boundary_idx
+        # 2. Explicit manual_boundary_anchor text match
+        # 3. In-document built-in boundary tag (e.g. 【人工整稿截止】, ===HUMAN_EDITED_END===)
+        # 4. Automatic heuristic (custom styles / diff)
+        boundary_source = "auto_heuristic"
+        resolved_anchor = (manual_boundary_anchor or "").strip()
+
+        if manual_boundary_idx is not None and int(manual_boundary_idx) >= 0:
+            last_modified_idx = min(int(manual_boundary_idx), max(0, len(gold_doc.paragraphs) - 1))
+            boundary_source = "manual_idx"
+        elif resolved_anchor:
+            anchor_matches = [
+                i for i, p in enumerate(gold_doc.paragraphs)
+                if resolved_anchor in p.text
+            ]
+            if anchor_matches:
+                last_modified_idx = anchor_matches[-1]
+                boundary_source = "manual_anchor"
+            elif builtin_tag_matches:
+                last_modified_idx, resolved_anchor = builtin_tag_matches[-1]
+                boundary_source = "builtin_tag"
+            elif custom_style_indices:
+                last_modified_idx = max(custom_style_indices)
+            else:
+                last_modified_idx = max(modified_indices) if modified_indices else 0
+        elif builtin_tag_matches:
+            last_modified_idx, resolved_anchor = builtin_tag_matches[-1]
+            boundary_source = "builtin_tag"
         else:
-            last_modified_idx = max(modified_indices) if modified_indices else 0
+            if custom_style_indices:
+                last_modified_idx = max(custom_style_indices)
+            else:
+                last_modified_idx = max(modified_indices) if modified_indices else 0
+
+        # Extract context snippet at the boundary for LLM confirmation
+        boundary_context_text = ""
+        if gold_doc.paragraphs and 0 <= last_modified_idx < len(gold_doc.paragraphs):
+            for back_i in range(last_modified_idx, -1, -1):
+                cand_txt = cls.strip_boundary_tags(gold_doc.paragraphs[back_i].text)
+                if cand_txt:
+                    boundary_context_text = cand_txt[:120]
+                    break
 
         # Collect exemplar samples grouped by style
         style_samples: Dict[str, List[str]] = {}
-        target_indices = modified_indices if modified_indices else list(range(min(200, len(gold_doc.paragraphs))))
+        if boundary_source in ("manual_idx", "manual_anchor", "builtin_tag"):
+            target_indices = [
+                i for i in range(min(last_modified_idx + 1, len(gold_doc.paragraphs)))
+            ]
+        else:
+            target_indices = modified_indices if modified_indices else list(range(min(200, len(gold_doc.paragraphs))))
+
         for i in target_indices:
             p = gold_doc.paragraphs[i]
             s_name = p.style.name if p.style else "Normal"
-            txt = p.text.strip()
+            txt = cls.strip_boundary_tags(p.text)
             if txt and s_name not in ("Normal", "Body Text", "內文", "標準"):
                 style_samples.setdefault(s_name, []).append(txt)
 
@@ -420,6 +503,10 @@ class ExemplarLearner:
                 "seed_last_modified_idx": last_modified_idx,
                 "seed_modified_count": len(modified_indices),
                 "seed_total_paragraphs": len(gold_doc.paragraphs),
+                "boundary_source": boundary_source,
+                "manual_boundary_anchor": resolved_anchor,
+                "manual_boundary_idx": manual_boundary_idx,
+                "boundary_context_text": boundary_context_text,
                 "style_definitions": style_definitions,
                 "paragraph_few_shots": paragraph_few_shots,
             }
@@ -432,13 +519,43 @@ class ExemplarLearner:
         raw_md_path: str | Path,
         golden_md_path: str | Path,
         sample_chapters: int = 3,
+        manual_boundary_anchor: Optional[str] = None,
+        manual_boundary_idx: Optional[int] = None,
     ) -> BookBlueprint:
         """Learns blueprint dynamically from raw and golden Markdown files."""
         raw_text = Path(raw_md_path).read_text(encoding="utf-8")
         gold_text = Path(golden_md_path).read_text(encoding="utf-8")
 
+        boundary_source = "auto_heuristic"
+        resolved_anchor = (manual_boundary_anchor or "").strip()
+        boundary_context_text = ""
+
+        if resolved_anchor and resolved_anchor in gold_text:
+            boundary_source = "manual_anchor"
+            idx_pos = gold_text.rfind(resolved_anchor)
+            gold_text = gold_text[:idx_pos + len(resolved_anchor)]
+            boundary_context_text = cls.strip_boundary_tags(gold_text[-120:])
+        else:
+            for tag in cls.BOUNDARY_TAGS:
+                if tag in gold_text:
+                    boundary_source = "builtin_tag"
+                    resolved_anchor = tag
+                    idx_pos = gold_text.rfind(tag)
+                    gold_text = gold_text[:idx_pos]
+                    boundary_context_text = cls.strip_boundary_tags(gold_text[-120:])
+                    break
+
+        gold_text = cls.strip_boundary_tags(gold_text)
+
         raw_units = SectionAST.from_markdown(raw_text, split_level=2)
         gold_units = SectionAST.from_markdown(gold_text, split_level=2)
+
+        if manual_boundary_idx is not None and int(manual_boundary_idx) >= 0:
+            boundary_source = "manual_idx"
+            cutoff = min(int(manual_boundary_idx) + 1, len(gold_units))
+            gold_units = gold_units[:max(1, cutoff)]
+            if gold_units:
+                boundary_context_text = cls.strip_boundary_tags(gold_units[-1].raw_content[-120:])
 
         raw_sections = {s.title: s.raw_content for s in raw_units}
         h2_gold_sections = {s.title: s.raw_content for s in gold_units if s.level >= 2}
@@ -522,17 +639,29 @@ class ExemplarLearner:
             style_rules=deduped_rules,
             few_shot_examples=few_shots,
             validation_config=val_config,
+            metadata={
+                "source_golden": str(golden_md_path),
+                "gold_section_count": len(gold_sections),
+                "seed_last_modified_idx": manual_boundary_idx if manual_boundary_idx is not None else len(gold_sections),
+                "boundary_source": boundary_source,
+                "manual_boundary_anchor": resolved_anchor,
+                "manual_boundary_idx": manual_boundary_idx,
+                "boundary_context_text": boundary_context_text,
+            },
         )
 
-    @staticmethod
-    def _split_docx_by_h2(doc: docx.Document) -> Dict[str, str]:
+    @classmethod
+    def _split_docx_by_h2(cls, doc: docx.Document) -> Dict[str, str]:
         """Parses a docx document into sections keyed by H2 heading text."""
         sections: Dict[str, List[str]] = {}
         curr_title = "__PREAMBLE__"
         sections[curr_title] = []
 
         for p in doc.paragraphs:
-            txt = p.text.strip()
+            raw_txt = p.text.strip()
+            if not raw_txt or cls.is_pure_boundary_tag(raw_txt):
+                continue
+            txt = cls.strip_boundary_tags(raw_txt)
             if not txt:
                 continue
             s_name = p.style.name if p.style else "Normal"

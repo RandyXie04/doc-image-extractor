@@ -404,19 +404,41 @@
         <!-- 階段一：範本特徵學習與藍圖合成 -->
         <div class="card-stage" id="stage1Section">
             <div class="stage-title">
-                <h2>階段一：上傳人工預修範本 (.docx)</h2>
+                <h2>階段一：上傳人工預修範本 (.docx) 與原始 PDF (.pdf)</h2>
                 <span class="session-badge" id="sessionBadgeDisplay">未建立 Session</span>
             </div>
             <p class="form-hint" style="margin-bottom: 1rem;">
-                直接上傳由【全自動整稿】產出、並已手動排版前 5%~10% 章節樣式的 Word 檔。系統將自動建立段落結構樹、鎖定人工預修邊界並歸納出版藍圖。
+                同時上傳由【全自動整稿】產出並已手動排版前 5%~10% 章節樣式的 Word 檔，以及對應的原始 PDF 書稿。系統將自動建立段落結構樹、鎖定原書三線表幾何座標、歸納出版藍圖。
             </p>
-            <div class="form-row">
-                <label>選擇人工預修範本檔案 (.docx 或 .md)</label>
-                <div class="file-upload-box" onclick="document.getElementById('seedFileInput').click()">
-                    <span id="seedFileLabel">點擊選擇人工預修檔 (.docx)</span>
-                    <input type="file" id="seedFileInput" accept=".docx,.md" style="display:none">
+            <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                <div>
+                    <label>① 選擇人工預修範本檔案 (.docx 或 .md)</label>
+                    <div class="file-upload-box" onclick="document.getElementById('seedFileInput').click()">
+                        <span id="seedFileLabel">點擊選擇人工預修檔 (.docx)</span>
+                        <input type="file" id="seedFileInput" accept=".docx,.md" style="display:none">
+                    </div>
+                </div>
+                <div>
+                    <label>② 選擇對應之原始 PDF 檔案 (.pdf)</label>
+                    <div class="file-upload-box" onclick="document.getElementById('sourcePdfInput').click()">
+                        <span id="sourcePdfLabel">點擊選擇原始書稿 (.pdf，提供三線表與座標修補)</span>
+                        <input type="file" id="sourcePdfInput" accept=".pdf" style="display:none">
+                    </div>
                 </div>
             </div>
+            <div class="form-row" style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px;">
+                <div>
+                    <label for="manualBoundaryAnchorInput">人工修改截止定位錨點 (選填，供 LLM 精準確認)</label>
+                    <input type="text" id="manualBoundaryAnchorInput" class="text-input" placeholder="輸入最後人工修改段落的關鍵字，或在 Word 內插入【人工整稿截止】">
+                </div>
+                <div>
+                    <label for="manualBoundaryIdxInput">或指定截止段落/章節序號 (選填)</label>
+                    <input type="number" id="manualBoundaryIdxInput" class="text-input" placeholder="例如: 45" min="0">
+                </div>
+            </div>
+            <span class="form-hint" style="display: block; margin-top: -0.5rem; margin-bottom: 1rem;">
+                💡 填寫定位文字或在 Word 內打入 <code>【人工整稿截止】</code> / <code>===HUMAN_EDITED_END===</code>，系統與 LLM 將 100% 鎖定該界線（標籤於完稿時自動清除）。
+            </span>
             <button class="btn-action" id="compileBlueprintBtn" disabled>
                 學習範本特徵並合成藍圖
             </button>
@@ -488,24 +510,6 @@
 
             <div id="stage2Result" class="results-box" style="display:none;"></div>
         </div>
-
-        <!-- 進階可選抽屜：從 PDF 重新提取底稿 -->
-        <details class="legacy-drawer">
-            <summary>進階選項：若無 Word 初稿，從原始 PDF/MD 重新提取底稿</summary>
-            <div style="margin-top: 1rem; padding: 1rem; background: var(--surface); border: 1px solid var(--border); border-radius: 8px;">
-                <div class="form-row">
-                    <label>上傳原稿檔案 (.pdf 或 .md)</label>
-                    <div class="file-upload-box" onclick="document.getElementById('rawFileInput').click()">
-                        <span id="rawFileLabel">點擊選擇原稿檔案</span>
-                        <input type="file" id="rawFileInput" accept=".pdf,.md,.txt" style="display:none">
-                    </div>
-                </div>
-                <button class="btn-action btn-secondary" id="extractRawBtn" disabled>
-                    提取底稿與幾何座標
-                </button>
-                <div id="legacyExtractResult" class="results-box" style="display:none;"></div>
-            </div>
-        </details>
     </div>
 
 
@@ -515,6 +519,10 @@
 
         const seedFileInput = document.getElementById("seedFileInput");
         const seedFileLabel = document.getElementById("seedFileLabel");
+        const sourcePdfInput = document.getElementById("sourcePdfInput");
+        const sourcePdfLabel = document.getElementById("sourcePdfLabel");
+        const manualBoundaryAnchorInput = document.getElementById("manualBoundaryAnchorInput");
+        const manualBoundaryIdxInput = document.getElementById("manualBoundaryIdxInput");
         const compileBlueprintBtn = document.getElementById("compileBlueprintBtn");
         const stage1Result = document.getElementById("stage1Result");
         const sessionBadgeDisplay = document.getElementById("sessionBadgeDisplay");
@@ -526,11 +534,6 @@
         const templateFileLabel = document.getElementById("templateFileLabel");
         const propagateBtn = document.getElementById("propagateBtn");
         const stage2Result = document.getElementById("stage2Result");
-
-        const rawFileInput = document.getElementById("rawFileInput");
-        const rawFileLabel = document.getElementById("rawFileLabel");
-        const extractRawBtn = document.getElementById("extractRawBtn");
-        const legacyExtractResult = document.getElementById("legacyExtractResult");
 
         vlmModelSelect.addEventListener("change", () => {
             if (vlmModelSelect.value === "custom") {
@@ -548,6 +551,14 @@
             }
         });
 
+        if (sourcePdfInput) {
+            sourcePdfInput.addEventListener("change", () => {
+                if (sourcePdfInput.files && sourcePdfInput.files[0]) {
+                    sourcePdfLabel.textContent = sourcePdfInput.files[0].name;
+                }
+            });
+        }
+
         templateFileInput.addEventListener("change", () => {
             if (templateFileInput.files && templateFileInput.files[0]) {
                 templateFileLabel.textContent = templateFileInput.files[0].name;
@@ -564,8 +575,17 @@
 
             const formData = new FormData();
             formData.append("seed_file", file);
+            if (sourcePdfInput && sourcePdfInput.files && sourcePdfInput.files[0]) {
+                formData.append("pdf_file", sourcePdfInput.files[0]);
+            }
             if (currentSessionId) {
                 formData.append("session_id", currentSessionId);
+            }
+            if (manualBoundaryAnchorInput && manualBoundaryAnchorInput.value.trim()) {
+                formData.append("manual_boundary_anchor", manualBoundaryAnchorInput.value.trim());
+            }
+            if (manualBoundaryIdxInput && manualBoundaryIdxInput.value.trim()) {
+                formData.append("manual_boundary_idx", manualBoundaryIdxInput.value.trim());
             }
 
             try {
@@ -581,14 +601,29 @@
 
                 const badges = (data.mandatory_badges || []).map(b => `<span class="badge-pill">【${b}】</span>`).join("") || "無";
                 const styles = (data.detected_styles || []).map(s => `<span class="badge-pill">${s}</span>`).join("") || "無自訂樣式";
+                const sourceLabels = {
+                    manual_anchor: "🎯 人工文字錨點精準鎖定",
+                    manual_idx: "🎯 人工指定序號鎖定",
+                    builtin_tag: "🏷️ 文檔內置截止標記鎖定",
+                    auto_heuristic: "⚡ 系統自動樣式推導",
+                };
+                const sourceBadge = sourceLabels[data.boundary_source] || "⚡ 系統自動樣式推導";
                 const boundaryText = data.boundary_idx > 0
-                    ? `第 ${data.boundary_idx} 段（全書 ${data.total_paragraphs} 段）`
-                    : "全量整稿模式";
+                    ? `第 ${data.boundary_idx} 段（全書 ${data.total_paragraphs} 段）— <span class="badge-pill">${sourceBadge}</span>`
+                    : `全量整稿模式 — <span class="badge-pill">${sourceBadge}</span>`;
+                const ctxHtml = data.boundary_context_text
+                    ? `<div style="margin-bottom: 6px; font-size: 0.85rem; color: var(--text-muted);"><strong>LLM 確認截止段落預覽：</strong><code>${data.boundary_context_text}</code></div>`
+                    : "";
+                const pdfHtml = data.has_source_pdf
+                    ? `<div style="margin-bottom: 6px;"><strong>原書 PDF 幾何綁定：</strong>已綁定原 PDF，鎖定 <span class="badge-pill">${data.detected_tables_count || 0} 處表格結構</span></div>`
+                    : "";
 
                 stage1Result.style.display = "block";
                 stage1Result.innerHTML = `
                     <div style="color: var(--success); font-weight: 600; margin-bottom: 8px;">排版藍圖編譯完成，成功歸納 ${data.inferred_rules_count} 條樣式轉換規則。</div>
                     <div style="margin-bottom: 6px;"><strong>人工預修邊界：</strong>${boundaryText}</div>
+                    ${ctxHtml}
+                    ${pdfHtml}
                     <div style="margin-bottom: 6px;"><strong>偵測必備徽標：</strong>${badges}</div>
                     <div style="margin-bottom: 8px;"><strong>自訂樣式定義：</strong>${styles}</div>
                     <a href="/api/pod/download/${currentSessionId}/book_blueprint.json" target="_blank" style="color: var(--primary); font-weight: 500;">下載 book_blueprint.json 預覽</a>
@@ -673,6 +708,13 @@
             formData.append("engine_mode", engineMode);
             formData.append("model", selectedModel);
 
+            if (manualBoundaryAnchorInput && manualBoundaryAnchorInput.value.trim()) {
+                formData.append("manual_boundary_anchor", manualBoundaryAnchorInput.value.trim());
+            }
+            if (manualBoundaryIdxInput && manualBoundaryIdxInput.value.trim()) {
+                formData.append("manual_boundary_idx", manualBoundaryIdxInput.value.trim());
+            }
+
             if (engineMode === "vlm_continuation" && vlmMaxSections && vlmMaxSections.value.trim()) {
                 formData.append("max_continuation_sections", vlmMaxSections.value.trim());
             }
@@ -740,55 +782,6 @@
                 propagateBtn.textContent = engineMode === "vlm_continuation"
                     ? "啟動多模態接續與硬性驗收"
                     : "執行全書智慧擴散與驗收";
-            }
-        });
-
-        // 進階可選：從 PDF/MD 重新提取底稿
-        rawFileInput.addEventListener("change", () => {
-            if (rawFileInput.files && rawFileInput.files[0]) {
-                rawFileLabel.textContent = rawFileInput.files[0].name;
-                extractRawBtn.disabled = false;
-            }
-        });
-
-        extractRawBtn.addEventListener("click", async () => {
-            const file = rawFileInput.files[0];
-            if (!file) return;
-
-            extractRawBtn.disabled = true;
-            extractRawBtn.textContent = "正在解析原稿與座標...";
-
-            const formData = new FormData();
-            formData.append("file", file);
-            formData.append("split_level", "2");
-
-            try {
-                const res = await fetch("/api/pod/1_extract_raw", {
-                    method: "POST",
-                    body: formData,
-                });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.detail || "生成失敗");
-
-                currentSessionId = data.session_id;
-                sessionBadgeDisplay.textContent = `Session: ${currentSessionId}`;
-
-                legacyExtractResult.style.display = "block";
-                legacyExtractResult.innerHTML = `
-                    <div style="color: var(--success); font-weight: 600; margin-bottom: 6px;">底稿生成成功，共解析 ${data.total_sections} 個章節單元。</div>
-                    <div>產出物：
-                        <a href="/api/pod/download/${currentSessionId}/${data.raw_docx_name}" target="_blank" style="color: var(--primary); font-weight: 500; margin-right: 12px;">下載 ${data.raw_docx_name}</a>
-                        <a href="/api/pod/download/${currentSessionId}/${data.ast_json_name}" target="_blank" style="color: var(--primary); font-weight: 500;">下載 ${data.ast_json_name}</a>
-                    </div>
-                    <div style="margin-top: 6px; font-size: 0.8rem; color: var(--text-muted);">
-                        請下載上述 Word 檔微調前 5% 樣式後，於上方【第一步】上傳進行藍圖學習。
-                    </div>
-                `;
-            } catch (err) {
-                alert("底稿提取失敗: " + err.message);
-            } finally {
-                extractRawBtn.disabled = false;
-                extractRawBtn.textContent = "提取底稿與幾何座標";
             }
         });
     </script>

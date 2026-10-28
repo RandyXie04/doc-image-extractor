@@ -217,3 +217,42 @@ ADR-006（OCR 雙軌混合解析與圖文環繞段落合併架構）：
 - `tests/test_symbol_mapper_and_ocr_fixes.py`：新增 `test_merge_wrapping_paragraphs` 與 `test_slice_box_into_lines` 單元測試。
 - 驗收測試：全套 64 項測試全數通過（PASS），28 頁所有 10 行內文與「（一）组方思路」標題全數完整還原至 Markdown 與 Word。
 
+
+---
+
+## Bug ID
+BUG-007
+
+## Bug Description
+《強直性脊柱炎》（`0930 强直性脊柱炎-内页未转曲`）等出版社書稿在「自動整稿通道」與「POD 智慧整稿通道」出現五項排版元素遺失與誤判：
+1. **三線表無法識別（Table 4 退化為純文字）**：P.160「表4　两组强直性脊柱炎患者治疗前后实验室指标比较」（及 P.156 表1、P.159 表2~3 等全書學術三線表）僅含頂線、表頭底線與表格底線（無垂直分隔線），`page.find_tables()` 回傳 0 個表格，導致表格被當作普通段落處理，且跨列垂直置中的「刺络埋线组 43」在按 `y0` 排序後錯位穿插於「治疗后」與「t」列之間。
+2. **表格表頭遭頁眉規則誤殺**：P.160 表 4 表頭 `组别 | 例数 | 时间 | ESR（mm / h） | CRP（mg / L）` 因前端已先裁切頂部 10% 頁眉，使該表頭區塊落入裁切後頁面頂端 `11%` 內，且含單位斜線 `/`，觸發 `book_layout_extractor.py` 的 `is_page_header()` 黑名單而被整行刪除。
+3. **章節首字下沉裝飾框誤判為 1x2 假表格**：全書 35 處章節開頭首字裝飾框（如 `[['', ''], ['', '第\n强']]`）被 `page.find_tables()` 誤判為 `1x2` 表格。
+4. **純 OCR 通道表格/複合向量圖蒸發與內文圓圈編號誤判為腳注**：`process_ocr.py` 對 `label == "table"` 未實作表格結構重建，且將含文字之 `picture/figure` 強制降級為 `text`；同時內文 `①`~`⑳`、`(1)`、`1.` 在未關閉腳注時易被抽離為腳注。
+5. **行尾黏連數字節標題與 POD 通道缺乏原 PDF 幾何錨定**：如 P.160 `...（疗效对比时剔除）。 4 　讨论` 未切分為獨立標題；POD 階段一缺乏原始 PDF 上傳格，導致階段二無法取得原書三線表幾何座標將後段未精修之純文字表 4 原位升級為 Word 表格。
+
+## Status
+CLOSED
+
+## Root Cause
+1. **單一物理形式依賴（`page.find_tables()` 僅認封閉格線）**：PyMuPDF `find_tables()` 依賴垂直與水平線交點構成封閉儲存格，對無垂直線之標準出版三線表完全失效，卻對窄小首字裝飾框過度敏感。
+2. **雙重頁眉過濾衝突**：使用者已於前端四向視覺裁切滑桿（`set_cropbox`）人工剔除頁眉頁尾，但後端 `_parse_pdf_layout_flow()` 仍執行硬編碼 `is_page_header()`（`bbox[1] < page_h * 0.11 and '/' in text`），造成二次誤殺。
+3. **跨列置中儲存格缺乏 2D 座標投影歸位**：三線表失去表格容器後退化為 1D 文字流，跨 4 列垂直置中的群組欄 `y0` 高於第 1、2 列，排序後順序錯亂。
+4. **管線預設開啟特殊標記腳注偵測**：出版社來稿不使用特殊標記注腳參照，但入口預設 `no_footnote=False` 觸發頁底圓圈與數字攔截。
+5. **POD 階段一僅接收單一 `.docx`**：未在階段一同時綁定原始 `.pdf` 提取包含三線表結構之 `Book_raw_ast.json`，使階段二 `propagate_and_validate_session()` 缺乏原位升級表格之幾何依據。
+
+## Decision Gate
+ADR-007（詳見 `docs/DECISIONS.md`）：
+1. 建立純函數強型別算子 `src/extraction/table_reconstructor.py`（採用 `@dataclass(frozen=True)` 實作三線表水平線與分段點偵測、2D X/Y 投影分欄、跨列置中歸位及 `1x2` 首字假表格過濾）。
+2. 停用後端預設 `is_page_header()` / `is_page_footer()` 文字刪除（`strip_headers_heuristic: bool = False`），頁眉頁尾 100% 由前端視覺裁切決定。
+3. 業務管線入口預設無腳注模式（`no_footnote=True`），保留底層函式預設值以相容既有單元測試。
+4. 擴充整數空白節標題識別與句末黏連標題自動切段。
+5. POD 階段一新增原始 PDF 上傳格，階段二實作後段壓平表格之原位 Word `Table Grid` 升級。
+
+## Resolution
+- `src/extraction/table_reconstructor.py`：新增 `TextSpan2D`、`TableRegion`、`ReconstructedTable` 不可變契約，實作 `is_valid_pymupdf_table`、`detect_three_line_table_regions`、`extract_char_spans_from_page`（基於 `rawdict` 字元級座標拆分黏連跨欄文字）與 `reconstruct_table_from_2d_spans`（支援雙層複合表頭與跨列垂直置中歸位）。
+- `src/scripts/book_layout_extractor.py`：預設 `strip_headers_heuristic: bool = False`；接入三線表重建與假表格過濾；新增 `_H2_INT_SPACE_RE`、`_STANDALONE_HEADING_LINE_RE`、`_TRAILING_HEADING_SPLIT_RE` 與 `_split_merged_heading_blocks`；排除表/圖題誤判為標題。
+- `src/scripts/process_ocr.py` 與 `src/scripts/pdf_image_extractor.py`：純 OCR 通道接入 `extract_reconstructed_tables_from_page`，限制 `picture/figure` 降級條件（僅限單行短橫幅標題），並新增 300 DPI `get_pixmap` 向量圖裁切保底。
+- `src/scripts/pdf_engine_dispatcher.py`、`src/web/static/ocr_pipeline.html`、`src/web/app.py`：入口預設 `no_footnote=True`（無腳注模式）。
+- `src/web/static/pod_studio.html`、`src/web/app.py`、`src/pod_studio/pod_service.py`：階段一新增 `#sourcePdfInput` 原 PDF 上傳格與 `PodCompileBlueprintResponse` 契約；階段二新增 `_upgrade_flattened_tables_and_split_headings_in_docx` 將 `last_modified_idx` 之後的壓平純文字表格原位替換為 Word `Table Grid`（`w:tbl`）並切分句末黏連標題。
+- `tests/test_table_reconstructor_and_pod_upgrade.py`：新增 5 項目標測試全數通過（5/5 PASSED），關聯回歸測試套件 65 項全數通過（65 PASSED, 0 FAILED）。

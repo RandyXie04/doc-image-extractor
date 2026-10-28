@@ -135,7 +135,7 @@ def extract_raw_from_pdf(
         return sections, ast_path, raw_docx_path
 
     # Legacy loop (ensures fitz.Document is closed properly)
-    doc = fitz.open(str(pdf_path))
+    doc: Any = fitz.open(str(pdf_path))
     try:
         sections: List[SectionUnit] = []
         current_sec = SectionUnit(
@@ -296,6 +296,8 @@ def compile_blueprint_from_seed(
     session_dir: str | Path,
     seed_file_path: str | Path,
     sample_chapters: int = 3,
+    manual_boundary_anchor: Optional[str] = None,
+    manual_boundary_idx: Optional[int] = None,
 ) -> BookBlueprint:
     """
     DiffAligner step: compares Book_raw_ast.json (or raw.docx) with seed file.
@@ -320,12 +322,16 @@ def compile_blueprint_from_seed(
             raw_docx_path=raw_docx_path,
             golden_docx_path=seed_p,
             sample_chapters=sample_chapters,
+            manual_boundary_anchor=manual_boundary_anchor,
+            manual_boundary_idx=manual_boundary_idx,
         )
     elif seed_p.suffix.lower() == ".docx":
         blueprint = ExemplarLearner.learn_from_docx_pair(
             raw_docx_path="",
             golden_docx_path=seed_p,
             sample_chapters=sample_chapters,
+            manual_boundary_anchor=manual_boundary_anchor,
+            manual_boundary_idx=manual_boundary_idx,
         )
     else:
         # Load raw from AST
@@ -345,6 +351,8 @@ def compile_blueprint_from_seed(
             raw_md_path=raw_md_path,
             golden_md_path=gold_md_path,
             sample_chapters=sample_chapters,
+            manual_boundary_anchor=manual_boundary_anchor,
+            manual_boundary_idx=manual_boundary_idx,
         )
 
     # Record seed docx path in blueprint metadata
@@ -357,6 +365,259 @@ def compile_blueprint_from_seed(
     return blueprint
 
 
+_DOCX_TRAILING_HEADING_RE = re.compile(
+    r'^(.+[。！？；）\)”’])\s+'
+    r'(\d+(?:\.\d+){0,2}[\s\u3000]+[\u4e00-\u9fff]{2,20}|'
+    r'[一二三四五六七八九十百]+、[\u4e00-\u9fff]{2,20}|'
+    r'[（\(][一二三四五六七八九十]+[）\)][\s\u3000]*[\u4e00-\u9fff]{2,20})\s*$',
+    re.DOTALL,
+)
+
+_DOCX_STANDALONE_HEADING_RE = re.compile(
+    r'^(?:\d+(?:\.\d+){0,2}[\s\u3000]+[\u4e00-\u9fff]{2,20}|'
+    r'[一二三四五六七八九十百]+、[\u4e00-\u9fff]{2,20}|'
+    r'[（\(][一二三四五六七八九十]+[）\)][\s\u3000]*[\u4e00-\u9fff]{2,20})$'
+)
+
+
+def _is_markdown_pipe_table(text: str) -> bool:
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    return (
+        len(lines) >= 2
+        and lines[0].startswith("|")
+        and lines[0].endswith("|")
+        and bool(re.match(r'^\|[\s\-:|]+\|$', lines[1]))
+    )
+
+
+def _parse_markdown_pipe_table(text: str) -> Tuple[List[str], List[List[str]]]:
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    rows_data: List[List[str]] = []
+    for line in lines:
+        if re.match(r'^\|[\s\-:|]+\|$', line):
+            continue
+        if line.startswith("|") and line.endswith("|"):
+            cells = [c.strip() for c in line[1:-1].split("|")]
+            rows_data.append(cells)
+    if not rows_data:
+        return [], []
+    return rows_data[0], rows_data[1:]
+
+
+def _upgrade_flattened_tables_and_split_headings_in_docx(
+    seed_doc: Any,
+    ast_sections: List[SectionUnit],
+    last_modified_idx: int,
+    blueprint: BookBlueprint,
+    resolved_pdf: Optional[Path] = None,
+) -> Tuple[int, int]:
+    """
+    Upgrades flattened plain-text tables after `last_modified_idx` in `seed_doc` into real
+    Word `Table Grid` (`w:tbl`) objects using reconstructed tables from `Book_raw_ast.json`
+    (or `resolved_pdf`), and splits trailing merged headings (e.g. `...。 4 讨论`) into
+    standalone Heading paragraphs.
+
+    Returns (upgraded_tables_count, split_headings_count).
+    """
+    table_source_sections = ast_sections
+    has_ast_tables = any(
+        p.font_name == "table" or _is_markdown_pipe_table(p.raw_text.strip())
+        for sec in ast_sections
+        for p in sec.paragraphs
+    )
+    if not has_ast_tables and resolved_pdf and resolved_pdf.exists() and extract_book_vector_ast is not None:
+        try:
+            pdf_book_ast = extract_book_vector_ast(resolved_pdf, enable_footnotes=False)
+            if pdf_book_ast and pdf_book_ast.sections:
+                table_source_sections = pdf_book_ast.sections
+        except Exception:
+            pass
+
+    flat_ast_paras_with_sec: List[Tuple[SectionUnit, ParagraphUnit]] = [
+        (sec, p) for sec in table_source_sections for p in sec.paragraphs
+    ]
+    reconstructed_tables: List[Dict[str, Any]] = []
+    for idx, (sec_obj, p_ast) in enumerate(flat_ast_paras_with_sec):
+        raw_t = p_ast.raw_text.strip()
+        if p_ast.font_name == "table" or _is_markdown_pipe_table(raw_t):
+            headers, rows = _parse_markdown_pipe_table(raw_t)
+            if not headers:
+                continue
+            table_id = ""
+            caption_text = ""
+            for back_k in range(idx - 1, max(-1, idx - 4), -1):
+                cand_txt = flat_ast_paras_with_sec[back_k][1].raw_text.strip()
+                m_cap = re.match(r'^表\s*(\d+)', cand_txt)
+                if m_cap and not re.match(r'^表\s*\d+\s*(?:示|显示|结果|表明|可见)', cand_txt):
+                    table_id = f"表{m_cap.group(1)}"
+                    caption_text = cand_txt
+                    break
+            if not table_id and sec_obj.title:
+                m_sec_cap = re.match(r'^表\s*(\d+)', sec_obj.title.strip())
+                if m_sec_cap:
+                    table_id = f"表{m_sec_cap.group(1)}"
+                    caption_text = sec_obj.title.strip()
+            cell_corpus = "".join(
+                re.sub(r'\s+', '', c)
+                for c in (headers + [c for r in rows for c in r])
+            )
+            reconstructed_tables.append({
+                "table_id": table_id,
+                "caption_text": caption_text,
+                "headers": headers,
+                "rows": rows,
+                "cell_corpus": cell_corpus,
+                "used": False,
+            })
+
+    upgraded_tables_count = 0
+    if reconstructed_tables:
+        paras_list = list(seed_doc.paragraphs)
+        i = max(0, last_modified_idx + 1)
+        while i < len(paras_list):
+            cap_p = paras_list[i]
+            cap_txt = ExemplarLearner.strip_boundary_tags(cap_p.text).strip()
+            m_cap = re.match(r'^表\s*(\d+)', cap_txt)
+            if not m_cap or re.match(r'^表\s*\d+\s*(?:示|显示|结果|表明|可见)', cap_txt):
+                i += 1
+                continue
+
+            cand_table_id = f"表{m_cap.group(1)}"
+            matched_entry = None
+            for entry in reconstructed_tables:
+                if not entry["used"] and entry["table_id"] == cand_table_id:
+                    matched_entry = entry
+                    break
+
+            if matched_entry is None:
+                i += 1
+                continue
+
+            # Skip if already followed by a real Word table (w:tbl)
+            next_el = cap_p._p.getnext()
+            if next_el is not None and next_el.tag.endswith("}tbl"):
+                matched_entry["used"] = True
+                i += 1
+                continue
+
+            # Collect contiguous flattened table remnant paragraphs following cap_p
+            corpus = matched_entry["cell_corpus"]
+            remnants_to_remove = []
+            j = i + 1
+            while j < len(paras_list):
+                rem_p = paras_list[j]
+                rem_txt = ExemplarLearner.strip_boundary_tags(rem_p.text).strip()
+                if not rem_txt:
+                    j += 1
+                    continue
+                if (
+                    re.match(r'^注[：:]', rem_txt)
+                    or re.match(r'^(?:表\s*\d+\s*(?:示|显示|结果|表明|可见)|由表\s*\d+|从表\s*\d+|见表\s*\d+)', rem_txt)
+                    or re.match(r'^表\s*\d+[\s\u3000]', rem_txt)
+                    or rem_txt.endswith("。")
+                    or rem_txt.endswith("；")
+                    or ExemplarLearner.is_pure_boundary_tag(rem_p.text)
+                    or _DOCX_STANDALONE_HEADING_RE.match(rem_txt)
+                ):
+                    break
+
+                tokens = [re.sub(r'\s+', '', t) for t in re.split(r'[\s\u3000|]+', rem_txt) if t.strip()]
+                if not tokens:
+                    break
+                matched_tokens = sum(1 for t in tokens if t in corpus)
+                compact_rem = re.sub(r'[\s\u3000|]+', '', rem_txt)
+                matched_chars = sum(1 for ch in compact_rem if ch in corpus)
+                token_ratio = matched_tokens / len(tokens)
+                char_ratio = matched_chars / max(1, len(compact_rem))
+
+                if token_ratio >= 0.5 or char_ratio >= 0.7:
+                    remnants_to_remove.append(rem_p)
+                    j += 1
+                else:
+                    break
+
+            headers = matched_entry["headers"]
+            rows = matched_entry["rows"]
+            num_cols = len(headers)
+            num_rows = 1 + len(rows)
+            table = seed_doc.add_table(rows=num_rows, cols=num_cols)
+            try:
+                table.style = "Table Grid"
+            except Exception:
+                pass
+            table.alignment = WD_TABLE_ALIGNMENT.CENTER
+
+            for col_idx, h_text in enumerate(headers):
+                cell = table.cell(0, col_idx)
+                cell.text = ""
+                p_cell = cell.paragraphs[0]
+                try:
+                    p_cell.style = "Normal"
+                except Exception:
+                    pass
+                p_cell.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                run = p_cell.add_run(h_text)
+                run.bold = True
+
+            for row_idx, r_data in enumerate(rows, start=1):
+                for col_idx in range(num_cols):
+                    val = r_data[col_idx] if col_idx < len(r_data) else ""
+                    cell = table.cell(row_idx, col_idx)
+                    cell.text = ""
+                    p_cell = cell.paragraphs[0]
+                    try:
+                        p_cell.style = "Normal"
+                    except Exception:
+                        pass
+                    p_cell.alignment = WD_ALIGN_PARAGRAPH.CENTER if col_idx > 0 else WD_ALIGN_PARAGRAPH.LEFT
+                    p_cell.add_run(val)
+
+            cap_p._p.addnext(table._tbl)
+            for rem_p in remnants_to_remove:
+                p_el = rem_p._element
+                if p_el.getparent() is not None:
+                    p_el.getparent().remove(p_el)
+
+            matched_entry["used"] = True
+            upgraded_tables_count += 1
+            i = j
+
+    # Part B: Split trailing merged section headings (e.g. "...（疗效对比时剔除）。 4 　讨论")
+    split_headings_count = 0
+    paras_after_tables = list(seed_doc.paragraphs)
+    for idx, p_obj in enumerate(paras_after_tables):
+        if idx <= last_modified_idx:
+            continue
+        raw_p_txt = p_obj.text.strip()
+        if not raw_p_txt:
+            continue
+        m_split = _DOCX_TRAILING_HEADING_RE.match(raw_p_txt)
+        if m_split:
+            body_part = m_split.group(1).strip()
+            heading_part = m_split.group(2).strip()
+            p_obj.text = body_part
+
+            new_h_p = seed_doc.add_paragraph(heading_part)
+            is_sub = bool(
+                re.match(r'^\d+\.\d+', heading_part)
+                or re.match(r'^[（\(][一二三四五六七八九十]+[）\)]', heading_part)
+            )
+            h_key = "H3" if is_sub else "H2"
+            fallback_h_style = "Heading 3" if is_sub else "Heading 2"
+            target_h_style = (blueprint.heading_hierarchy or {}).get(h_key, fallback_h_style)
+            try:
+                new_h_p.style = target_h_style
+            except Exception:
+                try:
+                    new_h_p.style = fallback_h_style
+                except Exception:
+                    pass
+            p_obj._p.addnext(new_h_p._p)
+            split_headings_count += 1
+
+    return upgraded_tables_count, split_headings_count
+
+
 def propagate_and_validate_session(
     session_dir: str | Path,
     engine_mode: str = "rule_first",
@@ -366,6 +627,8 @@ def propagate_and_validate_session(
     ai_client: Optional[Any] = None,
     model: Optional[str] = None,
     max_sections: Optional[int] = None,
+    manual_boundary_anchor: Optional[str] = None,
+    manual_boundary_idx: Optional[int] = None,
 ) -> Tuple[Path, ValidationReport, BookBlueprint]:
     """
     Executes batch AST propagation across all sections, runs visual fallback if needed,
@@ -391,6 +654,28 @@ def propagate_and_validate_session(
             raise FileNotFoundError(f"Missing {bp_path} in session workspace.")
         blueprint = BookBlueprint.load(bp_path)
 
+    if blueprint.metadata is None:
+        blueprint.metadata = {}
+
+    if manual_boundary_anchor and manual_boundary_anchor.strip():
+        blueprint.metadata["manual_boundary_anchor"] = manual_boundary_anchor.strip()
+        blueprint.metadata["boundary_source"] = "manual_anchor"
+    if manual_boundary_idx is not None and int(manual_boundary_idx) >= 0:
+        blueprint.metadata["manual_boundary_idx"] = int(manual_boundary_idx)
+        blueprint.metadata["seed_last_modified_idx"] = int(manual_boundary_idx)
+        blueprint.metadata["boundary_source"] = "manual_idx"
+
+    effective_anchor = (
+        manual_boundary_anchor.strip()
+        if (manual_boundary_anchor and manual_boundary_anchor.strip())
+        else blueprint.metadata.get("manual_boundary_anchor")
+    )
+    effective_idx = (
+        int(manual_boundary_idx)
+        if (manual_boundary_idx is not None and int(manual_boundary_idx) >= 0)
+        else blueprint.metadata.get("manual_boundary_idx")
+    )
+
     # Resolve PDF
     resolved_pdf = None
     if pdf_path and Path(pdf_path).exists():
@@ -399,6 +684,8 @@ def propagate_and_validate_session(
         candidates = list(s_dir.glob("*.pdf"))
         if candidates:
             resolved_pdf = candidates[0]
+
+    engine = PropagationEngine(blueprint)
 
     if engine_mode == "vlm_continuation":
         # Resolve seed docx
@@ -415,41 +702,47 @@ def propagate_and_validate_session(
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 # In nested event loop environment
-                import nest_asyncio
+                import nest_asyncio  # type: ignore[import-not-found]
                 nest_asyncio.apply()
                 continuation_result = loop.run_until_complete(
                     vlm_engine.execute_continuation(
-                        pdf_path=resolved_pdf,
+                        pdf_path=resolved_pdf or Path(""),
                         raw_ast_path=ast_path,
                         seed_docx_path=seed_docx,
                         template_docx_path=Path(template_docx_path) if template_docx_path else None,
                         model_name=vlm_model,
                         max_continuation_sections=max_sections,
                         target_session_dir=s_dir,
+                        manual_boundary_anchor=effective_anchor,
+                        manual_boundary_idx=effective_idx,
                     )
                 )
             else:
                 continuation_result = loop.run_until_complete(
                     vlm_engine.execute_continuation(
-                        pdf_path=resolved_pdf,
+                        pdf_path=resolved_pdf or Path(""),
                         raw_ast_path=ast_path,
                         seed_docx_path=seed_docx,
                         template_docx_path=Path(template_docx_path) if template_docx_path else None,
                         model_name=vlm_model,
                         max_continuation_sections=max_sections,
                         target_session_dir=s_dir,
+                        manual_boundary_anchor=effective_anchor,
+                        manual_boundary_idx=effective_idx,
                     )
                 )
         except RuntimeError:
             continuation_result = asyncio.run(
                 vlm_engine.execute_continuation(
-                    pdf_path=resolved_pdf,
+                    pdf_path=resolved_pdf or Path(""),
                     raw_ast_path=ast_path,
                     seed_docx_path=seed_docx,
                     template_docx_path=Path(template_docx_path) if template_docx_path else None,
                     model_name=vlm_model,
                     max_continuation_sections=max_sections,
                     target_session_dir=s_dir,
+                    manual_boundary_anchor=effective_anchor,
+                    manual_boundary_idx=effective_idx,
                 )
             )
 
@@ -473,7 +766,7 @@ def propagate_and_validate_session(
                     if first_p.page_num > 0:
                         try:
                             repaired_md = repair_corrupted_section_with_vlm(
-                                pdf_path=resolved_pdf,
+                                pdf_path=resolved_pdf or Path(""),
                                 page_num=first_p.page_num,
                                 corrupted_raw_md=sec.effective_content,
                                 blueprint=blueprint,
@@ -509,7 +802,20 @@ def propagate_and_validate_session(
         if seed_docx_path:
             seed_doc = docx.Document(str(seed_docx_path))
             last_modified_idx = int(blueprint.metadata.get("seed_last_modified_idx", 0)) if blueprint.metadata else 0
-            if last_modified_idx == 0:
+
+            if effective_idx is not None and int(effective_idx) >= 0:
+                last_modified_idx = min(int(effective_idx), max(0, len(seed_doc.paragraphs) - 1))
+                blueprint.metadata["seed_last_modified_idx"] = last_modified_idx
+            elif effective_anchor:
+                anchor_matches = [
+                    i for i, p in enumerate(seed_doc.paragraphs)
+                    if effective_anchor in p.text
+                ]
+                if anchor_matches:
+                    last_modified_idx = anchor_matches[-1]
+                    blueprint.metadata["seed_last_modified_idx"] = last_modified_idx
+
+            if last_modified_idx == 0 and blueprint.metadata.get("boundary_source") not in ("manual_idx", "manual_anchor", "builtin_tag"):
                 generic_styles = {
                     "normal", "body text", "內文", "標準",
                     "heading 1", "heading 2", "heading 3", "heading 4", "heading 5",
@@ -517,7 +823,7 @@ def propagate_and_validate_session(
                 }
                 custom_indices = [
                     i for i, p in enumerate(seed_doc.paragraphs)
-                    if p.style and p.style.name.strip().lower() not in generic_styles and p.text.strip()
+                    if p.style and p.style.name and p.style.name.strip().lower() not in generic_styles and p.text.strip()
                 ]
                 if custom_indices:
                     last_modified_idx = max(custom_indices)
@@ -528,11 +834,23 @@ def propagate_and_validate_session(
                     ]
                     last_modified_idx = max(non_normal) if non_normal else 0
 
+            # Upgrade flattened three-line tables into Word Table Grid objects and split merged headings
+            upgraded_tbls, split_hdgs = _upgrade_flattened_tables_and_split_headings_in_docx(
+                seed_doc=seed_doc,
+                ast_sections=sections,
+                last_modified_idx=last_modified_idx,
+                blueprint=blueprint,
+                resolved_pdf=resolved_pdf,
+            )
+            if blueprint.metadata is not None:
+                blueprint.metadata["upgraded_tables_count"] = upgraded_tbls
+                blueprint.metadata["split_headings_count"] = split_hdgs
+
             # Extract subsequent paragraphs that were unmodified by human editor
             subsequent_paras = [
-                (i, p.text.strip())
+                (i, ExemplarLearner.strip_boundary_tags(p.text))
                 for i, p in enumerate(seed_doc.paragraphs)
-                if i > last_modified_idx and p.text.strip()
+                if i > last_modified_idx and ExemplarLearner.strip_boundary_tags(p.text)
             ]
 
             # Hybrid deterministic + Gemini AI paragraph classification
@@ -551,19 +869,34 @@ def propagate_and_validate_session(
                         p_obj.style = target_style
                     except Exception:
                         pass
-                    text_to_style[p_obj.text.strip()] = target_style
+                    text_to_style[ExemplarLearner.strip_boundary_tags(p_obj.text)] = target_style
+
+            # Strip any temporary in-document boundary marker tags before saving final output
+            for p_obj in list(seed_doc.paragraphs):
+                if ExemplarLearner.is_pure_boundary_tag(p_obj.text):
+                    p_el = p_obj._element
+                    if p_el.getparent() is not None:
+                        p_el.getparent().remove(p_el)
+                elif any(tag in p_obj.text for tag in ExemplarLearner.BOUNDARY_TAGS):
+                    p_obj.text = ExemplarLearner.strip_boundary_tags(p_obj.text)
 
             # Direct perfection of the same .docx as final output
             seed_doc.save(str(final_docx_path))
 
             # Synchronize AST processed_sections for Markdown & Validator
-            if text_to_style:
-                for sec in processed_sections:
-                    for p_ast in sec.paragraphs:
-                        raw_txt = p_ast.raw_text.strip()
-                        if not p_ast.custom_style and raw_txt in text_to_style:
-                            p_ast.custom_style = text_to_style[raw_txt]
-                    sec.processed_content = sec.effective_content
+            for sec in processed_sections:
+                sec.paragraphs = [
+                    p_ast for p_ast in sec.paragraphs
+                    if not ExemplarLearner.is_pure_boundary_tag(p_ast.raw_text)
+                ]
+                for p_ast in sec.paragraphs:
+                    if any(tag in p_ast.raw_text for tag in ExemplarLearner.BOUNDARY_TAGS):
+                        p_ast.raw_text = ExemplarLearner.strip_boundary_tags(p_ast.raw_text)
+                    raw_txt = p_ast.raw_text.strip()
+                    if text_to_style and not p_ast.custom_style and raw_txt in text_to_style:
+                        p_ast.custom_style = text_to_style[raw_txt]
+                sec.raw_content = ExemplarLearner.strip_boundary_tags(sec.raw_content)
+                sec.processed_content = ExemplarLearner.strip_boundary_tags(sec.effective_content)
         else:
             # Fallback to synthesizing new document from processed sections via unified DocxSerializer
             DocxSerializer.render_sections_to_docx(

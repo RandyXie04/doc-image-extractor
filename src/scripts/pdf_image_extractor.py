@@ -24,7 +24,7 @@ import re
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 
 def _rect_overlap(img_bbox, clip_bbox, threshold: float = 0.40) -> bool:
@@ -77,7 +77,7 @@ def extract_pdf_images(
     pdf_path: str,
     image_blocks: list,
     output_dir: str,
-    pre_extract_dir: str = None,
+    pre_extract_dir: Optional[str] = None,
     progress_callback = None
 ) -> dict:
     """
@@ -173,7 +173,7 @@ def extract_pdf_images(
                 page_idx = page_num - 1
                 if page_idx < 0 or page_idx >= len(doc):
                     continue
-                page = doc[page_idx]
+                page: Any = doc[page_idx]
                 page_images = page.get_images(full=True)
                 rects_list = []
                 for img_info in page_images:
@@ -200,7 +200,7 @@ def extract_pdf_images(
                 if page_idx < 0 or page_idx >= len(doc):
                     continue
 
-                page = doc[page_idx]
+                page: Any = doc[page_idx]
                 pdf_w = page.rect.width
                 pdf_h = page.rect.height
 
@@ -249,6 +249,16 @@ def extract_pdf_images(
                     dst_path = os.path.join(output_dir, img_filename)
                     shutil.copy2(src_path, dst_path)
                     results[(page_num, block_idx)] = dst_path
+                elif clip.width >= 30 and clip.height >= 30:
+                    # Fallback for vector charts / composite figures without a single matching raster xref
+                    try:
+                        img_filename = f"image_p{page_num}_{block_idx}.png"
+                        dst_path = os.path.join(output_dir, img_filename)
+                        pix = page.get_pixmap(clip=clip, dpi=300, alpha=False)
+                        pix.save(dst_path)
+                        results[(page_num, block_idx)] = dst_path
+                    except Exception:
+                        pass
 
         finally:
             doc.close()

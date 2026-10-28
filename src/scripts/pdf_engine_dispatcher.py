@@ -33,7 +33,7 @@ def is_vector_pdf(pdf_path, text_threshold=100):
             
         for i in range(pages_to_check):
             page = doc[i]
-            text = page.get_text("text")
+            text = getattr(page, "get_text")("text")
             total_text_length += len(text.strip())
             
         return (total_text_length / pages_to_check) > text_threshold
@@ -41,7 +41,7 @@ def is_vector_pdf(pdf_path, text_threshold=100):
         print(f"Error checking PDF type: {e}")
         return False
 
-def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None, no_footnote=False, ai_kaiti=False, ai_kaiti_threshold=0.65):
+def extract_with_pymupdf(pdf_path, output_dir, style_mapping, output_stem=None, no_footnote=True, ai_kaiti=False, ai_kaiti_threshold=0.65):
     """
     High-precision extraction using book_layout_extractor:
     - Header & footer removal
@@ -114,7 +114,7 @@ def main():
     else:
         # v2.1 修正：避免使用 subprocess 啟動不存在於 _MEIPASS 的 process_ocr.py
         try:
-            from src.scripts import process_ocr
+            from src.scripts import process_ocr as _process_ocr; process_ocr = _process_ocr
             # 優先嘗試透過 module import 執行
             ocr_args = argparse.Namespace(
                 file=args.file,
@@ -145,7 +145,7 @@ def main():
                     cmd.append("--no_footnote")
                 import subprocess
                 proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
-                for line in proc.stdout:
+                for line in (proc.stdout or []):
                     line = line.strip()
                     if line:
                         if line.startswith("{") and "progress" in line:
@@ -169,7 +169,8 @@ def main():
             import shutil
             shutil.move(raw_out, target_out)
 
-        if 'proc' in locals() and proc.returncode != 0:
+        proc = locals().get("proc"); process_ocr = locals().get("process_ocr")
+        if proc is not None and proc.returncode != 0:
             raise RuntimeError(f"Surya OCR execution failed with code {proc.returncode}")
         elif 'proc' not in locals() and not hasattr(process_ocr, "main"):
             raise RuntimeError("process_ocr.py is missing or empty, cannot execute Surya OCR.")

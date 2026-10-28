@@ -95,8 +95,8 @@ class PODIntegrityValidator:
         used_styles = set(_CUSTOM_STYLE_RE.findall(processed_text))
         invalid_styles = set()
         if self.valid_docx_styles:
-            # Allow "Normal" by default
-            invalid_styles = used_styles - self.valid_docx_styles - {"Normal"}
+            # Allow standard built-in structural styles by default
+            invalid_styles = used_styles - self.valid_docx_styles - {"Normal", "Table Caption", "Caption"}
 
         # 2. Sequence diff
         matcher = difflib.SequenceMatcher(None, raw_skel, proc_skel)

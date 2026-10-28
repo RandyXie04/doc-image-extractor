@@ -65,6 +65,21 @@ try:
 except ImportError:
     AIKaitiClassifier = None
 
+try:
+    from src.extraction.table_reconstructor import (
+        is_valid_pymupdf_table,
+        extract_reconstructed_tables_from_page,
+    )
+except ImportError:
+    try:
+        from extraction.table_reconstructor import (
+            is_valid_pymupdf_table,
+            extract_reconstructed_tables_from_page,
+        )
+    except ImportError:
+        is_valid_pymupdf_table = None
+        extract_reconstructed_tables_from_page = None
+
 CIRCLED_MAP = {
     '①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5,
     '⑥': 6, '⑦': 7, '⑧': 8, '⑨': 9, '⑩': 10,
@@ -100,7 +115,7 @@ _CJK_END_RE = re.compile(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]$')
 _CJK_START_RE = re.compile(r'^[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]')
 _TOC_LINE_RE = re.compile(r'[\.…·\u0107\x08\-_]{2,}\s*\d+$')
 _CLEAN_FOR_HEADING_RE = re.compile(r'[①-⑩\u2460-\u2473\s]')
-_HEADING_PREFIX_CLEAN_RE = re.compile(r'^(?:第[一二三四五六七八九十百零\d]+[章节條条回讲講篇卷]|(?:Chapter|Part)\s*\d+|[一二三四五六七八九十百\d]+[、. ]|[（(][一二三四五六七八九十\d]+[)）]|\d+\.\d+(?:\.\d+)?)\s*', re.I)
+_HEADING_PREFIX_CLEAN_RE = re.compile(r'^(?:第[一二三四五六七八九十百零\d]+[章节條条回讲講篇卷]|(?:Chapter|Part)\s*\d+|[一二三四五六七八九十百\d]+[、. \u3000]+|[（(][一二三四五六七八九十\d]+[)）]|\d+\.\d+(?:\.\d+)?)\s*', re.I)
 _SENTENCE_PUNCT_RE = re.compile(r'[。，；？！“”‘’：:]')
 _STYLE_HEADING1_RE = re.compile(r'標題\s*1|heading\s*1', re.I)
 _STYLE_HEADING2_RE = re.compile(r'標題\s*2|heading\s*2', re.I)
@@ -113,6 +128,7 @@ _H1_SPECIAL_RE = re.compile(r'^(?:目\s*录|目录|序|后\s*记|后记|结\s*�
 _H1_CHAPTER_RE = re.compile(r'^(?:第[一二三四五六七八九十百零\d]+[章卷篇]|(?:Chapter|Part)\s*\d+)(?:\s+[^\n]+)?$', re.I)
 _H2_SECTION_RE = re.compile(r'^第[一二三四五六七八九十百零\d]+[节節回讲講](?:\s+[^\n]+)?$')
 _H2_NUM_RE = re.compile(r'^[一二三四五六七八九十百]+[、.· ][^\n]{2,30}$')
+_H2_INT_SPACE_RE = re.compile(r'^\d+[\s\u3000]+[\u4e00-\u9fff]{2,15}$')
 _H2_DECIMAL_RE = re.compile(r'^\d+\.\d+(?:[\s\u3000]+[^\n]{1,40})?$')
 _H3_DECIMAL_RE = re.compile(r'^\d+\.\d+\.\d+(?:[\s\u3000]+[^\n]{1,40})?$')
 _LIST_NUM_PREFIX_RE = re.compile(r'^\d+[、.·](?!\d)')
@@ -120,6 +136,57 @@ _H3_SUB_RE1 = re.compile(r'^[（(][一二三四五六七八九十\d]+[)）]')
 _CHART_TABLE_END_RE = re.compile(r'示意图|表$')
 _CIRCLED_START_RE = re.compile(r'^[①-⑩]')
 _IMG_PLACEHOLDER_RE = re.compile(r'!\[__IMG_PLACEHOLDER_(\d+)_(\d+)__\]\(\)')
+_STANDALONE_HEADING_LINE_RE = re.compile(
+    r'^(?:\d+[\s\u3000]+[\u4e00-\u9fff]{2,15}|\d+\.\d+(?:\.\d+)?[\s\u3000]+[\u4e00-\u9fff]{2,25}|第[一二三四五六七八九十百零\d]+[章节節篇卷][\s\u3000]*[^\n]{0,25})$'
+)
+_TRAILING_HEADING_SPLIT_RE = re.compile(
+    r'^(.+[。！？）\)”’])\s*(\d+[\s\u3000]+[\u4e00-\u9fff]{2,15}|\d+\.\d+(?:\.\d+)?[\s\u3000]+[\u4e00-\u9fff]{2,25})$'
+)
+
+
+def _split_merged_heading_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Splits multi-line text blocks when PyMuPDF merges a standalone heading line
+    (e.g. '1　临床资料' or '4 　讨论' whose tall font ascender touches the previous paragraph's bottom)
+    into an adjacent body text block.
+    """
+    expanded: List[Dict[str, Any]] = []
+    for b in blocks:
+        if b.get("type") != 0:
+            expanded.append(b)
+            continue
+        lines = b.get("lines", [])
+        if len(lines) <= 1:
+            expanded.append(b)
+            continue
+
+        has_heading_line = any(
+            _STANDALONE_HEADING_LINE_RE.match(
+                "".join(s.get("text", "") for s in ln.get("spans", [])).strip()
+            )
+            for ln in lines
+        )
+        if not has_heading_line:
+            expanded.append(b)
+            continue
+
+        cur_group: List[Dict[str, Any]] = []
+        for ln in lines:
+            ln_txt = "".join(s.get("text", "") for s in ln.get("spans", [])).strip()
+            if _STANDALONE_HEADING_LINE_RE.match(ln_txt):
+                if cur_group:
+                    grp_bbox = _union_bboxes([g.get("bbox") for g in cur_group if g.get("bbox")]) or b.get("bbox", [0, 0, 0, 0])
+                    expanded.append({"type": 0, "bbox": grp_bbox, "lines": cur_group})
+                    cur_group = []
+                ln_bbox = list(ln.get("bbox", b.get("bbox", [0, 0, 0, 0])))
+                expanded.append({"type": 0, "bbox": ln_bbox, "lines": [ln]})
+            else:
+                cur_group.append(ln)
+        if cur_group:
+            grp_bbox = _union_bboxes([g.get("bbox") for g in cur_group if g.get("bbox")]) or b.get("bbox", [0, 0, 0, 0])
+            expanded.append({"type": 0, "bbox": grp_bbox, "lines": cur_group})
+
+    return expanded
 
 
 def _normalize_title(text: str) -> str:
@@ -140,7 +207,7 @@ def _simple_similarity(a: str, b: str) -> float:
     return len(intersection) / len(union) if union else 0.0
 
 
-def _union_bboxes(bboxes: Sequence[Sequence[float]]) -> Optional[List[float]]:
+def _union_bboxes(bboxes: Sequence[Optional[Sequence[float]]]) -> Optional[List[float]]:
     """Computes the minimal bounding box enclosing all valid non-empty bboxes."""
     valid_boxes = [b for b in bboxes if b and len(b) == 4 and b[2] > b[0] and b[3] > b[1]]
     if not valid_boxes:
@@ -204,7 +271,7 @@ def build_document_profile(doc: fitz.Document) -> dict:
 
     # 1A. 優先提取 PDF 內建書籤 (若有內建書籤，準確率 100% 且耗時 0ms)
     try:
-        raw_toc = doc.get_toc()
+        raw_toc = getattr(doc, "get_toc", lambda: [])()
     except Exception:
         raw_toc = []
 
@@ -225,7 +292,7 @@ def build_document_profile(doc: fitz.Document) -> dict:
             if toc_start is not None:
                 toc_entries = []
                 for p_idx in range(toc_start, (toc_end or toc_start) + 1):
-                    blocks = doc[p_idx].get_text("dict").get("blocks", [])
+                    blocks = getattr(doc[p_idx], "get_text")("dict").get("blocks", [])
                     toc_entries.extend(parse_toc_entries_from_blocks_vector(blocks))
                 if toc_entries:
                     parsed_idx = build_toc_index(toc_entries)
@@ -238,7 +305,7 @@ def build_document_profile(doc: fitz.Document) -> dict:
     sample_indices = range(min(len(doc), 35))
     for p_idx in sample_indices:
         try:
-            page_dict = doc[p_idx].get_text("dict")
+            page_dict = getattr(doc[p_idx], "get_text")("dict")
         except Exception:
             continue
         for b in page_dict.get("blocks", []):
@@ -431,6 +498,7 @@ def _parse_pdf_layout_flow(
     ai_kaiti_classifier: Optional[Any] = None,
     progress_callback: Optional[Callable[[int, str], None]] = None,
     page_range: Optional[Tuple[int, int]] = None,
+    strip_headers_heuristic: bool = False,
 ) -> Tuple[List[str], List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]]:
     """
     純記憶體版面與流式閱讀解析核心 (Pure Parsing Core)。
@@ -488,21 +556,30 @@ def _parse_pdf_layout_flow(
             progress_pct = int((page_num / total_pages) * 85)
             progress_callback(progress_pct, f"[INFO] 正在解析第 {page_num}/{total_pages} 頁 (版面/樣式/腳注抽取)...")
             
-        page = doc[page_idx]
+        page: Any = doc[page_idx]
         page_h = page.rect.height
         page_w = page.rect.width
         
-        blocks = page.get_text("dict").get("blocks", [])
+        blocks = _split_merged_heading_blocks(page.get_text("dict").get("blocks", []))
 
-        # ── Step 0: Detect tables via PyMuPDF find_tables() ──────────────────
+        # ── Step 0: Detect tables via PyMuPDF find_tables() + 3-Line Table Reconstructor ──
         # Collect table bbox regions so we can exclude their text from body_blocks.
         page_tables = []  # list of fitz.table.Table objects
+        reconstructed_tables = []  # list of ReconstructedTable objects (3-line tables)
         table_bboxes = []  # list of fitz.Rect for overlap checks
         try:
             tabs = page.find_tables()
             if tabs and tabs.tables:
-                page_tables = tabs.tables
-                table_bboxes = [fitz.Rect(t.bbox) for t in page_tables]
+                for t in tabs.tables:
+                    if is_valid_pymupdf_table is not None:
+                        try:
+                            cells = t.extract()
+                        except Exception:
+                            cells = []
+                        if not is_valid_pymupdf_table(cells, t.bbox, page_w, page_h):
+                            continue
+                    page_tables.append(t)
+                    table_bboxes.append(fitz.Rect(t.bbox))
         except Exception:
             pass  # find_tables() not available in older PyMuPDF – graceful fallback
 
@@ -519,6 +596,16 @@ def _parse_pdf_layout_flow(
                     return True
             return False
 
+        if extract_reconstructed_tables_from_page is not None:
+            try:
+                three_line_list = extract_reconstructed_tables_from_page(page, blocks=blocks)
+                for rtbl in three_line_list:
+                    if not _block_overlaps_any_table(table_bboxes, rtbl.bbox):
+                        reconstructed_tables.append(rtbl)
+                        table_bboxes.append(fitz.Rect(rtbl.bbox))
+            except Exception:
+                pass
+
         # Step 1: Collect valid text blocks, separate header/footer/footnote
         body_blocks = []
         footnote_blocks = []
@@ -528,7 +615,7 @@ def _parse_pdf_layout_flow(
             block_type = b.get("type")
             
             if block_type == 1:
-                if not is_page_header(b, page_h, page_w) and not is_page_footer(b, page_h):
+                if not (strip_headers_heuristic and (is_page_header(b, page_h, page_w) or is_page_footer(b, page_h))):
                     if not (table_bboxes and _block_overlaps_any_table(table_bboxes, b.get("bbox", [0, 0, 0, 0]))):
                         figure_blocks.append(b)
                 continue
@@ -544,10 +631,10 @@ def _parse_pdf_layout_flow(
             if not block_text:
                 continue
 
-            if is_page_header(b, page_h, page_w):
+            if strip_headers_heuristic and is_page_header(b, page_h, page_w):
                 audit_data["headers_removed"] += 1
                 continue
-            if is_page_footer(b, page_h):
+            if strip_headers_heuristic and is_page_footer(b, page_h):
                 audit_data["footers_removed"] += 1
                 continue
 
@@ -667,6 +754,13 @@ def _parse_pdf_layout_flow(
                         else:
                             para_text += " " + line_txt
 
+                # Split trailing inline heading if merged at sentence end (e.g. "...（疗效对比时剔除）。 4 讨论")
+                trailing_h_text = ""
+                m_trail = _TRAILING_HEADING_SPLIT_RE.match(para_text.strip())
+                if m_trail:
+                    para_text = m_trail.group(1).strip()
+                    trailing_h_text = m_trail.group(2).strip()
+
                 custom_style_val = ""
                 if current_para_custom_style:
                     # Apply specific custom Word style from font mapping
@@ -695,6 +789,28 @@ def _parse_pdf_layout_flow(
                     "custom_style": custom_style_val,
                 })
 
+                if trailing_h_text:
+                    h_lvl = 3 if _H3_DECIMAL_RE.match(trailing_h_text) else 2
+                    h_style = style_mapping.get(f"h{h_lvl}")
+                    h_md = f"{'#' * h_lvl} {trailing_h_text} {{custom-style=\"{h_style}\"}}" if h_style else f"{'#' * h_lvl} {trailing_h_text}"
+                    page_paragraphs.append(h_md)
+                    audit_data["headings_detected"].append({
+                        "page": page_num,
+                        "level": f"H{h_lvl}",
+                        "text": trailing_h_text,
+                    })
+                    layout_records.append({
+                        "type": "heading",
+                        "page_num": page_num,
+                        "level": h_lvl,
+                        "title": trailing_h_text,
+                        "raw_text": h_md,
+                        "bbox": para_bbox,
+                        "font_name": dominant_font,
+                        "font_size": avg_size,
+                        "custom_style": h_style or "",
+                    })
+
                 current_para_lines = []
                 current_para_contributing_blocks = []
                 current_para_is_kaiti = False
@@ -721,6 +837,13 @@ def _parse_pdf_layout_flow(
                 "type": "table",
                 "bbox": list(tbl.bbox),
                 "data": tbl
+            })
+
+        for rtbl in reconstructed_tables:
+            flow_items.append({
+                "type": "reconstructed_table",
+                "bbox": list(rtbl.bbox),
+                "data": rtbl,
             })
 
         # Sort by top-to-bottom reading order (y0, then x0)
@@ -766,6 +889,30 @@ def _parse_pdf_layout_flow(
                     "page_num": page_num,
                     "bbox": tbl_bbox,
                     "raw_md": tbl_md or "",
+                })
+                last_block_x0 = tbl_bbox[0]
+                last_block_x1 = tbl_bbox[2]
+                last_block_y1 = tbl_bbox[3]
+                last_block_last_line_x1 = 0.0
+                last_heading_text = ""
+                continue
+            elif itype == "reconstructed_table":
+                flush_current_para()
+                rtbl = item["data"]
+                tbl_md = (
+                    _replace_fn_markers_in_text(rtbl.markdown, page_footnotes, page_num)
+                    if enable_footnotes and page_footnotes
+                    else rtbl.markdown
+                )
+                if tbl_md:
+                    page_paragraphs.append(tbl_md)
+                tbl_bbox = item["bbox"]
+                layout_records.append({
+                    "type": "table",
+                    "page_num": page_num,
+                    "bbox": tbl_bbox,
+                    "raw_md": tbl_md or "",
+                    "caption_text": getattr(rtbl, "caption_text", ""),
                 })
                 last_block_x0 = tbl_bbox[0]
                 last_block_x1 = tbl_bbox[2]
@@ -863,6 +1010,9 @@ def _parse_pdf_layout_flow(
                     and not re.match(r'^(?:[¡•●◆■※★\-]|（?[一二三四五六七八九十\d]+）?[、.·\s]+[是為有在]|[圖表]\s*\d+[-_.]\d+[\s　]+[是為有在])', bb_text)
                 )
 
+                if re.match(r'^[圖图表]\s*\d+[\s\u3000]', bb_text):
+                    is_candidate_heading = False
+
                 # Priority 1: 目錄索引 / PDF 原生書籤直接命中（100% 命中無規則標題）
                 if is_candidate_heading and toc_index:
                     toc_lvl = _match_toc_heading(clean_for_heading, page_num, toc_index, toc_page_offset)
@@ -882,6 +1032,8 @@ def _parse_pdf_layout_flow(
                     elif _H3_DECIMAL_RE.match(bb_text) and not has_sentence_punct:
                         heading_level = 3
                     elif _H2_DECIMAL_RE.match(bb_text) and not has_sentence_punct:
+                        heading_level = 2
+                    elif _H2_INT_SPACE_RE.match(bb_text) and not has_sentence_punct:
                         heading_level = 2
                     elif _H2_NUM_RE.match(bb_text) and not has_sentence_punct:
                         heading_level = 3
@@ -1453,7 +1605,7 @@ def build_book_ast(
         audit_data=audit_data,
         pdf_name=pdf_name,
         total_pages=total_pages,
-        doc_profile=doc_profile,
+        doc_profile=doc_profile or {},
     )
 
 

@@ -463,6 +463,29 @@ def process_page_footnotes(
             
             if is_img:
                 md_text = "![img]()"
+            elif orig_label == "table":
+                blk["type"] = "Table"
+                raw_tbl = (blk.get("surya_text") or "").strip()
+                if raw_tbl.startswith("|"):
+                    md_text = raw_tbl
+                else:
+                    tbl_lines = [ln.strip() for ln in raw_tbl.splitlines() if ln.strip()]
+                    if len(tbl_lines) >= 2 and any(re.search(r"\s{2,}|\t", ln) for ln in tbl_lines):
+                        split_rows = [re.split(r"\s{2,}|\t", ln) for ln in tbl_lines]
+                        max_c = max(len(r) for r in split_rows)
+                        if max_c >= 2:
+                            norm_rows = [r + [""] * (max_c - len(r)) for r in split_rows]
+                            md_lines = [
+                                "| " + " | ".join(norm_rows[0]) + " |",
+                                "| " + " | ".join(["---"] * max_c) + " |",
+                            ]
+                            for r in norm_rows[1:]:
+                                md_lines.append("| " + " | ".join(r) + " |")
+                            md_text = "\n".join(md_lines)
+                        else:
+                            md_text = raw_tbl
+                    else:
+                        md_text = raw_tbl
             else:
                 md_text = blk.get("surya_text", "")
             rendered.append({"orig_idx": item["orig_idx"], "block": blk, "md": md_text})
@@ -828,6 +851,12 @@ def main(args=None):
                         sx = img.width / max(1.0, p_page.rect.width)
                         sy = img.height / max(1.0, p_page.rect.height)
 
+                        try:
+                            from src.extraction.table_reconstructor import extract_reconstructed_tables_from_page
+                            page_3line_tables = extract_reconstructed_tables_from_page(p_page)
+                        except Exception:
+                            page_3line_tables = []
+
                         for idx, box in enumerate(layout.bboxes):
                             poly = box.polygon
                             if not poly or len(poly) == 0:
@@ -840,6 +869,21 @@ def main(args=None):
                             r = fitz.Rect(bbox[0]/sx, bbox[1]/sy, bbox[2]/sx, bbox[3]/sy)
                             vec_text = p_page.get_text("text", clip=r).strip()
 
+                            # Check if box overlaps a reconstructed 3-line table on this page
+                            matched_3line_md = None
+                            for rtbl in page_3line_tables:
+                                tr = fitz.Rect(rtbl.bbox)
+                                if r.intersects(tr):
+                                    inter = r & tr
+                                    if inter.get_area() > 0.25 * min(max(r.get_area(), 1.0), max(tr.get_area(), 1.0)):
+                                        matched_3line_md = rtbl.markdown
+                                        break
+
+                            if matched_3line_md:
+                                page_box_labels[offset][idx] = "table"
+                                page_box_texts[offset][idx] = matched_3line_md
+                                continue
+
                             has_overlapping_image = False
                             for img_info in p_page.get_images():
                                 for img_rect in p_page.get_image_rects(img_info[0]):
@@ -851,9 +895,15 @@ def main(args=None):
                                 if has_overlapping_image:
                                     break
 
-                            # 判斷是否為誤標為 Picture 的文字標題或裝飾標籤
+                            # 判斷是否為誤標為 Picture 的短文字裝飾標題（如 ADR-006「（一）组方思路」）；保留真實向量圖表
                             if label in ('picture', 'figure', 'image'):
-                                if vec_text and not has_overlapping_image:
+                                is_short_banner_title = (
+                                    bool(vec_text)
+                                    and len(vec_text) <= 25
+                                    and "\n" not in vec_text
+                                    and r.height < 48.0
+                                )
+                                if is_short_banner_title and not has_overlapping_image:
                                     label = "text"
                                     page_box_texts[offset][idx] = vec_text
                                     page_box_labels[offset][idx] = label

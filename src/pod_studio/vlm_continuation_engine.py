@@ -32,6 +32,7 @@ from src.pod_studio.section_ast import SectionAST, SectionUnit, ParagraphUnit
 from src.pod_studio.blueprint_schema import BookBlueprint
 from src.pod_studio.cjk_validator import PODIntegrityValidator, CJKValidationResult
 from src.pod_studio.docx_writer import DocxSerializer
+from src.pod_studio.exemplar_learner import ExemplarLearner, DEFAULT_BOUNDARY_TAGS
 
 
 @dataclass
@@ -107,6 +108,8 @@ class SecureVLMContinuationEngine:
         raw_sections: List[SectionUnit],
         seed_docx_path: Path,
         max_exemplars: int = 2,
+        manual_boundary_anchor: Optional[str] = None,
+        manual_boundary_idx: Optional[int] = None,
     ) -> Tuple[List[VisualExemplarPair], int]:
         """
         比對人工精修 DOCX 與生稿 AST，識別出已人工精修的章節數 (seed_count)，
@@ -116,22 +119,64 @@ class SecureVLMContinuationEngine:
             return [], 0
 
         seed_doc = docx.Document(str(seed_docx_path))
-        seed_paras = [p.text.strip() for p in seed_doc.paragraphs if p.text.strip()]
+        raw_seed_paras = [p.text.strip() for p in seed_doc.paragraphs if p.text.strip()]
+
+        # 若文檔內含人工定位標籤或指定了 manual_boundary_anchor，截斷未精修之尾端段落
+        anchor_str = (manual_boundary_anchor or "").strip()
+        cutoff_p_idx: Optional[int] = None
+
+        if anchor_str:
+            for p_idx, p_txt in enumerate(raw_seed_paras):
+                if anchor_str in p_txt:
+                    cutoff_p_idx = p_idx
+                    break
+        if cutoff_p_idx is None:
+            for p_idx, p_txt in enumerate(raw_seed_paras):
+                if any(tag in p_txt for tag in DEFAULT_BOUNDARY_TAGS):
+                    cutoff_p_idx = p_idx
+                    break
+
+        if cutoff_p_idx is not None:
+            seed_paras = [
+                ExemplarLearner.strip_boundary_tags(t)
+                for t in raw_seed_paras[: cutoff_p_idx + 1]
+                if ExemplarLearner.strip_boundary_tags(t)
+            ]
+        else:
+            seed_paras = [
+                ExemplarLearner.strip_boundary_tags(t)
+                for t in raw_seed_paras
+                if ExemplarLearner.strip_boundary_tags(t)
+            ]
+
         full_seed_text = "\n\n".join(seed_paras)
+
+        # 若人工指定章節索引或錨點匹配特定章節，優先鎖定章節邊界
+        explicit_seed_count: Optional[int] = None
+        if manual_boundary_idx is not None and int(manual_boundary_idx) > 0:
+            explicit_seed_count = min(int(manual_boundary_idx), len(raw_sections))
+        elif anchor_str and anchor_str not in DEFAULT_BOUNDARY_TAGS:
+            for sec_i, sec in enumerate(raw_sections):
+                sec_body = "\n".join(p.raw_text for p in sec.paragraphs)
+                if anchor_str in sec.title or anchor_str in sec_body:
+                    explicit_seed_count = sec_i + 1
+                    break
 
         exemplars: List[VisualExemplarPair] = []
         seed_count = 0
 
-        for sec in raw_sections:
+        for sec_idx, sec in enumerate(raw_sections):
             if sec.title == "__PREAMBLE__":
                 seed_count += 1
                 continue
 
             sec_clean_title = re.sub(r'^[#\s]+', '', sec.title).strip()
-            # 檢查此章節是否出現在人工精修檔案中
             first_p_snip = sec.paragraphs[0].raw_text[:20].strip() if sec.paragraphs else ""
 
-            matched = (sec_clean_title and sec_clean_title in full_seed_text) or (first_p_snip and first_p_snip in full_seed_text)
+            if explicit_seed_count is not None:
+                matched = sec_idx < explicit_seed_count
+            else:
+                matched = (sec_clean_title and sec_clean_title in full_seed_text) or (first_p_snip and first_p_snip in full_seed_text)
 
             if matched:
                 seed_count += 1
@@ -171,6 +216,8 @@ class SecureVLMContinuationEngine:
         exemplars: List[VisualExemplarPair],
         current_section_title: str,
         current_ocr_draft: str,
+        manual_boundary_anchor: Optional[str] = None,
+        boundary_context_text: Optional[str] = None,
     ) -> str:
         """建立引導 VLM 進行視覺比對與樣式接續的 Prompt"""
         prompt_parts: List[str] = [
@@ -184,8 +231,20 @@ class SecureVLMContinuationEngine:
             "3. 【文字嚴謹度】：絕不可憑空捏造、杜撰或刪減書本正文文字，必須忠實反映 PDF 原始文字。",
             "4. 【輸出格式】：直接輸出修復後的 Markdown，嚴禁加入「好的」、「以下是為您整理」等交談贅詞。",
             "",
-            "### 【人工精修範本參照】",
         ]
+
+        if manual_boundary_anchor or boundary_context_text:
+            prompt_parts.append("### 【人工精修截止定位錨點 (Human-Edited Boundary Anchor)】")
+            if manual_boundary_anchor:
+                prompt_parts.append(f"- 人工指定定位標記/錨點：「{manual_boundary_anchor}」")
+            if boundary_context_text:
+                prompt_parts.append(f"- 人工最後確認段落內容：「{boundary_context_text}」")
+            prompt_parts.extend([
+                "- 嚴格定位確認：上述錨點之前均為人工已定稿區，請精確自該錨點之後的當前單元開始接續排版，切勿重複輸出定位點之前的段落。",
+                "",
+            ])
+
+        prompt_parts.append("### 【人工精修範本參照】")
 
         for idx, ex in enumerate(exemplars, 1):
             prompt_parts.extend([
@@ -301,6 +360,8 @@ class SecureVLMContinuationEngine:
         model_name: str = "gemini-2.5-flash",
         max_continuation_sections: Optional[int] = None,
         target_session_dir: Optional[Path] = None,
+        manual_boundary_anchor: Optional[str] = None,
+        manual_boundary_idx: Optional[int] = None,
     ) -> ContinuationResult:
         """
         執行前 5%~10% 後續段落的完整視覺接續流程
@@ -326,7 +387,18 @@ class SecureVLMContinuationEngine:
             pdf_path,
             raw_sections,
             seed_docx_path,
+            2,
+            manual_boundary_anchor,
+            manual_boundary_idx,
         )
+
+        boundary_ctx = ""
+        if seed_count > 0 and seed_count <= len(raw_sections):
+            last_seed_sec = raw_sections[seed_count - 1]
+            if last_seed_sec.paragraphs:
+                boundary_ctx = ExemplarLearner.strip_boundary_tags(last_seed_sec.paragraphs[-1].raw_text)[:120]
+            else:
+                boundary_ctx = last_seed_sec.title
 
         processed_sections: List[SectionUnit] = []
         section_summaries: List[Dict[str, Any]] = []
@@ -375,6 +447,8 @@ class SecureVLMContinuationEngine:
                 exemplars=exemplars,
                 current_section_title=sec.title,
                 current_ocr_draft=raw_text,
+                manual_boundary_anchor=manual_boundary_anchor,
+                boundary_context_text=boundary_ctx,
             )
 
             # 呼叫 VLM 進行視覺整稿接續

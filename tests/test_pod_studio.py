@@ -378,4 +378,106 @@ class TestPODProductionAPI:
         assert "vlmModelSelect" in text
         assert "gemini-3.8-flash" in text
         assert "customModelInput" in text
+        assert "manualBoundaryAnchorInput" in text
+        assert "manualBoundaryIdxInput" in text
+
+
+class TestManualBoundaryAnchorAndLLMConfirmation:
+    def test_docx_manual_boundary_anchor_and_builtin_tag_cleanup(self, tmp_path):
+        import io
+        import docx
+        from src.pod_studio.exemplar_learner import ExemplarLearner
+        from src.pod_studio.pod_service import compile_blueprint_from_seed, propagate_and_validate_session
+        from src.pod_studio.section_ast import SectionAST, SectionUnit, ParagraphUnit
+
+        doc = docx.Document()
+        styles = doc.styles
+        custom_s = styles.add_style("重點提示樣式", docx.enum.style.WD_STYLE_TYPE.PARAGRAPH)
+        p0 = doc.add_paragraph("第一章 導論", style="Heading 1")
+        p1 = doc.add_paragraph("重點：這是人工精修的第一段重點。", style="重點提示樣式")
+        p2 = doc.add_paragraph("重點：這是人工精修的第二段重點（人工定位終點）。", style="重點提示樣式")
+        p3 = doc.add_paragraph("【人工整稿截止】")
+        p4 = doc.add_paragraph("重點：這是後續尚未人工修改但待AI擴散的段落。")
+        p5 = doc.add_paragraph("普通內文敘述段落。")
+
+        seed_path = tmp_path / "Book_seed.docx"
+        doc.save(str(seed_path))
+
+        sections = [
+            SectionUnit(
+                section_id="sec_001",
+                title="第一章 導論",
+                level=1,
+                paragraphs=[
+                    ParagraphUnit(para_id="p_0", raw_text=p.text)
+                    for p in doc.paragraphs
+                ],
+                raw_content="\n\n".join(p.text for p in doc.paragraphs),
+            )
+        ]
+        SectionAST.dump_book_ast_json(sections, tmp_path / "Book_raw_ast.json")
+
+        # 1. Test built-in tag detection
+        bp_tag = ExemplarLearner.learn_from_docx_pair("", seed_path)
+        assert bp_tag.metadata["boundary_source"] == "builtin_tag"
+        assert bp_tag.metadata["seed_last_modified_idx"] == 3
+        assert "人工定位終點" in bp_tag.metadata["boundary_context_text"]
+
+        # 2. Test explicit manual_boundary_anchor override
+        bp_anchor = compile_blueprint_from_seed(
+            tmp_path,
+            seed_path,
+            manual_boundary_anchor="人工定位終點",
+        )
+        assert bp_anchor.metadata["boundary_source"] == "manual_anchor"
+        assert bp_anchor.metadata["seed_last_modified_idx"] == 2
+        assert bp_anchor.metadata["manual_boundary_anchor"] == "人工定位終點"
+
+        # 3. Verify propagation & LLM prompt receives the manual boundary anchor and strips builtin tag
+        captured_prompts = []
+
+        def fake_ai_client(prompt: str) -> str:
+            captured_prompts.append(prompt)
+            return '[{"id": 4, "style": "重點提示樣式"}, {"id": 5, "style": "Normal"}]'
+
+        final_docx, report, _ = propagate_and_validate_session(
+            session_dir=tmp_path,
+            engine_mode="rule_first",
+            ai_client=fake_ai_client,
+        )
+        assert final_docx.exists()
+        assert len(captured_prompts) >= 1
+        assert "【人工定位確認】" in captured_prompts[0]
+        assert "人工定位終點" in captured_prompts[0]
+
+        # Ensure built-in boundary tag paragraph was cleaned from final output docx
+        out_doc = docx.Document(str(final_docx))
+        out_texts = [p.text.strip() for p in out_doc.paragraphs]
+        assert "【人工整稿截止】" not in out_texts
+
+    def test_vlm_continuation_prompt_includes_manual_boundary_anchor(self, tmp_path):
+        import docx
+        from src.pod_studio.vlm_continuation_engine import SecureVLMContinuationEngine, VisualExemplarPair
+        from src.pod_studio.section_ast import SectionUnit, ParagraphUnit
+
+        engine = SecureVLMContinuationEngine(workspace_base=tmp_path)
+        prompt = engine._build_continuation_prompt(
+            exemplars=[
+                VisualExemplarPair(
+                    section_title="第一節 基礎概念",
+                    page_num=1,
+                    raw_ocr_skeleton="基礎概念草稿",
+                    golden_markdown="## 第一節 基礎概念\n\n::: {custom-style=\"導讀\"}\n精修內容\n:::",
+                    page_image_bytes=b"",
+                )
+            ],
+            current_section_title="第二節 進階實務",
+            current_ocr_draft="進階實務粗糙生稿內容",
+            manual_boundary_anchor="第一節末尾人工截止錨點",
+            boundary_context_text="這是人工最後確認的段落句子。",
+        )
+        assert "【人工精修截止定位錨點 (Human-Edited Boundary Anchor)】" in prompt
+        assert "第一節末尾人工截止錨點" in prompt
+        assert "這是人工最後確認的段落句子。" in prompt
+
 

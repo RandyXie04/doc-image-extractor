@@ -319,10 +319,20 @@ class PropagationEngine:
 
                 # Prepare style definitions / few-shot cues
                 style_cues = []
-                style_defs = self.blueprint.metadata.get("style_definitions", {})
+                meta = self.blueprint.metadata or {}
+                style_defs = meta.get("style_definitions", {})
                 for s, samples in style_defs.items():
                     sample_str = "、".join([f'"{samp[:40]}"' for samp in samples[:3]])
                     style_cues.append(f"- 【{s}】範例: {sample_str}")
+
+                boundary_idx = meta.get("seed_last_modified_idx", 0)
+                manual_anchor = meta.get("manual_boundary_anchor", "")
+                boundary_ctx = meta.get("boundary_context_text", "")
+                boundary_note = f"人工精修截止邊界：第 {boundary_idx} 段"
+                if manual_anchor:
+                    boundary_note += f"（人工定位錨點：「{manual_anchor}」）"
+                if boundary_ctx:
+                    boundary_note += f"\n截止處最後人工確認內文：「{boundary_ctx}」"
 
                 total_batches = (len(unclassified) + batch_size - 1) // batch_size
                 for b_idx, i in enumerate(range(0, len(unclassified), batch_size), 1):
@@ -332,12 +342,13 @@ class PropagationEngine:
 
                     prompt = (
                         "你是一位專精於中文圖書出版與 POD 數位整稿的專家。\n"
-                        "請根據以下人工精修範本歸納出的自訂樣式定義與範例，為段落列表標記最適用的樣式名稱：\n\n"
+                        "請根據以下人工精修範本歸納出的自訂樣式定義與範例，為人工截止點之後的後續生稿段落標記最適用的樣式名稱：\n\n"
+                        f"【人工定位確認】\n{boundary_note}\n\n"
                         f"可用樣式清單：{json.dumps(valid_styles, ensure_ascii=False)}\n"
                         "樣式特徵與範例：\n"
                         + "\n".join(style_cues[:8])
                         + "\n\n"
-                        "待標記段落列表：\n"
+                        "待標記後續生稿段落列表：\n"
                         + json.dumps(batch_payload, ensure_ascii=False, indent=2)
                         + "\n\n"
                         "要求：\n"

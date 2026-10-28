@@ -1000,7 +1000,7 @@ async def upload_and_run_ocr(
     right_ratio: float = Form(0.0),
     start_page: int = Form(0),
     end_page: int = Form(0),
-    no_footnote: bool = Form(False),
+    no_footnote: bool = Form(True),
     ai_kaiti: bool = Form(False),
     ai_kaiti_threshold: float = Form(0.65)
 ):
@@ -1399,7 +1399,16 @@ from src.pod_studio.vlm_continuation_engine import SecureVLMContinuationEngine
 
 
 
-@app.post("/api/pod/1_extract_raw")
+from src.web.schemas import (
+    PodSectionPreview,
+    PodExtractRawResponse,
+    PodCompileBlueprintResponse,
+    PodAuditSummary,
+    PodPropagateResponse,
+)
+
+
+@app.post("/api/pod/1_extract_raw", response_model=PodExtractRawResponse)
 async def pod_1_extract_raw(
     file: UploadFile = File(...),
     split_level: int = Form(2),
@@ -1424,28 +1433,31 @@ async def pod_1_extract_raw(
     else:
         raise HTTPException(status_code=400, detail="生稿僅支援 .pdf 或 .md 檔案")
 
-    return {
-        "status": "success",
-        "session_id": session_id,
-        "raw_docx_name": raw_docx_path.name,
-        "ast_json_name": ast_path.name,
-        "total_sections": len(sections),
-        "sections_preview": [
-            {"id": s.section_id, "title": s.title, "paragraphs": len(s.paragraphs)}
+    return PodExtractRawResponse(
+        status="success",
+        session_id=session_id,
+        raw_docx_name=raw_docx_path.name,
+        ast_json_name=ast_path.name,
+        total_sections=len(sections),
+        sections_preview=[
+            PodSectionPreview(id=s.section_id, title=s.title, paragraphs=len(s.paragraphs))
             for s in sections[:10]
         ],
-    }
+    )
 
 
-@app.post("/api/pod/2_compile_blueprint")
+@app.post("/api/pod/2_compile_blueprint", response_model=PodCompileBlueprintResponse)
 async def pod_2_compile_blueprint(
     seed_file: UploadFile = File(...),
+    pdf_file: Optional[UploadFile] = File(None),
     session_id: Optional[str] = Form(None),
+    manual_boundary_anchor: Optional[str] = Form(None),
+    manual_boundary_idx: Optional[int] = Form(None),
 ):
     """
     範本學習與藍圖合成 API
     比對人工精修範本推導樣式定義與狀態機轉換規則。
-    若未提供 session_id 則直接根據精修檔建立獨立 Session 與 AST。
+    若提供原始 PDF (pdf_file)，則直接解析完整幾何結構與三線表，建立 Book_raw_ast.json。
     """
     if not session_id:
         session_id = f"pod_{uuid.uuid4().hex[:12]}"
@@ -1455,8 +1467,26 @@ async def pod_2_compile_blueprint(
     seed_path = session_dir / (seed_file.filename or "Book_seed.docx")
     await save_upload_file_safely(seed_file, seed_path, max_mb=CFG.max_template_size_mb)
 
-    # When starting directly from docx without prior extraction, construct paragraph AST
     ast_path = session_dir / "Book_raw_ast.json"
+    has_source_pdf = False
+    detected_tables_count = 0
+
+    if pdf_file and pdf_file.filename:
+        source_pdf_path = session_dir / "source_book.pdf"
+        await save_upload_file_safely(pdf_file, source_pdf_path, max_mb=CFG.max_upload_size_mb)
+        has_source_pdf = True
+        try:
+            from src.scripts.book_layout_extractor import extract_book_vector_ast
+            from src.pod_studio.section_ast import SectionAST
+            book_ast = extract_book_vector_ast(source_pdf_path, enable_footnotes=False)
+            SectionAST.dump_book_ast_json(book_ast.sections, ast_path)
+            detected_tables_count = sum(
+                1 for sec in book_ast.sections for p in sec.paragraphs if p.font_name == "table"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to extract vector AST from uploaded source PDF: {e}")
+
+    # When starting directly from docx without prior extraction or PDF, construct paragraph AST
     if not ast_path.exists() and seed_path.suffix.lower() == ".docx":
         import docx
         from src.pod_studio.section_ast import SectionAST, SectionUnit, ParagraphUnit
@@ -1473,21 +1503,35 @@ async def pod_2_compile_blueprint(
         ]
         SectionAST.dump_book_ast_json(sections, ast_path)
 
-    blueprint = compile_blueprint_from_seed(session_dir, seed_path)
+    blueprint = compile_blueprint_from_seed(
+        session_dir,
+        seed_path,
+        manual_boundary_anchor=manual_boundary_anchor,
+        manual_boundary_idx=manual_boundary_idx,
+    )
+    if has_source_pdf:
+        blueprint.metadata["has_source_pdf"] = True
+        blueprint.metadata["detected_tables_count"] = detected_tables_count
+        blueprint.save(session_dir / "book_blueprint.json")
 
-    return {
-        "status": "success",
-        "session_id": session_id,
-        "blueprint": blueprint.to_dict(),
-        "inferred_rules_count": len(blueprint.style_rules),
-        "mandatory_badges": blueprint.mandatory_section_badges,
-        "detected_styles": blueprint.template_styles_used,
-        "boundary_idx": blueprint.metadata.get("seed_last_modified_idx", 0),
-        "total_paragraphs": blueprint.metadata.get("seed_total_paragraphs", 0),
-    }
+    return PodCompileBlueprintResponse(
+        status="success",
+        session_id=session_id,
+        blueprint=blueprint.to_dict(),
+        inferred_rules_count=len(blueprint.style_rules),
+        mandatory_badges=blueprint.mandatory_section_badges,
+        detected_styles=blueprint.template_styles_used,
+        boundary_idx=blueprint.metadata.get("seed_last_modified_idx", 0),
+        boundary_source=blueprint.metadata.get("boundary_source", "auto_heuristic"),
+        manual_boundary_anchor=blueprint.metadata.get("manual_boundary_anchor", ""),
+        boundary_context_text=blueprint.metadata.get("boundary_context_text", ""),
+        total_paragraphs=blueprint.metadata.get("seed_total_paragraphs", 0),
+        has_source_pdf=has_source_pdf,
+        detected_tables_count=detected_tables_count,
+    )
 
 
-@app.post("/api/pod/3_propagate_and_validate")
+@app.post("/api/pod/3_propagate_and_validate", response_model=PodPropagateResponse)
 async def pod_3_propagate_and_validate(
     session_id: str = Form(...),
     engine_mode: str = Form("rule_first"),
@@ -1495,6 +1539,8 @@ async def pod_3_propagate_and_validate(
     blueprint_json: Optional[str] = Form(None),
     model: Optional[str] = Form(None),
     max_continuation_sections: Optional[int] = Form(None),
+    manual_boundary_anchor: Optional[str] = Form(None),
+    manual_boundary_idx: Optional[int] = Form(None),
 ):
     """
     階段三：批量擴散與硬性驗收 API (支援 Dual-Engine: rule_first 與 vlm_continuation)
@@ -1527,25 +1573,28 @@ async def pod_3_propagate_and_validate(
         pdf_path=pdf_path,
         model=model,
         max_sections=max_continuation_sections,
+        manual_boundary_anchor=manual_boundary_anchor,
+        manual_boundary_idx=manual_boundary_idx,
     )
 
-    return {
-        "status": "success",
-        "session_id": session_id,
-        "engine_mode": engine_mode,
-        "is_valid": report.is_valid,
-        "final_docx_name": final_docx_path.name,
-        "audit_summary": {
-            "total_sections": report.total_sections,
-            "passed_sections": report.passed_sections,
-            "failed_sections": report.failed_sections,
-            "green_count": report.green_count,
-            "yellow_count": report.yellow_count,
-            "red_count": report.red_count,
-            "violations_count": len(report.violations),
-        },
-        "audit_report": report.to_dict(),
-    }
+    resolved_mode = "vlm_continuation" if engine_mode == "vlm_continuation" else "rule_first"
+    return PodPropagateResponse(
+        status="success",
+        session_id=session_id,
+        engine_mode=resolved_mode,
+        is_valid=report.is_valid,
+        final_docx_name=final_docx_path.name,
+        audit_summary=PodAuditSummary(
+            total_sections=report.total_sections,
+            passed_sections=report.passed_sections,
+            failed_sections=report.failed_sections,
+            green_count=report.green_count,
+            yellow_count=report.yellow_count,
+            red_count=report.red_count,
+            violations_count=len(report.violations),
+        ),
+        audit_report=report.to_dict(),
+    )
 
 
 @app.get("/api/pod/download/{session_id}/{filename}")
@@ -1579,6 +1628,8 @@ async def pod_vlm_continuation(
     model_name: str = Form("gemini-2.5-flash"),
     max_continuation_sections: Optional[int] = Form(None),
     split_level: int = Form(2),
+    manual_boundary_anchor: Optional[str] = Form(None),
+    manual_boundary_idx: Optional[int] = Form(None),
 ):
     """
     POD 視覺整稿接續 API (VLM Continuation & Infilling)
@@ -1641,6 +1692,8 @@ async def pod_vlm_continuation(
             model_name=model_name,
             max_continuation_sections=max_continuation_sections,
             target_session_dir=session_dir,
+            manual_boundary_anchor=manual_boundary_anchor,
+            manual_boundary_idx=manual_boundary_idx,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"視覺接續流程執行異常: {str(e)}")
