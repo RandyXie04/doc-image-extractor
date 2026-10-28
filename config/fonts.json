@@ -167,5 +167,20 @@
     "role": null,
     "docx_style": "標粗",
     "mapped_by": "user"
+  },
+  "FZL2FW--GB1-0 (26.0pt)": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZZYSK1--GBK1-0 (18.0pt)": {
+    "role": "H2",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZSHK--GBK1-0 (12.0pt)": {
+    "role": null,
+    "docx_style": "標粗",
+    "mapped_by": "user"
   }
 }

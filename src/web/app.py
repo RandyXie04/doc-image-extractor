@@ -426,7 +426,7 @@ async def render_preview(file_id: str, page: int = 1, header: float = 0.1, foote
     try:
         with fitz.open(file_path) as doc:
             page_idx = max(0, min(page - 1, len(doc) - 1))
-            page_obj = doc[page_idx]
+            page_obj: Any = doc[page_idx]
             
             # 渲染成圖片
             pix = page_obj.get_pixmap(dpi=72)
@@ -1484,7 +1484,7 @@ async def pod_2_compile_blueprint(
                 1 for sec in book_ast.sections for p in sec.paragraphs if p.font_name == "table"
             )
         except Exception as e:
-            logger.warning(f"Failed to extract vector AST from uploaded source PDF: {e}")
+            print(f"[POD Warning] Failed to extract vector AST from uploaded source PDF: {e}")
 
     # When starting directly from docx without prior extraction or PDF, construct paragraph AST
     if not ast_path.exists() and seed_path.suffix.lower() == ".docx":
