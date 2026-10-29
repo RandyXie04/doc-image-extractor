@@ -62,19 +62,33 @@ const ICON = {
     chip: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>',
     moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
     sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
-    menu: '<line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>'
+    menu: '<line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>',
+    chevronRight: '<polyline points="9 18 15 12 9 6"/>',
+    chevronDown: '<polyline points="6 9 12 15 18 9"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
+    list: '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/>',
+    shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
+    fileText: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
+    cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>',
+    close: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'
 };
 
 function svg(name, size = 16) {
-    return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name]}</svg>`;
+    return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name] || ''}</svg>`;
 }
 
-const NAV_ITEMS = [
+// 主流程項目
+const MAIN_NAV_ITEMS = [
     { href: '/static/ocr_pipeline.html', key: 'ocr_pipeline', icon: 'doc', label: '全自動整稿' },
-    { href: '/static/pod_studio.html', key: 'pod_studio', icon: 'pod', label: 'POD 整稿' },
+    { href: '/static/pod_studio.html', key: 'pod_studio', icon: 'pod', label: 'POD 整稿' }
+];
+
+// 輔助工具清單（未來新增模組與單一功能皆往此處擴充填入）
+const AUXILIARY_NAV_ITEMS = [
     { href: '/static/formula.html', key: 'formula', icon: 'formula', label: '公式提取' },
     { href: '/static/extract_images.html', key: 'extract_images', icon: 'image', label: '圖片提取' },
     { href: '/static/founder_repair.html', key: 'founder_repair', icon: 'wrench', label: '方正修復' }
+    // …（未來輔助工具皆往此處填）
 ];
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -87,16 +101,96 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('sidebar')) return;
 
     const currentPath = window.location.pathname;
-    const navHtml = NAV_ITEMS.map(item => `
-            <a href="${item.href}" class="nav-link ${currentPath.includes(item.key) ? 'active' : ''}"${currentPath.includes(item.key) ? ' aria-current="page"' : ''}>
-                <span class="nav-icon">${svg(item.icon)}</span>${item.label}
+
+    const isMainActive = (key) => currentPath.includes(key);
+    const isAuxActive = AUXILIARY_NAV_ITEMS.some(item => currentPath.includes(item.key));
+
+    // 輔助工具收折狀態：若當前頁面為子項目則強制展開；其餘情況遵循使用者偏好（預設展開）
+    const savedAuxState = localStorage.getItem('sidebar_aux_expanded');
+    const isAuxExpanded = isAuxActive || savedAuxState !== 'false';
+
+    const mainNavHtml = MAIN_NAV_ITEMS.map(item => `
+            <a href="${item.href}" class="nav-link ${isMainActive(item.key) ? 'active' : ''}"${isMainActive(item.key) ? ' aria-current="page"' : ''}>
+                <span class="nav-icon">${svg(item.icon)}</span>
+                <span class="nav-label">${item.label}</span>
             </a>`).join('');
+
+    const auxChildrenHtml = AUXILIARY_NAV_ITEMS.map(item => `
+            <a href="${item.href}" class="nav-sub-link ${currentPath.includes(item.key) ? 'active' : ''}"${currentPath.includes(item.key) ? ' aria-current="page"' : ''}>
+                <span class="nav-sub-icon">${svg(item.icon, 14)}</span>
+                <span class="nav-sub-label">${item.label}</span>
+            </a>`).join('');
+
+    const auxGroupHtml = `
+            <div class="nav-group ${isAuxExpanded ? 'is-expanded' : 'is-collapsed'}" id="auxNavGroup">
+                <button type="button" class="nav-group-header ${isAuxActive ? 'has-active-child' : ''}" id="auxNavToggle" aria-expanded="${isAuxExpanded ? 'true' : 'false'}" aria-controls="auxNavChildren" title="切換展開/收折輔助工具">
+                    <span class="nav-group-header-left">
+                        <span class="nav-arrow-indicator">${svg('chevronRight', 14)}</span>
+                        <span class="nav-group-title">輔助工具</span>
+                    </span>
+                    <span class="nav-group-count">${AUXILIARY_NAV_ITEMS.length}</span>
+                </button>
+                <div class="nav-group-children" id="auxNavChildren" style="${isAuxExpanded ? '' : 'display:none;'}">
+                    ${auxChildrenHtml}
+                </div>
+            </div>`;
 
     const sidebarHtml = `
     <div id="sidebar">
         <a href="/" class="brand">${svg('book', 20)}轉檔工具箱</a>
-        <nav aria-label="工具選單">${navHtml}
+        <nav aria-label="工具選單">
+            ${mainNavHtml}
+            ${auxGroupHtml}
         </nav>
+        <div class="sidebar-settings-block">
+            <button type="button" class="sidebar-settings-trigger" id="sidebarSettingsBtn" aria-expanded="false" aria-controls="sidebarSettingsDropdown" title="開啟設定與技術文件">
+                <span class="settings-trigger-left">
+                    <span class="nav-icon" style="margin-right:0;">${svg('settings', 16)}</span>
+                    <span class="settings-label">設定與文件</span>
+                </span>
+                <span class="settings-chevron">${svg('chevronRight', 14)}</span>
+            </button>
+            <div class="sidebar-settings-dropdown" id="sidebarSettingsDropdown" style="display:none;">
+                <div class="settings-dropdown-section-title">技術與操作文件</div>
+                <div class="settings-doc-list">
+                    <button type="button" class="sidebar-doc-link" data-doc-id="workflow">
+                        <span class="doc-icon">${svg('book', 14)}</span>
+                        <span class="doc-text">
+                            <span class="doc-name">全流程操作指南</span>
+                            <span class="doc-desc">全自動整稿 &amp; POD</span>
+                        </span>
+                    </button>
+                    <button type="button" class="sidebar-doc-link" data-doc-id="modules">
+                        <span class="doc-icon">${svg('cpu', 14)}</span>
+                        <span class="doc-text">
+                            <span class="doc-name">核心模組技術說明</span>
+                            <span class="doc-desc">雙引擎、YOLOv8、方正</span>
+                        </span>
+                    </button>
+                    <button type="button" class="sidebar-doc-link" data-doc-id="glossary">
+                        <span class="doc-icon">${svg('list', 14)}</span>
+                        <span class="doc-text">
+                            <span class="doc-name">名詞定義與術語表</span>
+                            <span class="doc-desc">系統排版術語彙編</span>
+                        </span>
+                    </button>
+                    <button type="button" class="sidebar-doc-link" data-doc-id="decisions">
+                        <span class="doc-icon">${svg('fileText', 14)}</span>
+                        <span class="doc-text">
+                            <span class="doc-name">架構設計決策記錄</span>
+                            <span class="doc-desc">ADR 關鍵設計決策</span>
+                        </span>
+                    </button>
+                    <button type="button" class="sidebar-doc-link" data-doc-id="release_sop">
+                        <span class="doc-icon">${svg('shield', 14)}</span>
+                        <span class="doc-text">
+                            <span class="doc-name">發布維護與除錯 SOP</span>
+                            <span class="doc-desc">版本與無縫熱更新</span>
+                        </span>
+                    </button>
+                </div>
+            </div>
+        </div>
         <div class="sidebar-footer">
             <div id="hardwareDisplay" class="sidebar-info-box">硬體加速：偵測中</div>
             <div id="versionDisplay" class="sidebar-version-text">版本：讀取中</div>
@@ -104,6 +198,52 @@ document.addEventListener('DOMContentLoaded', () => {
             <button id="modeToggleBtn" class="sidebar-btn" type="button" title="切換出版社編輯模式與工程師除錯模式">模式：讀取中</button>
             <button id="checkUpdateBtn" class="sidebar-btn" type="button">${svg('refresh', 14)}檢查更新</button>
             <button id="globalReportBtn" class="sidebar-btn" type="button">${svg('github', 14)}在 GitHub 回報問題</button>
+        </div>
+    </div>
+
+    <div id="docViewerModal" class="modal-overlay doc-viewer-modal" role="dialog" aria-modal="true" aria-labelledby="docViewerTitle">
+        <div class="modal doc-modal-content">
+            <div class="doc-modal-head">
+                <div class="doc-modal-head-title">
+                    <span class="doc-modal-head-icon">${svg('book', 20)}</span>
+                    <div>
+                        <h2 id="docViewerTitle" style="margin:0; font-size:1.15rem; font-weight:700;">技術與操作文件中心</h2>
+                        <span id="docViewerSubtitle" class="doc-badge">載入中...</span>
+                    </div>
+                </div>
+                <button id="closeDocViewerBtn" class="modal-close-btn" type="button" aria-label="關閉文件中心">
+                    ${svg('close', 18)}
+                </button>
+            </div>
+            <div class="doc-modal-body">
+                <aside class="doc-modal-sidebar">
+                    <div class="doc-nav-heading">操作手冊</div>
+                    <button type="button" class="doc-tab-btn" data-doc-id="workflow">
+                        <span class="doc-tab-icon">${svg('book', 14)}</span>
+                        <span>全流程操作指南</span>
+                    </button>
+                    <button type="button" class="doc-tab-btn" data-doc-id="glossary">
+                        <span class="doc-tab-icon">${svg('list', 14)}</span>
+                        <span>名詞定義與術語表</span>
+                    </button>
+                    <div class="doc-nav-heading" style="margin-top:0.75rem;">技術與維護規格</div>
+                    <button type="button" class="doc-tab-btn" data-doc-id="modules">
+                        <span class="doc-tab-icon">${svg('cpu', 14)}</span>
+                        <span>核心模組技術說明</span>
+                    </button>
+                    <button type="button" class="doc-tab-btn" data-doc-id="decisions">
+                        <span class="doc-tab-icon">${svg('fileText', 14)}</span>
+                        <span>架構設計決策記錄</span>
+                    </button>
+                    <button type="button" class="doc-tab-btn" data-doc-id="release_sop">
+                        <span class="doc-tab-icon">${svg('shield', 14)}</span>
+                        <span>發布維護與除錯 SOP</span>
+                    </button>
+                </aside>
+                <main class="doc-modal-article" id="docViewerArticle">
+                    <div class="doc-loading">正在載入文件內容...</div>
+                </main>
+            </div>
         </div>
     </div>
 
@@ -186,13 +326,122 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    document.querySelectorAll('#sidebar a.nav-link').forEach(link => {
+    document.querySelectorAll('#sidebar a.nav-link, #sidebar a.nav-sub-link').forEach(link => {
         link.addEventListener('click', () => {
             const vp = /** @type {any} */ (window).viewportManager;
             if (vp && typeof vp.isMobile === 'function' && (vp.isMobile() || vp.isTablet())) {
                 vp.closeSidebar();
             }
         });
+    });
+
+    // 輔助工具折疊切換
+    const auxNavToggle = document.getElementById('auxNavToggle');
+    const auxNavGroup = document.getElementById('auxNavGroup');
+    const auxNavChildren = document.getElementById('auxNavChildren');
+    if (auxNavToggle && auxNavGroup && auxNavChildren) {
+        auxNavToggle.onclick = () => {
+            const isCurrentlyExpanded = auxNavGroup.classList.contains('is-expanded');
+            const nextState = !isCurrentlyExpanded;
+            auxNavGroup.classList.toggle('is-expanded', nextState);
+            auxNavGroup.classList.toggle('is-collapsed', !nextState);
+            auxNavToggle.setAttribute('aria-expanded', nextState ? 'true' : 'false');
+            auxNavChildren.style.display = nextState ? '' : 'none';
+            localStorage.setItem('sidebar_aux_expanded', nextState ? 'true' : 'false');
+        };
+    }
+
+    // 側邊欄底部設定區塊展開切換
+    const settingsBtn = document.getElementById('sidebarSettingsBtn');
+    const settingsDropdown = document.getElementById('sidebarSettingsDropdown');
+    if (settingsBtn && settingsDropdown) {
+        settingsBtn.onclick = () => {
+            const isOpen = settingsDropdown.style.display !== 'none';
+            settingsDropdown.style.display = isOpen ? 'none' : 'block';
+            settingsBtn.classList.toggle('open', !isOpen);
+            settingsBtn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
+        };
+    }
+
+    // 技術與操作文件檢視中心 (Doc Viewer Modal)
+    const docModal = document.getElementById('docViewerModal');
+    const closeDocViewerBtn = document.getElementById('closeDocViewerBtn');
+    const docViewerTitle = document.getElementById('docViewerTitle');
+    const docViewerSubtitle = document.getElementById('docViewerSubtitle');
+    const docViewerArticle = document.getElementById('docViewerArticle');
+    const docCache = {};
+
+    async function loadAndShowDoc(docId) {
+        if (!docId) return;
+
+        document.querySelectorAll('.doc-tab-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.docId === docId);
+        });
+
+        docViewerArticle.innerHTML = '<div class="doc-loading">正在載入文件內容...</div>';
+        docModal.classList.add('open');
+
+        if (docCache[docId]) {
+            renderDoc(docCache[docId]);
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/docs/${encodeURIComponent(docId)}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+            const data = await res.json();
+            docCache[docId] = data;
+            renderDoc(data);
+        } catch (err) {
+            docViewerArticle.innerHTML = `
+                <div style="padding:2rem; text-align:center;">
+                    <p style="color:var(--danger); font-weight:600; font-size:1.05rem;">文件載入失敗</p>
+                    <p class="hint" style="margin-top:0.5rem;">${window.toolbox.escape(err.message)}</p>
+                </div>`;
+        }
+    }
+
+    function renderDoc(data) {
+        docViewerTitle.textContent = data.title || '技術與操作文件中心';
+        docViewerSubtitle.textContent = data.category || '說明文件';
+        docViewerArticle.innerHTML = data.html || `<pre style="white-space:pre-wrap;">${window.toolbox.escape(data.markdown || '')}</pre>`;
+        docViewerArticle.scrollTop = 0;
+    }
+
+    window.toolbox.openDocViewer = loadAndShowDoc;
+
+    document.querySelectorAll('.sidebar-doc-link').forEach(btn => {
+        btn.onclick = () => {
+            const docId = btn.dataset.docId;
+            if (docId) {
+                loadAndShowDoc(docId);
+                const vp = /** @type {any} */ (window).viewportManager;
+                if (vp && typeof vp.isMobile === 'function' && (vp.isMobile() || vp.isTablet())) {
+                    vp.closeSidebar();
+                }
+            }
+        };
+    });
+
+    document.querySelectorAll('.doc-tab-btn').forEach(btn => {
+        btn.onclick = () => {
+            const docId = btn.dataset.docId;
+            if (docId) loadAndShowDoc(docId);
+        };
+    });
+
+    if (closeDocViewerBtn) {
+        closeDocViewerBtn.onclick = () => docModal.classList.remove('open');
+    }
+    if (docModal) {
+        docModal.addEventListener('click', (e) => {
+            if (e.target === docModal) docModal.classList.remove('open');
+        });
+    }
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && docModal && docModal.classList.contains('open')) {
+            docModal.classList.remove('open');
+        }
     });
 
     const versionDisplay = document.getElementById('versionDisplay');

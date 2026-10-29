@@ -205,6 +205,508 @@ body {
     margin-right: 12px;
     display: flex;
     align-items: center;
+    flex-shrink: 0;
+}
+
+/* Sidebar Nav Hierarchical Grouping: 輔助工具 (可折疊分組) */
+.nav-group {
+    display: flex;
+    flex-direction: column;
+    margin: 0.15rem 0.75rem;
+}
+
+.nav-group-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 0.55rem 1rem;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font-weight: 500;
+    font-size: 0.9rem;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nav-group-header:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.nav-group-header.has-active-child {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.nav-group-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.nav-arrow-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-group.open .nav-arrow-indicator,
+.nav-group.is-expanded .nav-arrow-indicator {
+    transform: rotate(90deg);
+}
+
+.nav-group-title {
+    font-size: 0.9rem;
+    letter-spacing: 0.01em;
+}
+
+.nav-group-count {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 9999px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+}
+
+.nav-group-children {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 2px;
+    margin-left: 0.9rem;
+    padding-left: 0.5rem;
+    border-left: 2px solid var(--border);
+    transition: opacity 0.2s ease;
+}
+
+.nav-sub-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0.45rem 0.75rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.86rem;
+    font-weight: 500;
+    border: 1px solid transparent;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.nav-sub-link:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.nav-sub-link.active {
+    background: var(--accent-soft);
+    color: var(--accent);
+    border-color: var(--accent-ring);
+    font-weight: 600;
+}
+
+.nav-sub-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* Sidebar Settings & Documentation Section (側邊欄底部設定與文件區塊) */
+.sidebar-settings-block {
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--border);
+    background: var(--sidebar-bg);
+}
+
+.sidebar-settings-trigger {
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: inherit;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.sidebar-settings-trigger:hover {
+    background: var(--surface-2);
+    border-color: var(--accent-ring);
+}
+
+.sidebar-settings-trigger.open {
+    background: var(--surface-2);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.settings-trigger-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.settings-chevron {
+    display: inline-flex;
+    align-items: center;
+    transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    color: var(--text-muted);
+}
+
+.sidebar-settings-trigger.open .settings-chevron {
+    transform: rotate(90deg);
+}
+
+.sidebar-settings-dropdown {
+    margin-top: 0.4rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.4rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 230px;
+    overflow-y: auto;
+}
+
+.settings-dropdown-section-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 0.25rem 0.4rem;
+}
+
+.sidebar-doc-link {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0.4rem 0.5rem;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+    font-family: inherit;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.sidebar-doc-link:hover {
+    background: var(--surface-2);
+    border-color: var(--border);
+    color: var(--accent);
+}
+
+.sidebar-doc-link .doc-icon {
+    display: inline-flex;
+    align-items: center;
+    color: var(--accent);
+    flex-shrink: 0;
+}
+
+.sidebar-doc-link .doc-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.25;
+}
+
+.sidebar-doc-link .doc-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar-doc-link .doc-desc {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Document Viewer Modal */
+.doc-modal-content {
+    width: min(96vw, 1080px) !important;
+    height: min(90vh, 850px) !important;
+    max-height: 90vh !important;
+    padding: 0 !important;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    border-radius: var(--radius-md);
+}
+
+.doc-modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.9rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+}
+
+.doc-modal-head-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.doc-modal-head-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.doc-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 9999px;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    margin-left: 6px;
+}
+
+.modal-close-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.modal-close-btn:hover {
+    background: var(--surface-2);
+    color: var(--text);
+}
+
+.doc-modal-body {
+    display: flex;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+.doc-modal-sidebar {
+    width: 250px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    background: var(--surface-2);
+    padding: 0.85rem 0.6rem;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.doc-nav-heading {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 0.35rem 0.5rem 0.2rem;
+}
+
+.doc-tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    text-align: left;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+
+.doc-tab-btn:hover {
+    background: var(--surface);
+    color: var(--text);
+}
+
+.doc-tab-btn.active {
+    background: var(--surface);
+    color: var(--accent);
+    border-color: var(--border);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    font-weight: 600;
+}
+
+.doc-tab-btn .doc-tab-icon {
+    display: inline-flex;
+    align-items: center;
+    color: inherit;
+}
+
+.doc-modal-article {
+    flex: 1;
+    min-width: 0;
+    padding: 1.5rem 2rem;
+    overflow-y: auto;
+    background: var(--surface);
+    color: var(--text);
+    line-height: 1.7;
+    font-size: 0.92rem;
+}
+
+.doc-modal-article h1 {
+    font-size: 1.45rem;
+    margin: 0 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+}
+
+.doc-modal-article h2 {
+    font-size: 1.2rem;
+    margin: 1.5rem 0 0.65rem;
+    color: var(--text);
+}
+
+.doc-modal-article h3 {
+    font-size: 1.05rem;
+    margin: 1.2rem 0 0.5rem;
+    color: var(--text);
+}
+
+.doc-modal-article p {
+    margin: 0.6rem 0;
+}
+
+.doc-modal-article table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.88rem;
+}
+
+.doc-modal-article th,
+.doc-modal-article td {
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+}
+
+.doc-modal-article th {
+    background: var(--surface-2);
+    font-weight: 600;
+}
+
+.doc-modal-article pre {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0.85rem;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 0.84rem;
+}
+
+.doc-modal-article code {
+    background: var(--surface-2);
+    padding: 2px 5px;
+    border-radius: 4px;
+    font-family: var(--font-mono);
+    font-size: 0.86em;
+}
+
+.doc-modal-article pre code {
+    background: transparent;
+    padding: 0;
+}
+
+.doc-modal-article blockquote {
+    border-left: 4px solid var(--accent);
+    margin: 1rem 0;
+    padding: 0.5rem 1rem;
+    background: var(--accent-soft);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.doc-modal-article ul,
+.doc-modal-article ol {
+    margin: 0.5rem 0;
+    padding-left: 1.5rem;
+}
+
+.doc-modal-article li {
+    margin: 0.25rem 0;
+}
+
+.doc-modal-article hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 1.5rem 0;
+}
+
+.doc-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    padding: 3rem;
+}
+
+@media (max-width: 768px) {
+    .doc-modal-body {
+        flex-direction: column;
+    }
+    .doc-modal-sidebar {
+        width: 100%;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+        max-height: 140px;
+    }
+    .doc-modal-article {
+        padding: 1rem;
+    }
 }
 
 .sidebar-footer {

@@ -192,3 +192,104 @@ async def report_issue(request: Request):
         "msg": "已生成 GitHub 官方回報頁面網址。",
     }
 
+
+DOCS_CATALOGUE = [
+    {
+        "id": "workflow",
+        "title": "全流程操作指南",
+        "category": "操作手冊",
+        "description": "全自動整稿、POD 人工預修擴散與輔助工具標準作業流程",
+        "file": "docs/WORKFLOW_GUIDE.md",
+    },
+    {
+        "id": "modules",
+        "title": "核心模組技術說明",
+        "category": "技術規格",
+        "description": "雙引擎自適應 OCR、YOLOv8 DirectML 公式提取、無損圖片流與方正字型修復",
+        "file": "docs/TECH_MODULES.md",
+    },
+    {
+        "id": "glossary",
+        "title": "名詞定義與術語表",
+        "category": "操作手冊",
+        "description": "系統關鍵名詞、排版概念與資料流術語對照",
+        "file": "GLOSSARY.md",
+    },
+    {
+        "id": "decisions",
+        "title": "架構設計決策記錄 (ADR)",
+        "category": "技術規格",
+        "description": "無腳注雙通道架構、2D 座標三線表重建、無日誌安全規範等設計決策",
+        "file": "docs/DECISIONS.md",
+    },
+    {
+        "id": "release_sop",
+        "title": "發布與維護 SOP",
+        "category": "維護文件",
+        "description": "版本升級、雙軌更新、發布驗收清單與無縫熱更新規範",
+        "file": "docs/RELEASE_SOP.md",
+    },
+]
+
+
+@router.get("/api/docs")
+async def list_docs():
+    """取得技術與操作文件清單"""
+    return [
+        {
+            "id": d["id"],
+            "title": d["title"],
+            "category": d["category"],
+            "description": d["description"],
+        }
+        for d in DOCS_CATALOGUE
+    ]
+
+
+@router.get("/api/docs/{doc_id}")
+async def get_doc_content(doc_id: str):
+    """取得特定技術或操作文件之內容 (支援語意 HTML 與 Markdown 雙輸出)"""
+    item = next((d for d in DOCS_CATALOGUE if d["id"] == doc_id), None)
+    if not item:
+        raise HTTPException(status_code=404, detail=f"文件不存在: {doc_id}")
+
+    from src.utils.path_helper import get_project_dir, get_bundled_pandoc
+    import subprocess
+
+    project_root = get_project_dir()
+    file_path = project_root / item["file"]
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail=f"文件檔案未找到: {item['file']}")
+
+    markdown_text = file_path.read_text(encoding="utf-8")
+    html_content = ""
+
+    pandoc_exe = get_bundled_pandoc()
+    if pandoc_exe and pandoc_exe.exists():
+        try:
+            res = subprocess.run(
+                [str(pandoc_exe), "-f", "markdown", "-t", "html"],
+                input=markdown_text.encode("utf-8"),
+                capture_output=True,
+                check=True,
+                timeout=5,
+            )
+            html_content = res.stdout.decode("utf-8", errors="replace")
+        except Exception:
+            html_content = ""
+
+    if not html_content:
+        import html
+        escaped_text = html.escape(markdown_text)
+        html_content = f"<pre style='white-space: pre-wrap; font-family: inherit;'>{escaped_text}</pre>"
+
+    return {
+        "id": item["id"],
+        "title": item["title"],
+        "category": item["category"],
+        "description": item["description"],
+        "html": html_content,
+        "markdown": markdown_text,
+    }
+
+
