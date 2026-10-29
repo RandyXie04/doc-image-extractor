@@ -358,8 +358,23 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const url = currentMode ? `/api/docs?mode=${encodeURIComponent(currentMode)}` : '/api/docs';
             const res = await fetch(url);
-            if (!res.ok) return;
-            const docs = await res.json();
+            let docs = [];
+            if (res.ok) {
+                docs = await res.json();
+            } else {
+                // 後端未重啟或離線時之靜態防禦清單
+                docs = [
+                    { id: 'workflow', title: '全流程操作指南', category: '操作手冊', icon: 'book', description: '全自動整稿 & POD' },
+                    { id: 'about', title: '系統授權與內網部署', category: '操作手冊', icon: 'shield', description: '開源授權與私有化規範' }
+                ];
+                if (currentMode === 'dev') {
+                    docs.push(
+                        { id: 'modules', title: '核心模組技術說明', category: '技術規格', icon: 'cpu', description: '雙引擎、YOLOv8、方正' },
+                        { id: 'glossary', title: '名詞定義與術語表', category: '技術規格', icon: 'list', description: '系統排版術語彙編' },
+                        { id: 'decisions', title: '架構設計決策記錄', category: '技術規格', icon: 'fileText', description: 'ADR 關鍵設計決策' }
+                    );
+                }
+            }
 
             // 1. Render in sidebar settings dropdown
             const docListEl = document.getElementById('sidebarDocList');
