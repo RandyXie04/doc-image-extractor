@@ -61,7 +61,8 @@ const ICON = {
     github: '<path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/>',
     chip: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/>',
     moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
-    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>'
+    sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+    menu: '<line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/>'
 };
 
 function svg(name, size = 16) {
@@ -123,6 +124,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const mainContent = document.createElement('div');
     mainContent.id = 'main-content';
     bodyContents.forEach(node => mainContent.appendChild(node));
+
+    const backdrop = document.createElement('div');
+    backdrop.id = 'sidebarBackdrop';
+    backdrop.setAttribute('aria-hidden', 'true');
+    document.body.appendChild(backdrop);
+
+    const mobileNavbar = document.createElement('div');
+    mobileNavbar.id = 'mobileNavbar';
+    mobileNavbar.innerHTML = `
+        <button id="sidebarToggleBtn" class="mobile-nav-toggle" type="button" aria-label="切換選單" aria-expanded="false" aria-controls="sidebar">
+            ${svg('menu', 20)}
+        </button>
+        <a href="/" class="mobile-brand">
+            ${svg('book', 18)}
+            <span>轉檔工具箱</span>
+        </a>
+        <div id="mobileNavRight"></div>
+    `;
+    mainContent.insertAdjacentElement('afterbegin', mobileNavbar);
+
     document.body.appendChild(mainContent);
     document.body.insertAdjacentHTML('afterbegin', sidebarHtml);
 
@@ -133,6 +154,45 @@ document.addEventListener('DOMContentLoaded', () => {
             link.href = '/static/' + name;
             document.head.appendChild(link);
         }
+    });
+
+    if (!document.querySelector('script[src*="viewport_manager.js"]')) {
+        const vp = document.createElement('script');
+        vp.src = '/static/js/viewport_manager.js';
+        document.head.appendChild(vp);
+    }
+
+    const toggleBtn = document.getElementById('sidebarToggleBtn');
+    if (toggleBtn) {
+        toggleBtn.onclick = () => {
+            const vp = /** @type {any} */ (window).viewportManager;
+            if (vp && typeof vp.toggleSidebar === 'function') {
+                vp.toggleSidebar();
+            } else {
+                const isExpanded = document.documentElement.getAttribute('data-sidebar-state') === 'expanded';
+                document.documentElement.setAttribute('data-sidebar-state', isExpanded ? 'collapsed' : 'expanded');
+                toggleBtn.setAttribute('aria-expanded', isExpanded ? 'false' : 'true');
+            }
+        };
+    }
+
+    backdrop.onclick = () => {
+        const vp = /** @type {any} */ (window).viewportManager;
+        if (vp && typeof vp.closeSidebar === 'function') {
+            vp.closeSidebar();
+        } else {
+            document.documentElement.setAttribute('data-sidebar-state', 'collapsed');
+            if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
+        }
+    };
+
+    document.querySelectorAll('#sidebar a.nav-link').forEach(link => {
+        link.addEventListener('click', () => {
+            const vp = /** @type {any} */ (window).viewportManager;
+            if (vp && typeof vp.isMobile === 'function' && (vp.isMobile() || vp.isTablet())) {
+                vp.closeSidebar();
+            }
+        });
     });
 
     const versionDisplay = document.getElementById('versionDisplay');

@@ -199,7 +199,7 @@ input[type="range"] {
 
 .grid-2 {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
     gap: 1rem;
 }
 
@@ -506,7 +506,7 @@ input[type="range"] {
 
 .slider-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
     gap: 1rem;
     margin-top: 1rem;
     text-align: left;
@@ -576,7 +576,7 @@ input[type="range"] {
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     box-shadow: var(--shadow-modal);
-    width: min(94vw, 960px);
+    width: min(94vw, 1120px);
     max-height: 88vh;
     padding: clamp(1.1rem, 2.5vw, 1.75rem);
     display: flex;
@@ -707,6 +707,22 @@ details.disclosure summary {
     * {
         transition: none !important;
         animation: none !important;
+    }
+}
+
+@media (pointer: coarse) {
+    .btn {
+        min-height: 42px;
+    }
+    .input, select {
+        min-height: 40px;
+    }
+    .check {
+        padding: 4px 0;
+    }
+    .check input {
+        width: 18px;
+        height: 18px;
     }
 }
 
