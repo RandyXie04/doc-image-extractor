@@ -25,14 +25,13 @@ class MarkerDetector:
     def detect(cls, text: str, marker_type: str = "auto", para_idx: int = -1, sec_idx: int = -1) -> List[MarkerMatch]:
         matches = []
         if marker_type == "auto":
-            # 優先偵測高信賴標記：圓圈數字、上標數字、各類括號
-            matches = cls.detect(text, "circled_number", para_idx, sec_idx)
-            if not matches:
-                matches = cls.detect(text, "superscript", para_idx, sec_idx)
-            if not matches:
-                matches = cls.detect(text, "square_bracket", para_idx, sec_idx)
-            if not matches:
-                matches = cls.detect(text, "chinese_bracket", para_idx, sec_idx)
+            # 偵測所有高信賴標記：圓圈數字、上標數字、方括號、中文/六角括號
+            matches = []
+            matches.extend(cls.detect(text, "circled_number", para_idx, sec_idx))
+            matches.extend(cls.detect(text, "superscript", para_idx, sec_idx))
+            matches.extend(cls.detect(text, "square_bracket", para_idx, sec_idx))
+            matches.extend(cls.detect(text, "chinese_bracket", para_idx, sec_idx))
+            matches.sort(key=lambda m: m.start_char)
             return matches
 
         if marker_type == "circled_number":
@@ -58,7 +57,7 @@ class MarkerDetector:
                 ))
                     
         elif marker_type == "square_bracket":
-            for m in re.finditer(r'\[(\d+)\]', text):
+            for m in re.finditer(r'\[\s*(\d+)\s*\]', text):
                 matches.append(MarkerMatch(
                     text=m.group(0), number=int(m.group(1)),
                     start_char=m.start(), end_char=m.end(),
@@ -66,8 +65,8 @@ class MarkerDetector:
                 ))
                 
         elif marker_type == "chinese_bracket":
-            # 考量可能會有全形方括號 ［］ 或六角括號 〔〕
-            for m in re.finditer(r'[〔［](\d+)[〕］]', text):
+            # 考量可能會有全形方括號 ［］ 或六角括號 〔〕 或方頭括號 【】
+            for m in re.finditer(r'[〔［【]\s*(\d+)\s*[〕］】]', text):
                 matches.append(MarkerMatch(
                     text=m.group(0), number=int(m.group(1)),
                     start_char=m.start(), end_char=m.end(),

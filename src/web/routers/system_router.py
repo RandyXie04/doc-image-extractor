@@ -12,7 +12,8 @@ import time
 import urllib.parse
 import uuid
 from pathlib import Path
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from typing import Optional
+from fastapi import APIRouter, File, HTTPException, Request, UploadFile, Query
 
 from src.web.schemas import FounderRepairResponse
 
@@ -198,20 +199,35 @@ DOCS_CATALOGUE = [
         "id": "workflow",
         "title": "全流程操作指南",
         "category": "操作手冊",
+        "audience": "all",
+        "icon": "book",
         "description": "全自動整稿、POD 人工預修擴散與輔助工具標準作業流程",
         "file": "docs/WORKFLOW_GUIDE.md",
+    },
+    {
+        "id": "about",
+        "title": "系統授權與內網部署",
+        "category": "操作手冊",
+        "audience": "all",
+        "icon": "shield",
+        "description": "開源授權、Surya OCR 非商用規範、Pandoc GPL 與 LAN 私有部署",
+        "file": "docs/ABOUT_LICENSE.md",
     },
     {
         "id": "modules",
         "title": "核心模組技術說明",
         "category": "技術規格",
+        "audience": "dev",
+        "icon": "cpu",
         "description": "雙引擎自適應 OCR、YOLOv8 DirectML 公式提取、無損圖片流與方正字型修復",
         "file": "docs/TECH_MODULES.md",
     },
     {
         "id": "glossary",
         "title": "名詞定義與術語表",
-        "category": "操作手冊",
+        "category": "技術規格",
+        "audience": "dev",
+        "icon": "list",
         "description": "系統關鍵名詞、排版概念與資料流術語對照",
         "file": "GLOSSARY.md",
     },
@@ -219,30 +235,33 @@ DOCS_CATALOGUE = [
         "id": "decisions",
         "title": "架構設計決策記錄 (ADR)",
         "category": "技術規格",
+        "audience": "dev",
+        "icon": "fileText",
         "description": "無腳注雙通道架構、2D 座標三線表重建、無日誌安全規範等設計決策",
         "file": "docs/DECISIONS.md",
-    },
-    {
-        "id": "release_sop",
-        "title": "發布與維護 SOP",
-        "category": "維護文件",
-        "description": "版本升級、雙軌更新、發布驗收清單與無縫熱更新規範",
-        "file": "docs/RELEASE_SOP.md",
     },
 ]
 
 
 @router.get("/api/docs")
-async def list_docs():
-    """取得技術與操作文件清單"""
+async def list_docs(mode: Optional[str] = Query(None)):
+    """取得技術與操作文件清單，支援 mode=editor|dev 依受眾過濾"""
+    items = DOCS_CATALOGUE
+    if mode == "editor":
+        items = [d for d in items if d.get("audience") in ("editor", "all")]
+    elif mode == "dev":
+        items = [d for d in items if d.get("audience") in ("dev", "all")]
+
     return [
         {
             "id": d["id"],
             "title": d["title"],
             "category": d["category"],
+            "audience": d.get("audience", "all"),
+            "icon": d.get("icon", "fileText"),
             "description": d["description"],
         }
-        for d in DOCS_CATALOGUE
+        for d in items
     ]
 
 

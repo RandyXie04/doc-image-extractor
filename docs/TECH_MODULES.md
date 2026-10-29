@@ -24,17 +24,20 @@
   - 統一匯流至中介 AST 結構，透過內建 Pandoc 轉為語意化 Word (`.docx`) 與標準 Markdown (`.md`)。
 
 ### 3. 文件圖片無損提取 (Image Extractor)
+- **核心腳本**：`src/scripts/extract_images.py`、`src/scripts/pdf_image_extractor.py`（API 端點：`/api/extract_images`）。
 - **底層引擎**：PyMuPDF Stream Extractor。
 - **特色**：
   - 自 PDF 內部物件流直接導出原始位元組資料，完全不經過二次壓縮或色彩空間轉換。
   - 支援 CMYK、RGB、Grayscale、Indexed 色彩空間與 ICC Profile 嵌入。
-  - DOCX 格式直接解析 XML 封包中的 `word/media/` 資源。
+  - DOCX 格式直接解析 XML 封包中的 `word/media/` 資源，支援批次打包導出 ZIP。
 
 ### 4. 方正書版亂碼修復 (Founder Font Repair)
+- **核心模組**：`src/founder_tools/fix_founder_fonts.py`、`src/founder_tools/auto_footnote.py`（API 端點：`/api/founder/repair`）。
 - **修復機制**：
   - 針對早期方正書版（BDC/Founder）、超星數位圖書館等非標準 CID 字型編碼。
   - 內建專用 CMap 與 Unicode 映射庫，逐字元計算字模外觀或字碼映射還原為標準繁/簡體 Unicode 字元。
-  - 修復完成後直接封裝為標準 DOCX 交付排版。
+  - 搭載 Virtual Run Slicer 與 OpenXML Builder，切分腳註標記的同時保留粗體、斜體與字型設定。
+  - 修復完成後直接以 `template.docx` 為骨架封裝為標準 DOCX 交付排版。
 
 ---
 
@@ -57,7 +60,16 @@
 
 ---
 
-## 三、硬體資源管理與隱私防護
+## 四、前端嚴格型別契約與視口架構
+
+- **型別契約代碼生成 (TypeScript Contract Generator)**：
+  - 核心腳本：`src/scripts/generate_ts_contracts.py`。
+  - 單一真實來源 (Single Source of Truth)：後端 Pydantic Schemas (`src/web/schemas.py`) 與契約層 (`src/extraction/contracts.py`)。
+  - 自動生成前端 TypeScript 介面定義 (`frontend/src/types/contracts.ts`)，包含 `PodSessionPhase`、`LayoutRecordContract`（Tagged Union）等判別聯合契約。
+- **型別安全 API 客戶端**：
+  - `frontend/src/api/podClient.ts`、`ocrClient.ts`、`formulaClient.ts` 全面採用編譯期型別約束與執行期斷言（Runtime Guard），阻斷前端非預期狀態機躍遷。
+- **響應式視口與斷點抽象**：
+  - `frontend/src/layout/` 模組定義四級設備分類（`mobile` / `tablet` / `desktop` / `ultrawide`）與 Responsive Gutter Tokens，透過 `src/web/static/js/viewport_manager.js` 橋接至原生靜態頁面。
 
 - **動態硬體探測**：後端啟動時即時探測可用運算資源（CUDA GPU / DirectML / CPU 多核心），並在前端側邊欄顯示加速狀態。
 - **零日誌生命週期管理**：

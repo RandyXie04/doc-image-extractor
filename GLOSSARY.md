@@ -134,6 +134,18 @@ The third-stage execution architecture in POD Studio providing a parameter-drive
 
 A high-depth encapsulation module (`src/pod_studio/docx_writer.py`) providing a minimalistic single-call interface (`render_sections_to_docx`) that isolates python-docx and OpenXML DOM mutations, Pandoc custom-style block translations (`::: {custom-style="..."}`), image scaling, and table alignment across pipeline channels.
 
+### Strict TypeScript Contract Layer (前端嚴格型別契約層)
+
+Code-generated TypeScript interfaces (`frontend/src/types/contracts.ts`) derived by `src/scripts/generate_ts_contracts.py` from Pydantic schemas (`src/web/schemas.py`, `src/extraction/contracts.py`), enforcing compile-time type safety across API clients (`podClient.ts`, `ocrClient.ts`, `formulaClient.ts`).
+
+### Discriminated Union AST Contracts (判別聯合排版抽象語法樹)
+
+TypeScript tagged unions (`type: "paragraph" | "heading" | "table" | "figure" | "footnote"`) ensuring exhaustive type checking and preventing illegal UI state transitions across vanilla JS and TS frontend modules.
+
+### Responsive Viewport Architecture (自適應視口與排版系統)
+
+Responsive shell, layout tokens, and device category classification (`mobile` | `tablet` | `desktop` | `ultrawide`) implemented in `frontend/src/layout/` and bridged to vanilla web runtime via `src/web/static/js/viewport_manager.js`.
+
 ---
 
 ## 2. Architectural Design Vocabulary

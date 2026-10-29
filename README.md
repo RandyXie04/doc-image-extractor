@@ -27,7 +27,7 @@
 | :--- | :--- | :--- | :--- |
 | **PDF 數學公式提取** | YOLOv8 ONNX + DirectML | 專門識別繁複數理化公式，提供邊界裁切滑桿與預覽，支援批次截圖輸出。 | [說明文件](src/README_MathFormula.md) |
 | **雙引擎 OCR 與圖文重排** | PyMuPDF + Surya OCR + Pandoc | 向量 PDF 秒級幾何流解析；掃描書深度中文辨識；支援無腳注雙通道與階層樣式對齊。 | [說明文件](src/scripts/README_OCR.md) |
-| **文件圖片無損提取** | PyMuPDF Stream Extractor | 自 PDF 與 Word 文件中批次無損解析並抽離所有點陣圖與向量圖，保留原始色彩空間。 | [說明文件](src/scripts/README_ImageExtractor.md) |
+| **文件圖片無損提取** | PyMuPDF Stream Extractor | 自 PDF 與 Word 文件中批次無損解析並抽離所有點陣圖與向量圖，保留原始色彩空間。 | [說明文件](docs/TECH_MODULES.md#3-文件圖片無損提取-image-extractor) |
 | **方正書版亂碼修復** | Founder CMap & CID 映射庫 | 針對早期方正書版（BDC/Founder）排版轉出之 PDF 進行非標準字型與 CID 亂碼修復。 | [說明文件](src/founder_tools/README_Founder.md) |
 
 ---
@@ -175,4 +175,5 @@ doc-image-extractor/
 
 ## 授權條款
 
-本專案採用 [MIT License](LICENSE) 開源授權，歡迎學術研究、出版業個人或企業內部自由使用與二次開發。
+本專案核心架構採用 [MIT License](LICENSE) 開源授權。
+各子組件與模型具備獨立授權條款（包含 Surya OCR 深度辨識模型之 CC-BY-NC-SA 4.0 非商業限制與 Pandoc GPL 條款），詳細第三方合規指引請參見 [系統授權與內網部署手冊](docs/ABOUT_LICENSE.md)。

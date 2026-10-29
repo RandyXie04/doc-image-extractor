@@ -71,6 +71,9 @@
                         <option value="pymupdf">高速提取 (PyMuPDF) — 適用原生向量 PDF，秒級解析且記憶體輕量</option>
                         <option value="suryaocr">深度識別 (Surya OCR) — 適用掃描書與圖片轉曲 PDF，支援中文 OCR</option>
                     </select>
+                    <p class="hint" style="margin-top: 0.35rem; font-size: 0.8rem; color: var(--text-muted);">
+                        <strong>引擎選用指引</strong>：數位向量 PDF 優先選用 PyMuPDF（保留原始字元無錯字風險，且完全符合商用授權）；紙本掃描件或轉曲內容則使用 Surya OCR（深度版面分析，僅供非商用/學術研究）。
+                    </p>
                 </div>
                 <div class="field" style="margin-bottom: 0;">
                     <label class="check">

@@ -151,43 +151,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="settings-chevron">${svg('chevronRight', 14)}</span>
             </button>
             <div class="sidebar-settings-dropdown" id="sidebarSettingsDropdown" style="display:none;">
-                <div class="settings-dropdown-section-title">技術與操作文件</div>
-                <div class="settings-doc-list">
-                    <button type="button" class="sidebar-doc-link" data-doc-id="workflow">
-                        <span class="doc-icon">${svg('book', 14)}</span>
-                        <span class="doc-text">
-                            <span class="doc-name">全流程操作指南</span>
-                            <span class="doc-desc">全自動整稿 &amp; POD</span>
-                        </span>
-                    </button>
-                    <button type="button" class="sidebar-doc-link" data-doc-id="modules">
-                        <span class="doc-icon">${svg('cpu', 14)}</span>
-                        <span class="doc-text">
-                            <span class="doc-name">核心模組技術說明</span>
-                            <span class="doc-desc">雙引擎、YOLOv8、方正</span>
-                        </span>
-                    </button>
-                    <button type="button" class="sidebar-doc-link" data-doc-id="glossary">
-                        <span class="doc-icon">${svg('list', 14)}</span>
-                        <span class="doc-text">
-                            <span class="doc-name">名詞定義與術語表</span>
-                            <span class="doc-desc">系統排版術語彙編</span>
-                        </span>
-                    </button>
-                    <button type="button" class="sidebar-doc-link" data-doc-id="decisions">
-                        <span class="doc-icon">${svg('fileText', 14)}</span>
-                        <span class="doc-text">
-                            <span class="doc-name">架構設計決策記錄</span>
-                            <span class="doc-desc">ADR 關鍵設計決策</span>
-                        </span>
-                    </button>
-                    <button type="button" class="sidebar-doc-link" data-doc-id="release_sop">
-                        <span class="doc-icon">${svg('shield', 14)}</span>
-                        <span class="doc-text">
-                            <span class="doc-name">發布維護與除錯 SOP</span>
-                            <span class="doc-desc">版本與無縫熱更新</span>
-                        </span>
-                    </button>
+                <div class="settings-dropdown-section-title">手冊與文件</div>
+                <div class="settings-doc-list" id="sidebarDocList">
+                    <div style="padding:0.5rem; color:var(--text-muted); font-size:0.82rem;">載入文件中...</div>
                 </div>
             </div>
         </div>
@@ -196,8 +162,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <div id="versionDisplay" class="sidebar-version-text">版本：讀取中</div>
             <div class="sidebar-privacy"><strong>零日誌隱私架構</strong>檔案保留 24 小時後自動銷毀</div>
             <button id="modeToggleBtn" class="sidebar-btn" type="button" title="切換出版社編輯模式與工程師除錯模式">模式：讀取中</button>
-            <button id="checkUpdateBtn" class="sidebar-btn" type="button">${svg('refresh', 14)}檢查更新</button>
-            <button id="globalReportBtn" class="sidebar-btn" type="button">${svg('github', 14)}在 GitHub 回報問題</button>
+            <button id="globalReportBtn" class="sidebar-btn" type="button" style="display:none;" title="僅供工程師除錯使用">${svg('github', 14)}在 GitHub 回報問題</button>
         </div>
     </div>
 
@@ -216,32 +181,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 </button>
             </div>
             <div class="doc-modal-body">
-                <aside class="doc-modal-sidebar">
-                    <div class="doc-nav-heading">操作手冊</div>
-                    <button type="button" class="doc-tab-btn" data-doc-id="workflow">
-                        <span class="doc-tab-icon">${svg('book', 14)}</span>
-                        <span>全流程操作指南</span>
-                    </button>
-                    <button type="button" class="doc-tab-btn" data-doc-id="glossary">
-                        <span class="doc-tab-icon">${svg('list', 14)}</span>
-                        <span>名詞定義與術語表</span>
-                    </button>
-                    <div class="doc-nav-heading" style="margin-top:0.75rem;">技術與維護規格</div>
-                    <button type="button" class="doc-tab-btn" data-doc-id="modules">
-                        <span class="doc-tab-icon">${svg('cpu', 14)}</span>
-                        <span>核心模組技術說明</span>
-                    </button>
-                    <button type="button" class="doc-tab-btn" data-doc-id="decisions">
-                        <span class="doc-tab-icon">${svg('fileText', 14)}</span>
-                        <span>架構設計決策記錄</span>
-                    </button>
-                    <button type="button" class="doc-tab-btn" data-doc-id="release_sop">
-                        <span class="doc-tab-icon">${svg('shield', 14)}</span>
-                        <span>發布維護與除錯 SOP</span>
-                    </button>
+                <aside class="doc-modal-sidebar" id="docModalSidebar">
+                    <div style="padding:1rem; color:var(--text-muted); font-size:0.85rem;">載入清單中...</div>
                 </aside>
                 <main class="doc-modal-article" id="docViewerArticle">
-                    <div class="doc-loading">正在載入文件內容...</div>
+                    <div class="doc-loading">請由左側選擇欲閱讀之手冊或文件</div>
                 </main>
             </div>
         </div>
@@ -410,25 +354,98 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.toolbox.openDocViewer = loadAndShowDoc;
 
-    document.querySelectorAll('.sidebar-doc-link').forEach(btn => {
-        btn.onclick = () => {
-            const docId = btn.dataset.docId;
-            if (docId) {
-                loadAndShowDoc(docId);
-                const vp = /** @type {any} */ (window).viewportManager;
-                if (vp && typeof vp.isMobile === 'function' && (vp.isMobile() || vp.isTablet())) {
-                    vp.closeSidebar();
+    async function loadAndRenderDocCatalogue(currentMode) {
+        try {
+            const url = currentMode ? `/api/docs?mode=${encodeURIComponent(currentMode)}` : '/api/docs';
+            const res = await fetch(url);
+            if (!res.ok) return;
+            const docs = await res.json();
+
+            // 1. Render in sidebar settings dropdown
+            const docListEl = document.getElementById('sidebarDocList');
+            if (docListEl) {
+                let dropdownHtml = docs.map(d => `
+                    <button type="button" class="sidebar-doc-link" data-doc-id="${d.id}">
+                        <span class="doc-icon">${svg(d.icon || 'fileText', 14)}</span>
+                        <span class="doc-text">
+                            <span class="doc-name">${window.toolbox.escape(d.title)}</span>
+                            <span class="doc-desc">${window.toolbox.escape(d.description)}</span>
+                        </span>
+                    </button>
+                `).join('');
+
+                if (currentMode === 'dev') {
+                    dropdownHtml += `
+                        <button type="button" class="sidebar-doc-link" id="devQuickReportBtn" style="border-top:1px dashed var(--border-color); margin-top:4px; padding-top:8px;">
+                            <span class="doc-icon">${svg('github', 14)}</span>
+                            <span class="doc-text">
+                                <span class="doc-name">在 GitHub 回報問題</span>
+                                <span class="doc-desc">工程師除錯與 Issue 回報</span>
+                            </span>
+                        </button>
+                    `;
+                }
+
+                docListEl.innerHTML = dropdownHtml;
+
+                docListEl.querySelectorAll('.sidebar-doc-link[data-doc-id]').forEach(btn => {
+                    btn.onclick = () => {
+                        const docId = btn.dataset.docId;
+                        if (docId) {
+                            loadAndShowDoc(docId);
+                            const vp = /** @type {any} */ (window).viewportManager;
+                            if (vp && typeof vp.isMobile === 'function' && (vp.isMobile() || vp.isTablet())) {
+                                vp.closeSidebar();
+                            }
+                        }
+                    };
+                });
+
+                const devQuickBtn = document.getElementById('devQuickReportBtn');
+                if (devQuickBtn) {
+                    devQuickBtn.onclick = () => {
+                        const rBtn = document.getElementById('globalReportBtn');
+                        if (rBtn) rBtn.click();
+                    };
                 }
             }
-        };
-    });
 
-    document.querySelectorAll('.doc-tab-btn').forEach(btn => {
-        btn.onclick = () => {
-            const docId = btn.dataset.docId;
-            if (docId) loadAndShowDoc(docId);
-        };
-    });
+            // 2. Render in Doc Viewer Modal sidebar
+            const modalSidebarEl = document.getElementById('docModalSidebar');
+            if (modalSidebarEl) {
+                const categories = {};
+                docs.forEach(d => {
+                    const cat = d.category || '手冊與文件';
+                    if (!categories[cat]) categories[cat] = [];
+                    categories[cat].push(d);
+                });
+
+                let sidebarHtml = '';
+                for (const [catName, catDocs] of Object.entries(categories)) {
+                    sidebarHtml += `<div class="doc-nav-heading">${window.toolbox.escape(catName)}</div>`;
+                    catDocs.forEach(d => {
+                        sidebarHtml += `
+                            <button type="button" class="doc-tab-btn" data-doc-id="${d.id}">
+                                <span class="doc-tab-icon">${svg(d.icon || 'fileText', 14)}</span>
+                                <span>${window.toolbox.escape(d.title)}</span>
+                            </button>
+                        `;
+                    });
+                }
+
+                modalSidebarEl.innerHTML = sidebarHtml;
+
+                modalSidebarEl.querySelectorAll('.doc-tab-btn').forEach(btn => {
+                    btn.onclick = () => {
+                        const docId = btn.dataset.docId;
+                        if (docId) loadAndShowDoc(docId);
+                    };
+                });
+            }
+        } catch (err) {
+            console.error('Failed to load doc catalogue:', err);
+        }
+    }
 
     if (closeDocViewerBtn) {
         closeDocViewerBtn.onclick = () => docModal.classList.remove('open');
@@ -454,97 +471,112 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateMsg = document.getElementById('updateMsg');
     let currentDownloadUrl = null;
 
-    document.getElementById('globalReportBtn').onclick = () => {
-        const repo = 'RandyXie04/doc-image-extractor';
-        const title = encodeURIComponent('[問題回報] 請簡述您遇到的問題');
-        const versionText = versionDisplay.textContent || 'App 版本未知';
-        const body = `### 問題描述
+    const globalReportBtn = document.getElementById('globalReportBtn');
+    if (globalReportBtn) {
+        globalReportBtn.onclick = () => {
+            const repo = 'RandyXie04/doc-image-extractor';
+            const title = encodeURIComponent('[問題回報] 請簡述您遇到的問題');
+            const versionText = versionDisplay ? (versionDisplay.textContent || 'App 版本未知') : '未知版本';
+            const body = `### 問題描述
 <!-- 請描述異常現象、錯誤訊息或改進建議 -->
 
 ### 系統資訊
 - **應用版本**: ${versionText}
 - **瀏覽器**: ${navigator.userAgent}
 - **回報時間**: ${new Date().toLocaleString()}`;
-        window.open(`https://github.com/${repo}/issues/new?title=${title}&body=${encodeURIComponent(body)}`, '_blank');
-    };
+            window.open(`https://github.com/${repo}/issues/new?title=${title}&body=${encodeURIComponent(body)}`, '_blank');
+        };
+    }
 
-    fetch('/api/version').then(res => res.json()).then(data => {
-        versionDisplay.textContent = `App v${data.app_version} · Model v${data.model_version}`;
-    }).catch(() => {
-        versionDisplay.textContent = '無法讀取版本資訊';
-    });
+    if (versionDisplay) {
+        fetch('/api/version').then(res => res.json()).then(data => {
+            versionDisplay.textContent = `App v${data.app_version} · Model v${data.model_version}`;
+        }).catch(() => {
+            versionDisplay.textContent = '無法讀取版本資訊';
+        });
+    }
 
     const hardwareDisplay = document.getElementById('hardwareDisplay');
-    fetch('/api/hardware_status').then(res => res.json()).then(data => {
-        if (data.is_accelerated) {
-            const gpuName = (data.gpu_name || '').replace('NVIDIA GeForce ', '').replace('NVIDIA ', '');
-            hardwareDisplay.classList.add('is-accelerated');
-            hardwareDisplay.innerHTML = `${svg('chip', 12)} GPU 加速：${window.toolbox.escape(gpuName)}`;
-        } else {
-            hardwareDisplay.innerHTML = `${svg('chip', 12)} CPU 相容模式`;
-        }
-    }).catch(() => {
-        hardwareDisplay.textContent = '硬體探測離線';
-    });
+    if (hardwareDisplay) {
+        fetch('/api/hardware_status').then(res => res.json()).then(data => {
+            if (data.is_accelerated) {
+                const gpuName = (data.gpu_name || '').replace('NVIDIA GeForce ', '').replace('NVIDIA ', '');
+                hardwareDisplay.classList.add('is-accelerated');
+                hardwareDisplay.innerHTML = `${svg('chip', 12)} GPU 加速：${window.toolbox.escape(gpuName)}`;
+            } else {
+                hardwareDisplay.innerHTML = `${svg('chip', 12)} CPU 相容模式`;
+            }
+        }).catch(() => {
+            hardwareDisplay.textContent = '硬體探測離線';
+        });
+    }
 
-    closeUpdateBtn.onclick = () => updateModal.classList.remove('open');
-    updateModal.addEventListener('click', (e) => {
-        if (e.target === updateModal && !closeUpdateBtn.disabled) updateModal.classList.remove('open');
-    });
+    if (closeUpdateBtn) {
+        closeUpdateBtn.onclick = () => updateModal && updateModal.classList.remove('open');
+    }
+    if (updateModal) {
+        updateModal.addEventListener('click', (e) => {
+            if (e.target === updateModal && (!closeUpdateBtn || !closeUpdateBtn.disabled)) updateModal.classList.remove('open');
+        });
+    }
     document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && !closeUpdateBtn.disabled) updateModal.classList.remove('open');
+        if (e.key === 'Escape' && updateModal && (!closeUpdateBtn || !closeUpdateBtn.disabled)) updateModal.classList.remove('open');
     });
 
-    checkUpdateBtn.onclick = async () => {
-        checkUpdateBtn.disabled = true;
-        const originalHtml = checkUpdateBtn.innerHTML;
-        checkUpdateBtn.textContent = '檢查中…';
-        try {
-            const res = await fetch('/api/check_update', { method: 'POST' });
-            const data = await res.json();
-            if (data.has_update) {
-                updateVersionText.textContent = `最新版本：v${data.latest_version}`;
-                updateReleaseNotes.textContent = data.release_notes || '此版本未提供發布說明。';
-                currentDownloadUrl = data.download_url;
-                updateMsg.textContent = currentDownloadUrl ? '' : '此版本尚未附帶可執行檔，請改至 GitHub Releases 手動下載。';
-                applyUpdateBtn.disabled = !currentDownloadUrl;
-                updateModal.classList.add('open');
-            } else {
-                window.toolbox.notify(data.msg || '目前已是最新版本。', data.status === 'error' ? 'warning' : 'success');
+    if (checkUpdateBtn) {
+        checkUpdateBtn.onclick = async () => {
+            checkUpdateBtn.disabled = true;
+            const originalHtml = checkUpdateBtn.innerHTML;
+            checkUpdateBtn.textContent = '檢查中…';
+            try {
+                const res = await fetch('/api/check_update', { method: 'POST' });
+                const data = await res.json();
+                if (data.has_update) {
+                    updateVersionText.textContent = `最新版本：v${data.latest_version}`;
+                    updateReleaseNotes.textContent = data.release_notes || '此版本未提供發布說明。';
+                    currentDownloadUrl = data.download_url;
+                    updateMsg.textContent = currentDownloadUrl ? '' : '此版本尚未附帶可執行檔，請改至 GitHub Releases 手動下載。';
+                    if (applyUpdateBtn) applyUpdateBtn.disabled = !currentDownloadUrl;
+                    updateModal.classList.add('open');
+                } else {
+                    window.toolbox.notify(data.msg || '目前已是最新版本。', data.status === 'error' ? 'warning' : 'success');
+                }
+            } catch (e) {
+                window.toolbox.notify('檢查更新失敗，請確認網路連線後再試。', 'error');
+            } finally {
+                checkUpdateBtn.disabled = false;
+                checkUpdateBtn.innerHTML = originalHtml;
             }
-        } catch (e) {
-            window.toolbox.notify('檢查更新失敗，請確認網路連線後再試。', 'error');
-        } finally {
-            checkUpdateBtn.disabled = false;
-            checkUpdateBtn.innerHTML = originalHtml;
-        }
-    };
+        };
+    }
 
-    applyUpdateBtn.onclick = async () => {
-        if (!currentDownloadUrl) return;
-        applyUpdateBtn.disabled = true;
-        closeUpdateBtn.disabled = true;
-        updateMsg.textContent = '正在背景下載新版程式，請勿關閉此視窗。';
-        try {
-            const res = await fetch('/api/apply_update', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ download_url: currentDownloadUrl })
-            });
-            const data = await res.json();
-            if (data.status === 'success') {
-                updateMsg.textContent = '下載完成，系統即將重新啟動。';
-            } else {
-                updateMsg.textContent = '更新失敗：' + (data.msg || data.detail || '未知錯誤');
+    if (applyUpdateBtn) {
+        applyUpdateBtn.onclick = async () => {
+            if (!currentDownloadUrl) return;
+            applyUpdateBtn.disabled = true;
+            if (closeUpdateBtn) closeUpdateBtn.disabled = true;
+            if (updateMsg) updateMsg.textContent = '正在背景下載新版程式，請勿關閉此視窗。';
+            try {
+                const res = await fetch('/api/apply_update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ download_url: currentDownloadUrl })
+                });
+                const data = await res.json();
+                if (data.status === 'success') {
+                    if (updateMsg) updateMsg.textContent = '下載完成，系統即將重新啟動。';
+                } else {
+                    if (updateMsg) updateMsg.textContent = '更新失敗：' + (data.msg || data.detail || '未知錯誤');
+                    applyUpdateBtn.disabled = false;
+                    if (closeUpdateBtn) closeUpdateBtn.disabled = false;
+                }
+            } catch (e) {
+                if (updateMsg) updateMsg.textContent = '網路錯誤，請稍後再試。';
                 applyUpdateBtn.disabled = false;
-                closeUpdateBtn.disabled = false;
+                if (closeUpdateBtn) closeUpdateBtn.disabled = false;
             }
-        } catch (e) {
-            updateMsg.textContent = '網路錯誤，請稍後再試。';
-            applyUpdateBtn.disabled = false;
-            closeUpdateBtn.disabled = false;
-        }
-    };
+        };
+    }
 
     const modeToggleBtn = document.getElementById('modeToggleBtn');
     const MODE_LABEL = { editor: '出版社編輯模式', dev: '工程師除錯模式' };
@@ -552,10 +584,18 @@ document.addEventListener('DOMContentLoaded', () => {
         modeToggleBtn.dataset.mode = mode;
         modeToggleBtn.textContent = `模式：${MODE_LABEL[mode] || mode}`;
         modeToggleBtn.classList.toggle('is-active', mode === 'dev');
+        if (globalReportBtn) {
+            globalReportBtn.style.display = (mode === 'dev') ? 'block' : 'none';
+        }
+        loadAndRenderDocCatalogue(mode);
     }
     fetch('/api/app_mode').then(r => r.json()).then(d => {
         if (d && d.mode) updateModeBtnUI(d.mode);
-    }).catch(() => { modeToggleBtn.textContent = '模式：未知'; });
+        else loadAndRenderDocCatalogue('editor');
+    }).catch(() => {
+        modeToggleBtn.textContent = '模式：未知';
+        loadAndRenderDocCatalogue('editor');
+    });
 
     modeToggleBtn.onclick = async () => {
         const targetMode = modeToggleBtn.dataset.mode === 'dev' ? 'editor' : 'dev';

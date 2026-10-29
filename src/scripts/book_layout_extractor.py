@@ -90,12 +90,13 @@ CIRCLED_MAP = {
 
 # Regex pattern matching any recognised footnote marker (circled / bracketed / numbered-dot / bare number with space)
 # Added expanded unicode ranges for circled numbers > 10 and dingbats.
-FN_MARKER_PATTERN = r'([\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|\[\d+\]|\(\d+\)|\d+\.)'
+# Extended to support [1], ［1］, 〔1〕, 【1】, [ 1 ], (1), （1）, 1., 1、, and Unicode superscripts ⁰¹²³⁴⁵⁶⁷⁸⁹
+FN_MARKER_PATTERN = r'([\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|[\[［〔【]\s*\d+\s*[\]］〕】]|[\(（]\s*\d+\s*[\)）]|[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|\d+[.、])'
 _WEAK_MARKER_RE = re.compile(r'^[\d.、\s()（）]+$')
 _DIGITS_RE = re.compile(r'\d+')
 _FN_MARKER_SPLIT_RE = re.compile(FN_MARKER_PATTERN)
 _STARTS_WITH_FN_MARKER_RE = re.compile(r'^\s*(' + FN_MARKER_PATTERN + r')\s*')
-_FN_MARKER_PARSE_RE = re.compile(r'^\s*([①-⑩\u2460-\u2473]|\[\d+\]|\(\d+\)|\d+\.)\s*')
+_FN_MARKER_PARSE_RE = re.compile(r'^\s*([①-⑩\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|[\[［〔【]\s*\d+\s*[\]］〕】]|[\(（]\s*\d+\s*[\)）]|[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|\d+[.、])\s*')
 
 _PAGE_HEADER_PATTERNS = [
     re.compile(r'版图之枷'),
@@ -378,10 +379,19 @@ def _match_toc_heading(text: str, page_num: int, toc_index: dict, offset_holder:
     return 0
 
 
+_SUPERSCRIPT_CHAR_MAP = {
+    '⁰': 0, '¹': 1, '²': 2, '³': 3, '⁴': 4,
+    '⁵': 5, '⁶': 6, '⁷': 7, '⁸': 8, '⁹': 9
+}
+
 def _circled_to_int(marker_str: str) -> int:
     """Convert any footnote marker string to its integer index."""
     if marker_str in CIRCLED_MAP:
         return CIRCLED_MAP[marker_str]
+    if any(c in _SUPERSCRIPT_CHAR_MAP for c in marker_str):
+        digits = "".join(str(_SUPERSCRIPT_CHAR_MAP[c]) for c in marker_str if c in _SUPERSCRIPT_CHAR_MAP)
+        if digits:
+            return int(digits)
     digs = _DIGITS_RE.findall(marker_str)
     return int(digs[0]) if digs else 1
 
@@ -391,19 +401,47 @@ def _replace_fn_markers_in_text(text: str, page_footnotes: list, page_num: int) 
     Works for both body paragraphs and table cells."""
     for fn in page_footnotes:
         m_str = fn.get('marker', '')
-        if not m_str:
+        fn_id = fn.get('id', 1)
+        if not m_str and not fn_id:
             continue
-        fn_tag = f"[^p{page_num}_{fn['id']}]"
-        if _WEAK_MARKER_RE.match(m_str):
-            # 針對弱標記（如 '1.' 或 '(1)'），要求前後不能是數字以防止誤傷小數點（如 31.5%）或正文數值
-            safe_pat = re.compile(r'(?<!\d)' + re.escape(m_str) + r'(?!\d)')
-            new_text, n_subs = safe_pat.subn(fn_tag, text, count=1)
-            if n_subs > 0:
-                text = new_text
+        fn_tag = f"[^p{page_num}_{fn_id}]"
+
+        matched = False
+        # 1. 優先嘗試原始標記完全匹配
+        if m_str:
+            if _WEAK_MARKER_RE.match(m_str):
+                # 針對弱標記（如 '1.' 或 '(1)'），要求前後不能是數字以防止誤傷小數點（如 31.5%）或正文數值
+                safe_pat = re.compile(r'(?<!\d)' + re.escape(m_str) + r'(?!\d)')
+                new_text, n_subs = safe_pat.subn(fn_tag, text, count=1)
+                if n_subs > 0:
+                    text = new_text
+                    fn['matched'] = True
+                    matched = True
+            elif m_str in text:
+                text = text.replace(m_str, fn_tag, 1)
                 fn['matched'] = True
-        elif m_str in text:
-            text = text.replace(m_str, fn_tag, 1)
-            fn['matched'] = True
+                matched = True
+
+        # 2. 次優先：若原始標記未能命中（例如頁底標記為 "1." 或 "[1]"，而正文為 "[1]"、"［1］"、"〔1〕" 等變體），
+        # 檢查該 fn_id 對應的強括號/圓圈標記變體
+        if not matched and fn_id is not None:
+            variants = [
+                f"[{fn_id}]",
+                f"［{fn_id}］",
+                f"〔{fn_id}〕",
+                f"【{fn_id}】",
+                f"[ {fn_id} ]",
+                f"［ {fn_id} ］",
+            ]
+            rev_circled = [k for k, v in CIRCLED_MAP.items() if v == fn_id]
+            if rev_circled:
+                variants.append(rev_circled[0])
+
+            for var in variants:
+                if var in text:
+                    text = text.replace(var, fn_tag, 1)
+                    fn['matched'] = True
+                    break
     return text
 
 

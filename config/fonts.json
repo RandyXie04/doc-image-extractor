@@ -182,5 +182,55 @@
     "role": null,
     "docx_style": "標粗",
     "mapped_by": "user"
+  },
+  "FZLTSK--GBK1-0 (11.5pt)": {
+    "role": "正文",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (8.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZSHIGKSS--GB1-0 (17.0pt)": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZLTSK--GBK1-0 (14.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZZYSK--GBK1-0 (13.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "E-BZ (13.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZLTXHK (12.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZZYSK--GBK1-0 (12.5pt)": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZFSK--GBK1-0 (11.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZKTK--GBK1-0 (11.5pt)": {
+    "role": null,
+    "docx_style": "屬名",
+    "mapped_by": "user"
   }
 }

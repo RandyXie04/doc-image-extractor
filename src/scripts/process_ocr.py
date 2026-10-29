@@ -38,7 +38,9 @@ except ImportError:
         postprocess_ocr_markdown = None
 
 _HALLUCINATION_REPEAT_RE = re.compile(r'([^\n]{1,10}?)\1{5,}')
-_FOOTNOTE_PREFIX_RE = re.compile(r'^\s*(?:[\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|\[\d+\]|[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|\u6ce8\s*\d+|\(?\d+\)\s*[\u4e00-\u9fff])')
+_FOOTNOTE_PREFIX_RE = re.compile(
+    r'^\s*(?:[\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|[\[［〔【]\s*\d+\s*[\]］〕】]|[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|\u6ce8\s*\d+|[（(]?\s*\d+\s*[)）]?\s*[\u4e00-\u9fff])'
+)
 _WEAK_MARKER_CHECK_RE = re.compile(r'^[\d.、\s()（）]+$')
 
 def _clean_hallucinations(text: str) -> str:
@@ -248,7 +250,7 @@ def parse_footnote_entries(text):
         return []
 
     pattern = re.compile(
-        r'(?:^|\n)\s*([①-⑩\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|\[\d+\]|[⁰¹²³⁴⁵⁶⁷⁸⁹]+|注\s*\d+[:：.]?|\(?\d+\)[.、]?|\d+[.、\s])\s*'
+        r'(?:^|\n)\s*([①-⑩\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|[\[［〔【]\s*\d+\s*[\]］〕】]|[⁰¹²³⁴⁵⁶⁷⁸⁹]+|注\s*\d+[:：.]?|[（(]?\s*\d+\s*[)）][.、]?|\d+[.、\s])\s*'
     )
 
     all_matches = list(pattern.finditer(text))
@@ -259,7 +261,7 @@ def parse_footnote_entries(text):
         if not m_str: return "empty"
         m_str = m_str.strip()
         if re.match(r'^[①-⑩\u2460-\u24ff\u2780-\u2793\u3251-\u325f]', m_str): return "circled"
-        if m_str.startswith('['): return "bracket"
+        if re.match(r'^[\[［〔【]', m_str): return "bracket"
         if re.match(r'^[⁰¹²³⁴⁵⁶⁷⁸⁹]', m_str): return "superscript"
         if m_str.startswith('注'): return "zhu"
         if m_str.startswith('(') or m_str.startswith('（'): return "paren"

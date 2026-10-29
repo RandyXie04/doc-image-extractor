@@ -16,6 +16,11 @@ __pycache__/
 *.pyd
 .pytest_cache/
 .cache/
+.coverage
+.coverage.*
+htmlcov/
+*.coverage
+coverage.xml
 
 # Agent and Prompt docs
 TASK.md
@@ -49,14 +54,20 @@ previews/
 *.zip
 debug_*.jpg
 
-# Data & PDF
+# Data & PDF (書籍原始檔與轉檔中繼隔離)
 data/
 database_text/
 text_Doc/
 _archive/
 _originals/
 backup_originals/
-tests/
+
+# Test artifacts & Temporary outputs (測試產物與樣本嚴格隔離，單元測試腳本正常追蹤)
+tests/__pycache__/
+tests/output/
+tests/fixtures/*.pdf
+tests/fixtures/*.docx
+tests/fixtures/*.md
 
 # Model weights
 *.pt

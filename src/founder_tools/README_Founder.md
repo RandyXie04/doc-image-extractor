@@ -1,14 +1,16 @@
 # 方正書版亂碼修復模組
 
 修復「方正書版 (Founder Bookmaker)」排版系統產生的 CMap 編碼缺陷與亂碼。
+遵循「Zero-Unexplained Error」校驗標準，支援自動化修復 PDF 與 DOCX 稿件，並以統一 DOCX 格式交付排版。
 
-## 功能
+## 核心功能
 
-- CMap 編碼修復（亂碼、特殊字串、中英文標點）
-- 支援 PDF 與 DOCX 輸入
-- 標題與排版重建（`HeadingDetector`、`toc_parser.py`）
-- 自動化校註注入（`auto_footnote.py`），支援 `(1)`、`[1]`、`1` 等多種標記格式
-- 以 `template.docx` 為範本骨架產出修復後 Word 檔
+- **CMap 編碼修復**：透過 `fix_founder_fonts.py` 與 Unicode 映射庫還原亂碼、特殊字元與中英文標點。
+- **無損樣式保留**：Virtual Run Slicer 技術切分標記的同時，完整保留原始粗體、斜體與字型樣式。
+- **範本骨架綁定**：產出 Word 檔案強制套用 `template.docx` 樣式骨架，確保與後續排版軟體相容。
+- **標題與排版重建**：結合 `HeadingDetector` 與 `toc_parser.py` 解析目錄與章節層級。
+- **自動化校註注入**：`auto_footnote.py` 支援 `(1)`、`[1]`、`①` 與純數字等多種註腳標記。
+- **Web API 整合**：由後端 `/api/founder/repair` 端點統一提供非同步修復服務。
 
 ## 目錄結構
 
