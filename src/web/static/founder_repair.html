@@ -3,112 +3,47 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>方正排版標點修復</title>
-    <link rel="stylesheet" href="/static/sidebar.css?v=20261016_v5">
-    <style>
-        :root {
-            --primary: #16a34a;
-            --primary-hover: #15803d;
-            --bg: transparent;
-            --card: #ffffff;
-            --border: #e2e8f0;
-            --text-main: #0f172a;
-            --text-muted: #64748b;
-        }
-        
-        :root[data-theme="dark"] {
-            color-scheme: dark;
-            --primary: #22c55e;
-            --primary-hover: #16a34a;
-            --card: #1e293b;
-            --border: rgba(255, 255, 255, 0.12);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-        }
-        .upload-area { background-color: rgba(0, 0, 0, 0.02); }
-        :root[data-theme="dark"] .upload-area { background-color: rgba(255, 255, 255, 0.02); }
-        body { font-family: 'Inter', system-ui, sans-serif; color: var(--text-main); }
-        .container { 
-            background: var(--card); 
-            backdrop-filter: blur(20px); 
-            -webkit-backdrop-filter: blur(20px);
-            padding: clamp(1.5rem, 3vw, 3rem); 
-            border-radius: 20px; 
-            box-shadow: 0 10px 30px rgba(0,0,0,0.06); 
-            width: 100%; 
-            border: 1px solid var(--border);
-            animation: fadeIn 0.4s ease-out forwards;
-        }
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem; }
-        .header .back-link { 
-            text-decoration: none; 
-            color: var(--primary); 
-            font-weight: 500; 
-            font-size: 0.9rem;
-            background: rgba(22, 163, 74, 0.08); 
-            padding: 6px 12px; 
-            border-radius: 6px; 
-            transition: 0.2s; 
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-        }
-        .header .back-link:hover { background: rgba(22, 163, 74, 0.15); }
-        .upload-area { border: 2px dashed var(--border); border-radius: 16px; padding: 3.5rem 2rem; text-align: center; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); margin-bottom: 2rem; position: relative; overflow: hidden; }
-        .upload-area:hover, .upload-area.dragover { border-color: var(--primary); background-color: rgba(22, 163, 74, 0.04); transform: scale(1.01); }
-        .upload-area svg { width: 52px; height: 52px; color: var(--primary); margin-bottom: 1.2rem; transition: transform 0.3s; }
-        .upload-area:hover svg { transform: translateY(-4px); }
-        .upload-area input[type="file"] { display: none; }
-        .btn { background: var(--primary); color: white; border: none; padding: 12px 24px; border-radius: 10px; font-weight: 600; cursor: pointer; width: 100%; font-size: 1rem; box-shadow: 0 2px 6px rgba(22, 163, 74, 0.2); transition: all 0.2s; letter-spacing: 0.02em; }
-        .btn:hover:not(:disabled) { background: var(--primary-hover); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3); }
-        .btn:disabled { background: #e2e8f0; color: #475569; cursor: not-allowed; box-shadow: none; transform: none; }
-        :root[data-theme="dark"] .btn:disabled { background: rgba(255, 255, 255, 0.08); color: #94a3b8; }
-        #status { margin-top: 1.5rem; text-align: center; font-weight: 500; color: var(--text-muted); }
-        #downloadBtn { display: none; margin-top: 1rem; text-align: center; text-decoration: none; background: #0284c7; box-shadow: 0 2px 6px rgba(2, 132, 199, 0.2); }
-        #downloadBtn:hover { background: #0369a1; }
-    </style>
+    <title>方正修復 - 轉檔工具箱</title>
+    <link rel="stylesheet" href="/static/sidebar.css">
+    <link rel="stylesheet" href="/static/toolbox.css">
 </head>
 <body>
     <div class="container">
-        <div class="header">
+        <header class="page-head">
             <a href="/" class="back-link">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
-                返回首頁
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                返回工具箱
             </a>
-            <h2 style="margin: 0; font-size: 1.35rem; color: var(--text-main);">方正排版修復</h2>
-            <div style="width: 80px;"></div>
-        </div>
-        <p style="text-align: center; color: var(--text-muted); margin-bottom: 2rem; font-size: 0.95rem;">上傳 PDF 或 DOCX 檔案，自動還原 CMap 編碼缺陷與亂碼。</p>
+            <div>
+                <h1>方正修復</h1>
+                <p class="page-lead">還原早期方正系統 PDF 或 DOCX 的 CMap 編碼缺陷與亂碼。不論上傳 PDF 或 DOCX，輸出一律是修復後的 Word。</p>
+            </div>
+        </header>
 
         <form id="uploadForm">
-            <div class="upload-area" id="dropZone">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div class="dropzone" id="dropZone" role="button" tabindex="0" aria-label="選擇 PDF 或 DOCX 檔案">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                <h3 id="fileNameDisplay" style="margin: 0; font-size: 1.1rem; color: var(--text-muted); font-weight: 500;">點擊選擇，或將 PDF / DOCX 拖曳至此</h3>
+                <p class="dropzone-title" id="fileNameDisplay">點擊選擇，或將檔案拖曳到這裡</p>
+                <p class="dropzone-sub">支援 .pdf、.docx</p>
                 <input type="file" id="fileInput" accept=".pdf,.docx">
             </div>
-            <div id="fileInfo" style="text-align: center; margin-bottom: 1rem; font-weight: bold;"></div>
-            <button type="submit" class="btn" id="submitBtn" disabled>開始修復</button>
+            <button type="submit" class="btn btn-primary btn-block" id="submitBtn" disabled>先選擇檔案</button>
         </form>
-        <div id="status"></div>
-        <a id="downloadBtn" class="btn" href="#">下載修復後的檔案</a>
+        <div id="status" role="status" aria-live="polite"></div>
     </div>
 
     <script>
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
-        const fileInfo = document.getElementById('fileInfo');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
         const submitBtn = document.getElementById('submitBtn');
         const statusDiv = document.getElementById('status');
-        const downloadBtn = document.getElementById('downloadBtn');
         let currentFile = null;
 
         dropZone.onclick = () => fileInput.click();
+        dropZone.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } };
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
         dropZone.ondragleave = () => dropZone.classList.remove('dragover');
         dropZone.ondrop = (e) => {
@@ -127,15 +62,10 @@
             }
             currentFile = file;
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
-            fileInfo.innerHTML = `
-                <div style="display:flex; flex-direction:column; align-items:center; gap:6px; padding: 12px; background: rgba(0,0,0,0.03); border: 1px solid var(--border); border-radius: 8px;">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="color: var(--primary);"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    <span style="color: var(--text-main);">已選擇: <b>${file.name}</b></span>
-                    <span style="color: var(--text-muted); font-weight:normal; font-size:0.85rem;">檔案大小: ${sizeMB} MB</span>
-                </div>`;
+            fileNameDisplay.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong><small>${sizeMB} MB</small></span>`;
             submitBtn.disabled = false;
-            downloadBtn.style.display = 'none';
-            statusDiv.textContent = '';
+            submitBtn.textContent = '開始修復';
+            statusDiv.innerHTML = '';
         }
 
         document.getElementById('uploadForm').onsubmit = async (e) => {
@@ -143,134 +73,50 @@
             if (!currentFile) return;
 
             submitBtn.disabled = true;
-            statusDiv.textContent = '處理中，請稍候...';
-            downloadBtn.style.display = 'none';
+            statusDiv.innerHTML = '<div class="alert">正在修復編碼，請稍候。</div>';
 
             const formData = new FormData();
             formData.append('file', currentFile);
 
             try {
-                const response = await fetch('/api/founder/repair', {
-                    method: 'POST',
-                    body: formData
-                });
-                
+                const response = await fetch('/api/founder/repair', { method: 'POST', body: formData });
                 if (!response.ok) {
-                    const err = await response.json();
+                    const err = await response.json().catch(() => ({}));
                     throw new Error(err.detail || '檔案格式或內容可能有誤');
                 }
-                
                 const result = await response.json();
                 if (result.success) {
-                    statusDiv.innerHTML = `<div style="font-weight: 600; color: #16a34a;">修復完成！</div>`;
-                    
-                    const btnContainer = document.createElement('div');
-                    btnContainer.id = 'saveBtnContainer';
-                    btnContainer.style.display = 'flex';
-                    btnContainer.style.gap = '10px';
-                    btnContainer.style.marginTop = '15px';
-                    btnContainer.style.justifyContent = 'center';
-                    
-                    const btnSave = document.createElement('button');
-                    btnSave.className = 'btn';
-                    btnSave.style.background = '#2563eb';
-                    btnSave.innerHTML = '<span style="display:inline-flex; align-items:center; justify-content:center; gap:6px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg> 本機另存修復檔案 (原生視窗)</span>';
-                    btnSave.onclick = (e) => nativeSave(result.source_path, result.filename, e.currentTarget);
-                    
-                    btnContainer.appendChild(btnSave);
-                    statusDiv.appendChild(btnContainer);
+                    statusDiv.innerHTML = `
+                        <div class="result" id="resultCard">
+                            <div class="result-head is-ok">修復完成</div>
+                            <ul class="result-files">
+                                <li>
+                                    <div>
+                                        <span class="file-name">${toolbox.escape(result.filename)}</span>
+                                        <span class="file-desc">修復後的 Word 文件</span>
+                                    </div>
+                                    <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON}另存 Word</button>
+                                </li>
+                            </ul>
+                            <div class="result-note">檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀，請及時另存。</div>
+                        </div>`;
+                    document.getElementById('saveDocxBtn').onclick = (ev) => toolbox.nativeSave({
+                        sourcePath: result.source_path,
+                        filename: result.filename,
+                        button: ev.currentTarget,
+                        fallbackUrl: null,
+                        mountEl: document.getElementById('resultCard'),
+                        label: 'Word'
+                    });
                 }
             } catch (error) {
-                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background: rgba(220, 38, 38, 0.08); border:1px solid rgba(220, 38, 38, 0.25); border-radius:8px; color:#ef4444;">
-                    <b>處理錯誤：</b>${error.message} <br>
-                    <button onclick="submitBtn.click()" style="margin-top:10px; padding: 6px 14px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px; font-size: 0.85rem; display:inline-flex; align-items:center; gap:4px;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
-                        重新嘗試
-                    </button>
-                </div>`;
+                statusDiv.innerHTML = toolbox.errorPanel('修復失敗', error.message, 'submitBtn.click()');
             } finally {
                 submitBtn.disabled = false;
             }
         };
-
-        async function nativeSave(source_path, suggested_filename, btnElement) {
-            const origHTML = btnElement ? btnElement.innerHTML : '';
-            if (btnElement) {
-                btnElement.disabled = true;
-                btnElement.innerText = '請在開啟的視窗中選擇儲存位置...';
-            }
-            try {
-                const res = await fetch('/api/native_save_file', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({source_path, suggested_filename})
-                });
-                
-                if (!res.ok) {
-                    throw new Error(`伺服器回應異常 (${res.status})`);
-                }
-                const result = await res.json();
-                
-                if (result.status === 'success') {
-                    if (btnElement) {
-                        btnElement.innerText = '已儲存';
-                        btnElement.disabled = false;
-                    }
-                    
-                    let saveInfoId = `savedInfo_repair`;
-                    let savedInfo = document.getElementById(saveInfoId);
-                    if (!savedInfo) {
-                        savedInfo = document.createElement('div');
-                        savedInfo.id = saveInfoId;
-                        savedInfo.style.marginTop = '0.8rem';
-                        savedInfo.style.padding = '0.8rem';
-                        savedInfo.style.background = 'rgba(22, 163, 74, 0.08)';
-                        savedInfo.style.border = '1px solid rgba(22, 163, 74, 0.25)';
-                        savedInfo.style.borderRadius = '8px';
-                        savedInfo.style.color = '#15803d';
-                        savedInfo.style.fontSize = '0.9rem';
-                        const container = document.getElementById('saveBtnContainer') || statusDiv;
-                        container.parentNode.insertBefore(savedInfo, container.nextSibling);
-                    }
-                    savedInfo.innerHTML = `<div><b>文件已成功儲存至：</b></div>
-                    <div style="margin:4px 0; word-break:break-all; font-family:monospace; background:rgba(255,255,255,0.7); padding:6px; border-radius:4px; border:1px solid rgba(22, 163, 74, 0.2);">${result.saved_path}</div>
-                    <button type="button" class="btn" style="margin-top:6px; padding:6px 12px; background:#15803d; color:white; font-size:0.85rem; display:inline-flex; align-items:center; gap:6px;" onclick="openSavedPath('${result.saved_path.replace(/\\/g, '\\\\')}')">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H18a2 2 0 0 1 2 2v2"/></svg>
-                        在 Windows 檔案總管中開啟
-                    </button>`;
-                } else if (result.status === 'cancelled') {
-                    if (btnElement) {
-                        btnElement.innerHTML = origHTML;
-                        btnElement.disabled = false;
-                    }
-                } else {
-                    alert('原生另存失敗: ' + result.message);
-                    if (btnElement) {
-                        btnElement.innerHTML = origHTML;
-                        btnElement.disabled = false;
-                    }
-                }
-            } catch(e) {
-                alert('原生另存發生錯誤: ' + e.message);
-                if (btnElement) {
-                    btnElement.innerHTML = origHTML;
-                    btnElement.disabled = false;
-                }
-            }
-        }
-
-        async function openSavedPath(filePath) {
-            try {
-                await fetch('/api/open_file_folder', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({file_path: filePath})
-                });
-            } catch(err) {
-                alert('無法開啟檔案總管: ' + err.message);
-            }
-        }
     </script>
-<script src="/static/sidebar.js?v=20261016_v5"></script>
+    <script src="/static/sidebar.js"></script>
+    <script src="/static/js/output.js"></script>
 </body>
 </html>

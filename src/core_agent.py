@@ -189,14 +189,16 @@ def _process_single_page(args):
         detections = []
         try:
             if _engine_type == "onnx" and _onnx_session is not None:
-                try:
-                    from src.scripts import yolo_onnx_utils
-                except ImportError:
+                import importlib
+                yolo_onnx_utils: Any = None
+                for _mod_name in ("src.scripts.yolo_onnx_utils", "scripts.yolo_onnx_utils", "yolo_onnx_utils"):
                     try:
-                        from scripts import yolo_onnx_utils
+                        yolo_onnx_utils = importlib.import_module(_mod_name)
+                        break
                     except ImportError:
-                        # pyrefly: ignore [missing-import]
-                        import yolo_onnx_utils
+                        continue
+                if yolo_onnx_utils is None:
+                    raise ImportError("Could not import yolo_onnx_utils")
                 
                 # Preprocess (Dynamic Input Resolution Support)
                 inp_shape = _onnx_session.get_inputs()[0].shape
@@ -230,19 +232,21 @@ def _process_single_page(args):
                     })
             elif _engine_type == "pt" and _pt_model is not None:
                 # PyTorch Inference with explicit device selection
-                results = _pt_model.predict(img, conf=0.15, iou=0.45, device=_pt_device, verbose=False)
-                if results and len(results) > 0:
-                    r = results[0]
-                    boxes = r.boxes
-                    for box in boxes:
-                        b_type = 'inline' if int(box.cls[0]) == 0 else 'isolated'
-                        score = float(box.conf[0])
-                        x1, y1, x2, y2 = box.xyxy[0].tolist()
-                        detections.append({
-                            'type': b_type,
-                            'score': score,
-                            'box': np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
-                        })
+                raw_results = _pt_model.predict(img, conf=0.15, iou=0.45, device=_pt_device, verbose=False)
+                results_list = list(raw_results) if raw_results is not None else []
+                if len(results_list) > 0:
+                    r: Any = results_list[0]
+                    boxes = getattr(r, "boxes", None)
+                    if boxes is not None:
+                        for box in boxes:
+                            b_type = 'inline' if int(box.cls[0]) == 0 else 'isolated'
+                            score = float(box.conf[0])
+                            x1, y1, x2, y2 = box.xyxy[0].tolist()
+                            detections.append({
+                                'type': b_type,
+                                'score': score,
+                                'box': np.array([[x1, y1], [x2, y1], [x2, y2], [x1, y2]])
+                            })
             else:
                 raise RuntimeError("模型尚未準備完成或載入失敗，無法進行 AI 公式偵測")
         except Exception as e:

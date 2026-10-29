@@ -256,3 +256,66 @@ ADR-007（詳見 `docs/DECISIONS.md`）：
 - `src/scripts/pdf_engine_dispatcher.py`、`src/web/static/ocr_pipeline.html`、`src/web/app.py`：入口預設 `no_footnote=True`（無腳注模式）。
 - `src/web/static/pod_studio.html`、`src/web/app.py`、`src/pod_studio/pod_service.py`：階段一新增 `#sourcePdfInput` 原 PDF 上傳格與 `PodCompileBlueprintResponse` 契約；階段二新增 `_upgrade_flattened_tables_and_split_headings_in_docx` 將 `last_modified_idx` 之後的壓平純文字表格原位替換為 Word `Table Grid`（`w:tbl`）並切分句末黏連標題。
 - `tests/test_table_reconstructor_and_pod_upgrade.py`：新增 5 項目標測試全數通過（5/5 PASSED），關聯回歸測試套件 65 項全數通過（65 PASSED, 0 FAILED）。
+
+
+---
+
+## Bug ID
+BUG-008
+
+## Bug Description
+專案在進入全棧強型別契約擴展（P2-A ~ P2-D）與深度工程審計時，存在五項潛在架構與工程風險：
+1. **純 OCR 通道與公式引擎靜態型別未定義（Risk 1 & Risk 5）**：`src/scripts/process_ocr.py` 存在 22 項 `pyright` 靜態錯誤（條件匯入變數未預先宣告、`SuryaOCRConfig.get_text_config` Monkey-patch 簽章不匹配、`Page`/`Rect` 動態屬性、以及未對齊 `LayoutRecordContract`）；`src/core_agent.py` 存在 6 項 `pyright` 錯誤（已廢棄模組匯入與 `Iterator[Results | Tensor]` 直接取 `len()` 與索引）。
+2. **共用 `images/` 目錄跨書覆寫碰撞（Risk 2）**：`book_layout_extractor.py` 與 `process_ocr.py` 將提取圖片統一寫入扁平目錄 `data/03_output/images/image_p{page}_{idx}.png`，導致多本書連續或並行轉檔時，後書同頁碼圖片會覆寫前書圖片。
+3. **子行程 CLI JSON 字串跳脫與第三方 `stdout` 雜訊污染（Risk 3）**：`src/web/app.py` 透過命令列參數 `--style_mapping "{...}"` 直接傳遞 JSON 字串，且無差別擷取子行程非 JSON `stdout` 前 120 字元，導致 `PyTorch`/`Surya`/`Pandoc` 警告或路徑訊息覆蓋前端進度狀態列。
+4. **單體路由膨脹（Risk 4）**：`src/web/app.py` 超過 1,700 行，耦合 POD 智慧整稿、系統更新、硬體探測與方正修復路由，且前端其餘四大工作台（`ocr_pipeline`、`pod_studio` VLM、`formula`、`founder_repair`/`extract_images`）尚未納入 Pydantic v2 -> TypeScript 自動生成契約。
+
+## Status
+CLOSED
+
+## Root Cause
+1. `process_ocr.py` 將 `PIL.Image`、`fitz`、`urllib` 與 Surya 載入函式包裹於單一 `try/except` 內且未預先綁定頂層符號，並在 `core_agent.py` 對 `predict()` 回傳之迭代器直接呼叫 `len(results)`。
+2. 圖片輸出路徑未以書籍 `output_stem` 建立獨立子資料夾命名空間。
+3. Windows 子行程命令列對含雙引號與空白之複雜字型名稱容易發生引號跳脫截斷；`stdout` 讀取迴圈缺乏結構化進度標記過濾。
+4. 歷史功能迭代集中堆疊於 `src/web/app.py`，未依業務領域拆分為 FastAPI `APIRouter`。
+
+## Decision Gate
+ADR-009（詳見 `docs/DECISIONS.md`）：
+1. 全面收斂 `process_ocr.py` 與 `core_agent.py` 至 `pyright` 0 Error，並於 `process_ocr.py` 新增 `build_ocr_layout_contracts()` 強制通過 `validate_layout_records` 校驗。
+2. 實作每本書圖片子目錄命名空間隔離（`data/03_output/images/{stem}/`），並保留未指定 `output_stem` 時之向下相容路徑。
+3. 新增 `--style_mapping_file` 檔案型 JSON 傳遞與 `is_meaningful_progress_line()` 進度訊息白名單過濾器。
+4. 擴充 `src/web/schemas.py` 與 `generate_ts_contracts.py` 覆蓋 P2-A ~ P2-D 全部工作台，並將 POD 與系統路由模組化拆分至 `src/web/routers/pod_router.py` 與 `src/web/routers/system_router.py`。
+
+## Resolution
+- `src/core_agent.py`：改用 `importlib.import_module` 動態載入 ONNX 工具並將 `predict()` 結果具體化為 `list`，消除全部 6 項 `pyright` 錯誤。
+- `src/scripts/process_ocr.py`：預先綁定條件匯入符號、修正 `SuryaOCRConfig` 屬性設定與矩形面積計算，新增 `--style_mapping_file`、`images/{out_stem}` 隔離與 `build_ocr_layout_contracts()` 強型別契約驗證，消除全部 22 項 `pyright` 錯誤。
+- `src/scripts/book_layout_extractor.py` & `src/scripts/pdf_engine_dispatcher.py`：支援 `images/{stem}` 圖片目錄隔離與 `--style_mapping_file` JSON 檔案讀取。
+- `src/web/schemas.py`、`src/scripts/generate_ts_contracts.py`、`frontend/src/types/contracts.ts`、`frontend/src/api/ocrClient.ts`、`frontend/src/api/formulaClient.ts`、`src/web/static/js/ocr_contracts.js`：完整覆蓋 P2-A ~ P2-D 雙向契約。
+- `src/web/routers/pod_router.py`、`src/web/routers/system_router.py`、`src/web/app.py`：完成 `APIRouter` 模組拆分並維持 `src.web.app` 頂層匯出符號 100% 向下相容。
+- `tests/test_p3_architecture_and_contracts.py`：新增 P3 架構與契約驗收測試全數通過。
+
+---
+
+## Bug ID
+BUG-009
+
+## Bug Description
+`src/web/static/js/output.js` 在納入 `frontend/tsconfig.json`（開啟 `checkJs: true`、`strict: true`、`noImplicitAny: true`）後產生 13 項靜態型別錯誤（`TS2339`、`TS7006`、`TS7031`、`TS18046`），且存在兩項執行期缺陷：
+1. `errorPanel()` 將 `retryHandler` 直接插入雙引號屬性 `onclick="${retryHandler}"` 而未經 `tb.escape()` 跳脫，當傳入含雙引號之敘述（如 `'uploadForm.dispatchEvent(new Event("submit"))'`）時會截斷 HTML 屬性並導致點擊重試失效。
+2. `nativeSave()` 在後端回傳非 `success`/`cancelled` 狀態且未提供 `fallbackUrl`（如 `founder_repair.html`）時，靜默吞沒錯誤而未觸發 `tb.notify` 提示。
+
+## Status
+CLOSED
+
+## Root Cause
+1. `output.js` 抽離共用腳本時未加上 `// @ts-check` 與 JSDoc `@typedef`/`@param` 型別標註，`window.toolbox` 未轉型宣告，`catch (err)` / `catch (e)` 在 TypeScript `useUnknownInCatchVariables` 下直接存取 `.message`。
+2. `errorPanel` 漏掉對 `retryHandler` 的 HTML 實體跳脫；`nativeSave` 的 `else` 分支僅處理有 `fallbackUrl` 的情況。
+
+## Decision Gate
+No new design decision is required.
+遵循既有 ADR-008 / ADR-009 強型別前端契約規範。
+
+## Resolution
+- `src/web/static/js/output.js`：補齊 `// @ts-check`、`NativeSaveOptions` 與 `ToolboxGlobal` JSDoc 型別定義、收窄 `catch` 變數為 `Error`、以 `tb.escape(retryHandler)` 保護 `onclick` 屬性，並在無 `fallbackUrl` 時透過 `tb.notify` 顯示錯誤訊息。
+- `src/web/static/js/pod_contracts.js`：補齊 `window["PodContracts"]` 之 `@ts-ignore` 標註，使 `tsconfig.json` 全專案達成 0 Error。
+- `tests/test_p3_architecture_and_contracts.py`：新增 `test_p3_5_output_js_type_safety_and_attribute_escaping` 並通過回歸測試。

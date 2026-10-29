@@ -1312,6 +1312,7 @@ def process_book_vector_pdf(
     ai_kaiti=None,
     ai_kaiti_threshold=None,
     enable_footnotes: bool = True,
+    isolate_images_by_stem: Optional[bool] = None,
 ):
     """
     Extract vector PDF with:
@@ -1393,8 +1394,9 @@ def process_book_vector_pdf(
     # Write final Markdown file
     full_markdown = "\n\n".join(final_md_pages)
     
-    # ── Phase 2: Image Extraction for PyMuPDF ──
-    images_dir = os.path.join(output_dir, "images")
+    # ── Phase 2: Image Extraction for PyMuPDF (with per-book namespace isolation) ──
+    use_stem_subdir = isolate_images_by_stem if isolate_images_by_stem is not None else bool(output_stem)
+    images_dir = os.path.join(output_dir, "images", stem) if use_stem_subdir else os.path.join(output_dir, "images")
     image_path_map = {}
     if all_image_blocks:
         try:

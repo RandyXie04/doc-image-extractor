@@ -37,6 +37,7 @@ export function buildCompileBlueprintFormData(req) {
 
 if (typeof window !== "undefined") {
   // Expose on window for inline script consumption in pod_studio.html
+  // @ts-ignore
   window["PodContracts"] = {
     buildCompileBlueprintFormData,
   };

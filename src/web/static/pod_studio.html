@@ -3,524 +3,220 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>POD 樣式智慧擴散工作區 - 出版專用</title>
-    <link rel="stylesheet" href="/static/sidebar.css?v=20261016_v5">
+    <title>POD 樣式智慧擴散工作區 - 轉檔工具箱</title>
+    <link rel="stylesheet" href="/static/sidebar.css">
+    <link rel="stylesheet" href="/static/toolbox.css">
     <style>
-        :root {
-            color-scheme: light;
-            --primary: #2563eb;
-            --primary-hover: #1d4ed8;
-            --bg-color: #f8fafc;
-            --surface: rgba(0, 0, 0, 0.02);
-            --surface-hover: rgba(0, 0, 0, 0.04);
-            --text-main: #0f172a;
-            --text-muted: #64748b;
-            --border: #e2e8f0;
-            --card-bg: #ffffff;
-            --success: #16a34a;
-            --warning: #d97706;
-            --danger: #dc2626;
-        }
-
-        :root[data-theme="dark"] {
-            color-scheme: dark;
-            --primary: #3b82f6;
-            --primary-hover: #2563eb;
-            --bg-color: #0b1329;
-            --surface: rgba(255, 255, 255, 0.03);
-            --surface-hover: rgba(255, 255, 255, 0.06);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --border: rgba(255, 255, 255, 0.1);
-            --card-bg: #131d38;
-            --success: #22c55e;
-            --warning: #f59e0b;
-            --danger: #ef4444;
-        }
-
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans TC", sans-serif;
-            color: var(--text-main);
-            background: var(--bg-color);
-            margin: 0;
-            padding: 0;
-        }
-
-        .container {
-            background: var(--card-bg);
-            padding: clamp(1.2rem, 3vw, 2.2rem);
-            border-radius: 12px;
-            border: 1px solid var(--border);
-            width: 100%;
-            max-width: 980px;
-            margin: 0 auto;
-            box-sizing: border-box;
-        }
-
-        .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .header-title-group h1 {
-            margin: 0 0 0.3rem;
-            font-size: 1.5rem;
-            font-weight: 600;
-            color: var(--text-main);
-        }
-
-        .header-title-group p {
-            margin: 0;
-            font-size: 0.9rem;
-            color: var(--text-muted);
-        }
-
-        .btn-link {
-            text-decoration: none;
-            color: var(--text-main);
-            font-size: 0.88rem;
-            font-weight: 500;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 6px 12px;
-            border-radius: 6px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-            transition: background 0.15s;
-        }
-
-        .btn-link:hover {
-            background: var(--surface-hover);
-        }
-
-        .pipeline-steps {
+        .step-tabs {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: 1fr 1fr;
             gap: 1rem;
-            margin-bottom: 1.8rem;
+            margin-bottom: 1.5rem;
         }
-
-        @media (max-width: 640px) {
-            .pipeline-steps {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .step-indicator {
-            padding: 0.9rem 1.1rem;
-            border-radius: 8px;
-            border: 1px solid var(--border);
-            background: var(--surface);
+        .step-tab {
             display: flex;
             align-items: center;
             gap: 12px;
-            transition: border-color 0.2s, background 0.2s;
+            padding: 1rem 1.25rem;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            background: var(--surface);
+            opacity: 0.6;
+            transition: opacity 0.2s ease, border-color 0.2s ease;
         }
-
-        .step-indicator.active {
-            border-color: var(--primary);
-            background: rgba(37, 99, 235, 0.05);
+        .step-tab.active {
+            opacity: 1;
+            border-color: var(--accent);
+            background: var(--accent-soft);
         }
-
-        .step-num {
-            width: 26px;
-            height: 26px;
+        .step-tab.completed {
+            opacity: 1;
+            border-color: var(--success);
+        }
+        .step-tab-num {
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
-            background: var(--border);
+            background: var(--surface-2);
             color: var(--text-muted);
+            font-weight: 700;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 600;
-            font-size: 0.82rem;
+            font-size: 0.9rem;
             flex-shrink: 0;
         }
-
-        .step-indicator.active .step-num {
-            background: var(--primary);
-            color: #ffffff;
+        .step-tab.active .step-tab-num {
+            background: var(--accent);
+            color: var(--accent-fg);
         }
-
-        .step-indicator.completed .step-num {
+        .step-tab.completed .step-tab-num {
             background: var(--success);
             color: #ffffff;
         }
-
-        .step-info h3 {
-            margin: 0;
-            font-size: 0.92rem;
-            font-weight: 600;
+        .step-tab-text strong {
+            display: block;
+            font-size: 0.95rem;
+            color: var(--text);
         }
-
-        .step-info p {
-            margin: 2px 0 0;
-            font-size: 0.78rem;
-            color: var(--text-muted);
-        }
-
-        .card-stage {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 1.4rem;
-            margin-bottom: 1.4rem;
-        }
-
-        .stage-title {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 0.8rem;
-        }
-
-        .stage-title h2 {
-            margin: 0;
-            font-size: 1.1rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .form-row {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-            margin-bottom: 1rem;
-        }
-
-        .form-row label {
-            font-size: 0.88rem;
-            font-weight: 600;
-            color: var(--text-main);
-        }
-
-        .form-hint {
+        .step-tab-text span {
             font-size: 0.82rem;
             color: var(--text-muted);
-            line-height: 1.4;
-            margin-top: 2px;
-        }
-
-        .file-upload-box {
-            border: 1px dashed var(--border);
-            border-radius: 8px;
-            padding: 1.2rem;
-            text-align: center;
-            background: var(--card-bg);
-            cursor: pointer;
-            transition: border-color 0.2s, background 0.2s;
-        }
-
-        .file-upload-box:hover {
-            border-color: var(--primary);
-            background: var(--surface);
-        }
-
-        .select-input, .text-input {
-            width: 100%;
-            padding: 8px 12px;
-            border-radius: 6px;
-            border: 1px solid var(--border);
-            background: var(--card-bg);
-            color: var(--text-main);
-            font-size: 0.88rem;
-            box-sizing: border-box;
-        }
-
-        .select-input:focus, .text-input:focus {
-            outline: none;
-            border-color: var(--primary);
-        }
-
-        .btn-action {
-            background: var(--primary);
-            color: #ffffff;
-            border: none;
-            border-radius: 6px;
-            padding: 9px 16px;
-            font-size: 0.9rem;
-            font-weight: 600;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            transition: background 0.15s, opacity 0.15s;
-        }
-
-        .btn-action:hover:not(:disabled) {
-            background: var(--primary-hover);
-        }
-
-        .btn-action:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .btn-secondary {
-            background: var(--card-bg);
-            color: var(--text-main);
-            border: 1px solid var(--border);
-        }
-
-        .btn-secondary:hover:not(:disabled) {
-            background: var(--surface-hover);
-        }
-
-        .results-box {
-            background: var(--card-bg);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 1rem;
-            margin-top: 1rem;
-            font-size: 0.88rem;
-        }
-
-        .badge-pill {
-            display: inline-block;
-            padding: 2px 7px;
-            border-radius: 4px;
-            font-size: 0.76rem;
-            font-weight: 500;
-            margin-right: 6px;
-            margin-bottom: 4px;
-            background: var(--surface);
-            border: 1px solid var(--border);
-        }
-
-        .traffic-lights {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 12px;
-            margin: 1rem 0;
-        }
-
-        @media (max-width: 640px) {
-            .traffic-lights {
-                grid-template-columns: 1fr;
-            }
-        }
-
-        .traffic-card {
-            padding: 0.9rem;
-            border-radius: 6px;
-            border: 1px solid var(--border);
-            text-align: center;
-        }
-
-        .traffic-card.green {
-            border-color: rgba(34, 197, 94, 0.4);
-            background: rgba(34, 197, 94, 0.05);
-        }
-
-        .traffic-card.yellow {
-            border-color: rgba(245, 158, 11, 0.4);
-            background: rgba(245, 158, 11, 0.05);
-        }
-
-        .traffic-card.red {
-            border-color: rgba(239, 68, 68, 0.4);
-            background: rgba(239, 68, 68, 0.05);
-        }
-
-        .traffic-count {
-            font-size: 1.5rem;
-            font-weight: 700;
-            margin-bottom: 2px;
-        }
-
-        .traffic-card.green .traffic-count { color: var(--success); }
-        .traffic-card.yellow .traffic-count { color: var(--warning); }
-        .traffic-card.red .traffic-count { color: var(--danger); }
-
-        .traffic-label {
-            font-size: 0.8rem;
-            color: var(--text-muted);
-        }
-
-        .session-badge {
-            font-family: ui-monospace, monospace;
-            background: var(--card-bg);
-            border: 1px solid var(--border);
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.78rem;
-            color: var(--text-muted);
-        }
-
-        .legacy-drawer {
-            margin-top: 1.5rem;
-            border-top: 1px dashed var(--border);
-            padding-top: 1rem;
-        }
-
-        .legacy-drawer summary {
-            cursor: pointer;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            user-select: none;
-        }
-
-        .legacy-drawer summary:hover {
-            color: var(--text-main);
         }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">
-            <div class="header-title-group">
-                <h1>POD 樣式智慧擴散工作區</h1>
-                <p>兩階段管線：人工範本規則學習、全書批量樣式擴散與 CJK 骨架守恆驗收</p>
-            </div>
-            <a href="/" class="btn-link">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        <header class="page-head">
+            <a href="/" class="back-link">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
                 返回工具箱
             </a>
-        </div>
+            <div>
+                <h1>POD 樣式智慧擴散工作區</h1>
+                <p class="page-lead">兩階段管線：人工範本規則學習、全書批量樣式擴散與 CJK 骨架守恆驗收。</p>
+            </div>
+        </header>
 
-        <div class="pipeline-steps">
-            <div class="step-indicator active" id="stepIndicator1">
-                <div class="step-num">1</div>
-                <div class="step-info">
-                    <h3>階段一：範本特徵學習</h3>
-                    <p>比對人工預修檔並推導排版藍圖</p>
+        <div class="step-tabs">
+            <div class="step-tab active" id="stepIndicator1">
+                <div class="step-tab-num">1</div>
+                <div class="step-tab-text">
+                    <strong>階段一：範本特徵學習</strong>
+                    <span>比對人工修整章節並推導排版藍圖</span>
                 </div>
             </div>
-            <div class="step-indicator" id="stepIndicator2">
-                <div class="step-num">2</div>
-                <div class="step-info">
-                    <h3>階段二：全書智慧擴散</h3>
-                    <p>樣式外推與 CJK 骨架守恆驗收</p>
+            <div class="step-tab" id="stepIndicator2">
+                <div class="step-tab-num">2</div>
+                <div class="step-tab-text">
+                    <strong>階段二：全書智慧擴散</strong>
+                    <span>樣式外推與 CJK 骨架守恆驗收</span>
                 </div>
             </div>
         </div>
 
         <!-- 階段一：範本特徵學習與藍圖合成 -->
-        <div class="card-stage" id="stage1Section">
-            <div class="stage-title">
-                <h2>階段一：上傳人工預修範本 (.docx) 與原始 PDF (.pdf)</h2>
-                <span class="session-badge" id="sessionBadgeDisplay">未建立 Session</span>
+        <section class="panel" id="stage1Section">
+            <div class="panel-row" style="margin-bottom: 0.75rem;">
+                <div>
+                    <h2 class="panel-title">階段一：上傳人工修整範本與原始 PDF</h2>
+                    <p class="hint" style="margin: 0;">上傳已手動排版前段章節的 Word 文件與原始 PDF 書稿，系統將解析結構樹並鎖定版面規則。</p>
+                </div>
+                <span class="badge" id="sessionBadgeDisplay">未建立 Session</span>
             </div>
-            <p class="form-hint" style="margin-bottom: 1rem;">
-                同時上傳由【全自動整稿】產出並已手動排版前 5%~10% 章節樣式的 Word 檔，以及對應的原始 PDF 書稿。系統將自動建立段落結構樹、鎖定原書三線表幾何座標、歸納出版藍圖。
+
+            <div class="grid-2" style="margin-bottom: 1rem;">
+                <div class="field">
+                    <label class="field-label" for="seedFileInput">人工修整範本檔 (.docx / .md) *</label>
+                    <div class="dropzone" id="seedDropZone" style="padding: 1.5rem 1rem; margin-bottom: 0;">
+                        <p class="dropzone-title" id="seedFileLabel">點擊或拖曳已修整 Word 檔</p>
+                        <p class="dropzone-sub">由「全自動整稿」產出並手動排版前 5%~10% 之檔案</p>
+                        <input type="file" id="seedFileInput" accept=".docx,.md" style="display: none;">
+                    </div>
+                </div>
+                <div class="field">
+                    <label class="field-label" for="sourcePdfInput">原始 PDF 書稿 (.pdf) (可選)</label>
+                    <div class="dropzone" id="pdfDropZone" style="padding: 1.5rem 1rem; margin-bottom: 0;">
+                        <p class="dropzone-title" id="sourcePdfLabel">點擊或拖曳原始 PDF 檔</p>
+                        <p class="dropzone-sub">用於三線表格幾何對齊與座標修補</p>
+                        <input type="file" id="sourcePdfInput" accept=".pdf" style="display: none;">
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid-2">
+                <div class="field">
+                    <label class="field-label" for="manualBoundaryAnchorInput">人工修整截止錨點文字 (選填)</label>
+                    <input type="text" id="manualBoundaryAnchorInput" class="input" placeholder="例如輸入最後修整段落之關鍵字">
+                </div>
+                <div class="field">
+                    <label class="field-label" for="manualBoundaryIdxInput">或指定截止段落序號 (選填)</label>
+                    <input type="number" id="manualBoundaryIdxInput" class="input" placeholder="例如: 45" min="0">
+                </div>
+            </div>
+            <p class="hint" style="margin-top: -0.5rem; margin-bottom: 1.25rem;">
+                可在 Word 內標註 <code>【人工整稿截止】</code> 或 <code>===HUMAN_EDITED_END===</code>，系統將精準鎖定界線，完稿時標籤自動清除。
             </p>
-            <div class="form-row" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <div>
-                    <label>① 選擇人工預修範本檔案 (.docx 或 .md)</label>
-                    <div class="file-upload-box" onclick="document.getElementById('seedFileInput').click()">
-                        <span id="seedFileLabel">點擊選擇人工預修檔 (.docx)</span>
-                        <input type="file" id="seedFileInput" accept=".docx,.md" style="display:none">
-                    </div>
-                </div>
-                <div>
-                    <label>② 選擇對應之原始 PDF 檔案 (.pdf)</label>
-                    <div class="file-upload-box" onclick="document.getElementById('sourcePdfInput').click()">
-                        <span id="sourcePdfLabel">點擊選擇原始書稿 (.pdf，提供三線表與座標修補)</span>
-                        <input type="file" id="sourcePdfInput" accept=".pdf" style="display:none">
-                    </div>
-                </div>
-            </div>
-            <div class="form-row" style="display: grid; grid-template-columns: 2fr 1fr; gap: 12px;">
-                <div>
-                    <label for="manualBoundaryAnchorInput">人工修改截止定位錨點 (選填，供 LLM 精準確認)</label>
-                    <input type="text" id="manualBoundaryAnchorInput" class="text-input" placeholder="輸入最後人工修改段落的關鍵字，或在 Word 內插入【人工整稿截止】">
-                </div>
-                <div>
-                    <label for="manualBoundaryIdxInput">或指定截止段落/章節序號 (選填)</label>
-                    <input type="number" id="manualBoundaryIdxInput" class="text-input" placeholder="例如: 45" min="0">
-                </div>
-            </div>
-            <span class="form-hint" style="display: block; margin-top: -0.5rem; margin-bottom: 1rem;">
-                💡 填寫定位文字或在 Word 內打入 <code>【人工整稿截止】</code> / <code>===HUMAN_EDITED_END===</code>，系統與 LLM 將 100% 鎖定該界線（標籤於完稿時自動清除）。
-            </span>
-            <button class="btn-action" id="compileBlueprintBtn" disabled>
-                學習範本特徵並合成藍圖
-            </button>
-            <div id="stage1Result" class="results-box" style="display:none;"></div>
-        </div>
+
+            <button type="button" class="btn btn-primary btn-block" id="compileBlueprintBtn" disabled>學習範本特徵並合成藍圖</button>
+            <div id="stage1Result" style="margin-top: 1.25rem; display: none;"></div>
+        </section>
 
         <!-- 階段二：批量樣式擴散與品質驗收 -->
-        <div class="card-stage" id="stage2Section" style="opacity: 0.6; pointer-events: none;">
-            <div class="stage-title">
-                <h2>階段二：全書樣式智慧擴散與硬性驗收</h2>
-                <span class="badge-pill" style="background: var(--primary); color: #fff;">雙軌策略引擎</span>
+        <section class="panel" id="stage2Section" style="opacity: 0.55; pointer-events: none;">
+            <div class="panel-row" style="margin-bottom: 0.75rem;">
+                <div>
+                    <h2 class="panel-title">階段二：全書樣式智慧擴散與硬性驗收</h2>
+                    <p class="hint" style="margin: 0;">將學習之排版藍圖推廣至全書篇章，並嚴格驗證 CJK 骨架守恆。</p>
+                </div>
+                <span class="badge">雙軌策略引擎</span>
             </div>
 
-            <!-- 擴散引擎模式選擇 -->
-            <div class="form-row">
-                <label>選擇擴散引擎模式 (Execution Engine)</label>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 4px;">
-                    <label class="traffic-card" id="engineModeRuleCard" style="cursor: pointer; text-align: left; border: 2px solid var(--primary); background: rgba(37, 99, 235, 0.04); display: flex; align-items: flex-start; gap: 8px;">
-                        <input type="radio" name="engineMode" value="rule_first" checked style="margin-top: 3px;">
+            <div class="field">
+                <label class="field-label">擴散引擎模式</label>
+                <div class="choice-grid">
+                    <label class="choice" id="engineModeRuleCard">
+                        <input type="radio" name="engineMode" value="rule_first" checked>
                         <div>
-                            <div style="font-weight: 600; font-size: 0.95rem; color: var(--text-main);">⚡ 高效狀態機擴散 (推薦)</div>
-                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">零 Token 成本，秒級全書擴散，僅在轉曲徽標遺失時調度局部 VLM 補字。</div>
+                            <span class="choice-title">狀態機擴散 (推薦)</span>
+                            <span class="hint" style="display: block; margin-top: 2px;">零 Token 成本，秒級全書擴散，僅在轉曲徽標遺失時調度局部 VLM 補字。</span>
                         </div>
                     </label>
-                    <label class="traffic-card" id="engineModeVlmCard" style="cursor: pointer; text-align: left; border: 1px solid var(--border); display: flex; align-items: flex-start; gap: 8px;">
-                        <input type="radio" name="engineMode" value="vlm_continuation" style="margin-top: 3px;">
+                    <label class="choice" id="engineModeVlmCard">
+                        <input type="radio" name="engineMode" value="vlm_continuation">
                         <div>
-                            <div style="font-weight: 600; font-size: 0.95rem; color: var(--text-main);">🎯 多模態視覺全段接續</div>
-                            <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 2px;">複雜多欄圖文專用，對照原版 PDF 頁面截圖，調度 Gemini / Ollama 進行整稿。</div>
+                            <span class="choice-title">多模態視覺接續</span>
+                            <span class="hint" style="display: block; margin-top: 2px;">複雜多欄圖文專用，對照原版 PDF 頁面截圖，調度 Gemini 或 Ollama 進行整稿。</span>
                         </div>
                     </label>
                 </div>
             </div>
 
-            <!-- 模型選擇區塊 -->
-            <div class="form-row" id="modelSelectRow">
-                <label for="vlmModelSelect" id="vlmModelLabel">AI 推論與視覺模型 (Model)</label>
-                <select id="vlmModelSelect" class="select-input">
-                    <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (極速響應，推薦預設)</option>
-                    <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash (出版級品質，高精度推理)</option>
-                    <option value="gemini-2.5-flash">Gemini 2.5 Flash (超高速視覺推理)</option>
-                    <option value="qwen2.5-vl:7b">Ollama 本地端: Qwen 2.5 VL (7B)</option>
-                    <option value="llama3.2-vision">Ollama 本地端: Llama 3.2 Vision</option>
-                    <option value="custom">自訂模型名稱...</option>
-                </select>
-                <input type="text" id="customModelInput" class="text-input" placeholder="請輸入自訂模型名稱（例如 gemini-3.1-pro-preview）" style="display:none; margin-top: 6px;">
-                <span class="form-hint" id="vlmModelHint">未命中確定性正則的模糊段落或遺失徽標單元，將以此模型批次呼叫進行自訂樣式預測與補字。</span>
-            </div>
+            <div class="grid-2">
+                <div class="field" id="modelSelectRow">
+                    <label class="field-label" for="vlmModelSelect">推論與視覺模型</label>
+                    <select id="vlmModelSelect" class="input">
+                        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (極速響應，推薦預設)</option>
+                        <option value="gemini-3.8-flash" selected>Gemini 3.8 Flash (出版級品質，高精度推理)</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (超高速視覺推理)</option>
+                        <option value="qwen2.5-vl:7b">Ollama 本地端: Qwen 2.5 VL (7B)</option>
+                        <option value="llama3.2-vision">Ollama 本地端: Llama 3.2 Vision</option>
+                        <option value="custom">自訂模型名稱…</option>
+                    </select>
+                    <input type="text" id="customModelInput" class="input" placeholder="請輸入模型識別碼 (例如 gemini-3.1-pro-preview)" style="display: none; margin-top: 6px;">
+                    <span class="hint" id="vlmModelHint" style="display: block; margin-top: 4px;">未命中確定性規則的段落或遺失徽標單元，將以此模型批次呼叫預測樣式與補字。</span>
+                </div>
 
-            <!-- 測試接續章節上限 (僅在 VLM 接續模式下顯示) -->
-            <div class="form-row" id="maxSectionsRow" style="display: none;">
-                <label for="vlmMaxSections">測試接續章節上限 (選填)</label>
-                <input type="number" id="vlmMaxSections" class="text-input" placeholder="留空代表全書處理 (例如填 3 僅測試前 3 章)" min="1">
-                <span class="form-hint">建議初次測試先填入 2~3 章驗證視覺接續效果與樣式對齊度。</span>
-            </div>
-            </div>
-
-            <div class="form-row">
-                <label>選擇套用之 Word 樣式庫範本 (可選 template.docx)</label>
-                <div class="file-upload-box" onclick="document.getElementById('templateFileInput').click()">
-                    <span id="templateFileLabel">使用系統預設範本 (點擊自訂)</span>
-                    <input type="file" id="templateFileInput" accept=".docx" style="display:none">
+                <div class="field">
+                    <label class="field-label" for="templateFileInput">套用 Word 樣式庫範本 (可選)</label>
+                    <div style="display: flex; gap: 8px;">
+                        <input type="file" id="templateFileInput" accept=".docx" style="display: none;">
+                        <button type="button" class="btn btn-secondary btn-block" onclick="document.getElementById('templateFileInput').click()" id="templateFileBtn">使用系統預設範本 (點擊自訂)</button>
+                    </div>
+                    <span class="hint" style="display: block; margin-top: 4px;">若留空，將沿用原修整稿件內嵌之 Word 樣式庫。</span>
                 </div>
             </div>
 
-            <button class="btn-action" id="propagateBtn" disabled>
-                執行全書智慧擴散與驗收
-            </button>
+            <div class="field" id="maxSectionsRow" style="display: none;">
+                <label class="field-label" for="vlmMaxSections">測試接續章節上限 (選填)</label>
+                <input type="number" id="vlmMaxSections" class="input input-narrow" placeholder="留空代表全書" min="1">
+                <span class="hint">初次測試建議填入 2~3 章以快速檢視視覺接續效果。</span>
+            </div>
 
-            <div id="stage2Result" class="results-box" style="display:none;"></div>
-        </div>
+            <button type="button" class="btn btn-primary btn-block" id="propagateBtn" disabled>執行全書智慧擴散與驗收</button>
+            <div id="stage2Result" style="margin-top: 1.25rem; display: none;"></div>
+        </section>
     </div>
 
-
-    <script src="/static/sidebar.js?v=20261016_v5"></script>
     <script>
         let currentSessionId = "";
 
         const seedFileInput = document.getElementById("seedFileInput");
         const seedFileLabel = document.getElementById("seedFileLabel");
+        const seedDropZone = document.getElementById("seedDropZone");
         const sourcePdfInput = document.getElementById("sourcePdfInput");
         const sourcePdfLabel = document.getElementById("sourcePdfLabel");
+        const pdfDropZone = document.getElementById("pdfDropZone");
         const manualBoundaryAnchorInput = document.getElementById("manualBoundaryAnchorInput");
         const manualBoundaryIdxInput = document.getElementById("manualBoundaryIdxInput");
         const compileBlueprintBtn = document.getElementById("compileBlueprintBtn");
@@ -531,103 +227,168 @@
         const vlmModelSelect = document.getElementById("vlmModelSelect");
         const customModelInput = document.getElementById("customModelInput");
         const templateFileInput = document.getElementById("templateFileInput");
-        const templateFileLabel = document.getElementById("templateFileLabel");
+        const templateFileBtn = document.getElementById("templateFileBtn");
         const propagateBtn = document.getElementById("propagateBtn");
         const stage2Result = document.getElementById("stage2Result");
+        const maxSectionsRow = document.getElementById("maxSectionsRow");
+        const vlmMaxSections = document.getElementById("vlmMaxSections");
+        const vlmModelHint = document.getElementById("vlmModelHint");
 
-        vlmModelSelect.addEventListener("change", () => {
+        // Drag & Drop for Seed File
+        seedDropZone.onclick = () => seedFileInput.click();
+        seedDropZone.ondragover = (e) => { e.preventDefault(); seedDropZone.classList.add('dragover'); };
+        seedDropZone.ondragleave = () => seedDropZone.classList.remove('dragover');
+        seedDropZone.ondrop = (e) => {
+            e.preventDefault();
+            seedDropZone.classList.remove('dragover');
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                seedFileInput.files = e.dataTransfer.files;
+                handleSeedSelect();
+            }
+        };
+        seedFileInput.onchange = handleSeedSelect;
+
+        function handleSeedSelect() {
+            if (seedFileInput.files && seedFileInput.files[0]) {
+                const file = seedFileInput.files[0];
+                if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
+                    seedFileInput.value = '';
+                    return;
+                }
+                seedFileLabel.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong></span>`;
+                compileBlueprintBtn.disabled = false;
+            }
+        }
+
+        // Drag & Drop for PDF File
+        pdfDropZone.onclick = () => sourcePdfInput.click();
+        pdfDropZone.ondragover = (e) => { e.preventDefault(); pdfDropZone.classList.add('dragover'); };
+        pdfDropZone.ondragleave = () => pdfDropZone.classList.remove('dragover');
+        pdfDropZone.ondrop = (e) => {
+            e.preventDefault();
+            pdfDropZone.classList.remove('dragover');
+            if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                sourcePdfInput.files = e.dataTransfer.files;
+                handlePdfSelect();
+            }
+        };
+        sourcePdfInput.onchange = handlePdfSelect;
+
+        function handlePdfSelect() {
+            if (sourcePdfInput.files && sourcePdfInput.files[0]) {
+                const file = sourcePdfInput.files[0];
+                if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
+                    sourcePdfInput.value = '';
+                    return;
+                }
+                sourcePdfLabel.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong></span>`;
+            }
+        }
+
+        templateFileInput.onchange = () => {
+            if (templateFileInput.files && templateFileInput.files[0]) {
+                const file = templateFileInput.files[0];
+                templateFileBtn.textContent = `自訂範本：${file.name}`;
+            }
+        };
+
+        vlmModelSelect.onchange = () => {
             if (vlmModelSelect.value === "custom") {
                 customModelInput.style.display = "block";
                 customModelInput.focus();
             } else {
                 customModelInput.style.display = "none";
             }
-        });
+        };
 
-        seedFileInput.addEventListener("change", () => {
-            if (seedFileInput.files && seedFileInput.files[0]) {
-                seedFileLabel.textContent = seedFileInput.files[0].name;
-                compileBlueprintBtn.disabled = false;
-            }
-        });
-
-        if (sourcePdfInput) {
-            sourcePdfInput.addEventListener("change", () => {
-                if (sourcePdfInput.files && sourcePdfInput.files[0]) {
-                    sourcePdfLabel.textContent = sourcePdfInput.files[0].name;
-                }
-            });
+        const engineModeRadios = document.querySelectorAll('input[name="engineMode"]');
+        function getSelectedEngineMode() {
+            const checked = document.querySelector('input[name="engineMode"]:checked');
+            return checked ? checked.value : "rule_first";
         }
 
-        templateFileInput.addEventListener("change", () => {
-            if (templateFileInput.files && templateFileInput.files[0]) {
-                templateFileLabel.textContent = templateFileInput.files[0].name;
-            }
+        engineModeRadios.forEach(radio => {
+            radio.onchange = () => {
+                const mode = getSelectedEngineMode();
+                if (mode === "vlm_continuation") {
+                    maxSectionsRow.style.display = "block";
+                    vlmModelHint.textContent = "對照原版 PDF 頁面截圖，調度 Gemini 或 Ollama 視覺多模態模型完成全書各單元接續整稿。";
+                    propagateBtn.textContent = "啟動多模態接續與硬性驗收";
+                } else {
+                    maxSectionsRow.style.display = "none";
+                    vlmModelHint.textContent = "未命中確定性規則的模糊段落或遺失徽標單元，將以此模型批次呼叫進行自訂樣式預測與補字。";
+                    propagateBtn.textContent = "執行全書智慧擴散與驗收";
+                }
+            };
         });
 
-        // 階段一：學習範本規則並編譯藍圖
-        compileBlueprintBtn.addEventListener("click", async () => {
+        // 階段一：學習範本特徵並編譯藍圖
+        compileBlueprintBtn.onclick = async () => {
             const file = seedFileInput.files[0];
             if (!file) return;
 
             compileBlueprintBtn.disabled = true;
-            compileBlueprintBtn.textContent = "正在學習範本樣式與編譯藍圖...";
+            compileBlueprintBtn.textContent = "正在學習範本樣式與編譯藍圖…";
+            stage1Result.style.display = "none";
 
-            const formData = new FormData();
-            formData.append("seed_file", file);
-            if (sourcePdfInput && sourcePdfInput.files && sourcePdfInput.files[0]) {
-                formData.append("pdf_file", sourcePdfInput.files[0]);
-            }
-            if (currentSessionId) {
-                formData.append("session_id", currentSessionId);
-            }
-            if (manualBoundaryAnchorInput && manualBoundaryAnchorInput.value.trim()) {
-                formData.append("manual_boundary_anchor", manualBoundaryAnchorInput.value.trim());
-            }
-            if (manualBoundaryIdxInput && manualBoundaryIdxInput.value.trim()) {
-                formData.append("manual_boundary_idx", manualBoundaryIdxInput.value.trim());
+            let formData;
+            if (window.PodContracts && window.PodContracts.buildCompileBlueprintFormData) {
+                const idxVal = manualBoundaryIdxInput.value.trim();
+                formData = window.PodContracts.buildCompileBlueprintFormData({
+                    seedFile: file,
+                    pdfFile: (sourcePdfInput.files && sourcePdfInput.files[0]) ? sourcePdfInput.files[0] : null,
+                    sessionId: currentSessionId || null,
+                    manualBoundaryAnchor: manualBoundaryAnchorInput.value.trim() || null,
+                    manualBoundaryIdx: idxVal ? parseInt(idxVal, 10) : null
+                });
+            } else {
+                formData = new FormData();
+                formData.append("seed_file", file);
+                if (sourcePdfInput.files && sourcePdfInput.files[0]) formData.append("pdf_file", sourcePdfInput.files[0]);
+                if (currentSessionId) formData.append("session_id", currentSessionId);
+                if (manualBoundaryAnchorInput.value.trim()) formData.append("manual_boundary_anchor", manualBoundaryAnchorInput.value.trim());
+                if (manualBoundaryIdxInput.value.trim()) formData.append("manual_boundary_idx", manualBoundaryIdxInput.value.trim());
             }
 
             try {
-                const res = await fetch("/api/pod/2_compile_blueprint", {
-                    method: "POST",
-                    body: formData,
-                });
+                const res = await fetch("/api/pod/2_compile_blueprint", { method: "POST", body: formData });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || "藍圖合成失敗");
 
                 currentSessionId = data.session_id;
                 sessionBadgeDisplay.textContent = `Session: ${currentSessionId}`;
 
-                const badges = (data.mandatory_badges || []).map(b => `<span class="badge-pill">【${b}】</span>`).join("") || "無";
-                const styles = (data.detected_styles || []).map(s => `<span class="badge-pill">${s}</span>`).join("") || "無自訂樣式";
+                const badges = (data.mandatory_badges || []).map(b => `<span class="badge">【${toolbox.escape(b)}】</span>`).join("") || "無";
+                const styles = (data.detected_styles || []).map(s => `<span class="badge">${toolbox.escape(s)}</span>`).join("") || "無自訂樣式";
+
                 const sourceLabels = {
-                    manual_anchor: "🎯 人工文字錨點精準鎖定",
-                    manual_idx: "🎯 人工指定序號鎖定",
-                    builtin_tag: "🏷️ 文檔內置截止標記鎖定",
-                    auto_heuristic: "⚡ 系統自動樣式推導",
+                    manual_anchor: "人工文字錨點精準鎖定",
+                    manual_idx: "人工指定序號鎖定",
+                    builtin_tag: "文檔內置截止標記鎖定",
+                    auto_heuristic: "系統自動樣式推導",
                 };
-                const sourceBadge = sourceLabels[data.boundary_source] || "⚡ 系統自動樣式推導";
+                const sourceBadge = sourceLabels[data.boundary_source] || "系統自動樣式推導";
                 const boundaryText = data.boundary_idx > 0
-                    ? `第 ${data.boundary_idx} 段（全書 ${data.total_paragraphs} 段）— <span class="badge-pill">${sourceBadge}</span>`
-                    : `全量整稿模式 — <span class="badge-pill">${sourceBadge}</span>`;
+                    ? `第 ${data.boundary_idx} 段（全書 ${data.total_paragraphs} 段）— <span class="badge">${sourceBadge}</span>`
+                    : `全量整稿模式 — <span class="badge">${sourceBadge}</span>`;
+
                 const ctxHtml = data.boundary_context_text
-                    ? `<div style="margin-bottom: 6px; font-size: 0.85rem; color: var(--text-muted);"><strong>LLM 確認截止段落預覽：</strong><code>${data.boundary_context_text}</code></div>`
+                    ? `<div style="margin-top: 6px; font-size: 0.84rem; color: var(--text-muted);"><strong>確認截止段落文字：</strong><div class="path-box">${toolbox.escape(data.boundary_context_text)}</div></div>`
                     : "";
                 const pdfHtml = data.has_source_pdf
-                    ? `<div style="margin-bottom: 6px;"><strong>原書 PDF 幾何綁定：</strong>已綁定原 PDF，鎖定 <span class="badge-pill">${data.detected_tables_count || 0} 處表格結構</span></div>`
+                    ? `<div style="margin-top: 6px;"><strong>原始 PDF 幾何綁定：</strong>已鎖定 <span class="badge">${data.detected_tables_count || 0} 處表格結構</span></div>`
                     : "";
 
                 stage1Result.style.display = "block";
                 stage1Result.innerHTML = `
-                    <div style="color: var(--success); font-weight: 600; margin-bottom: 8px;">排版藍圖編譯完成，成功歸納 ${data.inferred_rules_count} 條樣式轉換規則。</div>
-                    <div style="margin-bottom: 6px;"><strong>人工預修邊界：</strong>${boundaryText}</div>
-                    ${ctxHtml}
-                    ${pdfHtml}
-                    <div style="margin-bottom: 6px;"><strong>偵測必備徽標：</strong>${badges}</div>
-                    <div style="margin-bottom: 8px;"><strong>自訂樣式定義：</strong>${styles}</div>
-                    <a href="/api/pod/download/${currentSessionId}/book_blueprint.json" target="_blank" style="color: var(--primary); font-weight: 500;">下載 book_blueprint.json 預覽</a>
-                `;
+                    <div class="alert alert-success">
+                        <div class="alert-title">藍圖編譯完成：成功歸納 ${data.inferred_rules_count} 條樣式轉換規則</div>
+                        <div style="margin-top: 4px;"><strong>修整界線：</strong>${boundaryText}</div>
+                        ${ctxHtml}
+                        ${pdfHtml}
+                        <div style="margin-top: 6px;"><strong>偵測必備徽標：</strong>${badges}</div>
+                        <div style="margin-top: 4px;"><strong>自訂樣式庫：</strong>${styles}</div>
+                    </div>`;
 
                 document.getElementById("stepIndicator1").classList.add("completed");
                 document.getElementById("stepIndicator2").classList.add("active");
@@ -635,69 +396,27 @@
                 stage2Section.style.opacity = "1";
                 stage2Section.style.pointerEvents = "auto";
                 propagateBtn.disabled = false;
+                toolbox.notify('藍圖編譯成功，已解鎖階段二', 'success');
             } catch (err) {
-                alert("階段一執行失敗: " + err.message);
+                stage1Result.style.display = "block";
+                stage1Result.innerHTML = toolbox.errorPanel('階段一藍圖合成失敗', err.message);
+                toolbox.notify('藍圖合成失敗: ' + err.message, 'error');
             } finally {
                 compileBlueprintBtn.disabled = false;
                 compileBlueprintBtn.textContent = "學習範本特徵並合成藍圖";
             }
-        });
-
-        // ==========================================
-        // 階段二：雙軌策略引擎選擇切換
-        // ==========================================
-        const engineModeRadios = document.querySelectorAll('input[name="engineMode"]');
-        const engineModeRuleCard = document.getElementById("engineModeRuleCard");
-        const engineModeVlmCard = document.getElementById("engineModeVlmCard");
-        const maxSectionsRow = document.getElementById("maxSectionsRow");
-        const vlmMaxSections = document.getElementById("vlmMaxSections");
-        const vlmModelHint = document.getElementById("vlmModelHint");
-
-        function getSelectedEngineMode() {
-            const checked = document.querySelector('input[name="engineMode"]:checked');
-            return checked ? checked.value : "rule_first";
-        }
-
-        engineModeRadios.forEach(radio => {
-            radio.addEventListener("change", () => {
-                const mode = getSelectedEngineMode();
-                if (mode === "vlm_continuation") {
-                    if (engineModeVlmCard) {
-                        engineModeVlmCard.style.border = "2px solid var(--primary)";
-                        engineModeVlmCard.style.background = "rgba(37, 99, 235, 0.04)";
-                    }
-                    if (engineModeRuleCard) {
-                        engineModeRuleCard.style.border = "1px solid var(--border)";
-                        engineModeRuleCard.style.background = "transparent";
-                    }
-                    if (maxSectionsRow) maxSectionsRow.style.display = "block";
-                    if (vlmModelHint) vlmModelHint.textContent = "對照原版 PDF 頁面截圖，調度 Gemini / Ollama 視覺多模態模型完成全書各單元接續整稿。";
-                    propagateBtn.textContent = "啟動多模態接續與硬性驗收";
-                } else {
-                    if (engineModeRuleCard) {
-                        engineModeRuleCard.style.border = "2px solid var(--primary)";
-                        engineModeRuleCard.style.background = "rgba(37, 99, 235, 0.04)";
-                    }
-                    if (engineModeVlmCard) {
-                        engineModeVlmCard.style.border = "1px solid var(--border)";
-                        engineModeVlmCard.style.background = "transparent";
-                    }
-                    if (maxSectionsRow) maxSectionsRow.style.display = "none";
-                    if (vlmModelHint) vlmModelHint.textContent = "未命中確定性正則的模糊段落或遺失徽標單元，將以此模型批次呼叫進行自訂樣式預測與補字。";
-                    propagateBtn.textContent = "執行全書智慧擴散與驗收";
-                }
-            });
-        });
+        };
 
         // 階段二：樣式外推與骨架守恆驗收
-        propagateBtn.addEventListener("click", async () => {
+        propagateBtn.onclick = async () => {
             if (!currentSessionId) return;
 
             const engineMode = getSelectedEngineMode();
             propagateBtn.disabled = true;
             propagateBtn.textContent = engineMode === "vlm_continuation"
-                ? "⏳ 正在啟動多模態視覺接續排版並校驗 (可能需要數十秒至數分鐘)..."
-                : "正在批量擴散並執行 CJK 骨架校驗...";
+                ? "正在啟動多模態視覺接續排版並校驗…"
+                : "正在批量擴散並執行 CJK 骨架校驗…";
+            stage2Result.style.display = "none";
 
             const selectedModel = vlmModelSelect.value === "custom"
                 ? (customModelInput.value.trim() || "gemini-3.8-flash")
@@ -708,83 +427,136 @@
             formData.append("engine_mode", engineMode);
             formData.append("model", selectedModel);
 
-            if (manualBoundaryAnchorInput && manualBoundaryAnchorInput.value.trim()) {
-                formData.append("manual_boundary_anchor", manualBoundaryAnchorInput.value.trim());
-            }
-            if (manualBoundaryIdxInput && manualBoundaryIdxInput.value.trim()) {
-                formData.append("manual_boundary_idx", manualBoundaryIdxInput.value.trim());
-            }
-
-            if (engineMode === "vlm_continuation" && vlmMaxSections && vlmMaxSections.value.trim()) {
+            if (manualBoundaryAnchorInput.value.trim()) formData.append("manual_boundary_anchor", manualBoundaryAnchorInput.value.trim());
+            if (manualBoundaryIdxInput.value.trim()) formData.append("manual_boundary_idx", manualBoundaryIdxInput.value.trim());
+            if (engineMode === "vlm_continuation" && vlmMaxSections.value.trim()) {
                 formData.append("max_continuation_sections", vlmMaxSections.value.trim());
             }
-
             if (templateFileInput.files && templateFileInput.files[0]) {
                 formData.append("template_file", templateFileInput.files[0]);
             }
 
             try {
-                const res = await fetch("/api/pod/3_propagate_and_validate", {
-                    method: "POST",
-                    body: formData,
-                });
+                const res = await fetch("/api/pod/3_propagate_and_validate", { method: "POST", body: formData });
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.detail || "擴散與驗收失敗");
 
-                const summary = data.audit_summary;
-                const statusColor = data.is_valid ? "var(--success)" : "var(--danger)";
-                const statusText = data.is_valid ? "驗收合格 (PASS)" : "需人工複查 (FLAGGED)";
-                const modeLabel = engineMode === "vlm_continuation" ? "🎯 多模態視覺全段接續" : "⚡ 高效狀態機擴散";
+                const summary = data.audit_summary || { green_count: 0, yellow_count: 0, red_count: 0 };
+                const isValid = data.is_valid;
+                const headClass = isValid ? "is-ok" : "is-flagged";
+                const statusTitle = isValid ? "驗收合格 (PASS)" : "需人工複查 (FLAGGED)";
+                const modeLabel = engineMode === "vlm_continuation" ? "多模態視覺全段接續" : "高效狀態機擴散";
+
+                const docxName = data.final_docx_name || 'Book_POD_Final.docx';
+                const mdName = 'Book_POD_Final.md';
+                const auditName = 'audit_report.json';
+
+                const docxSource = `data/03_output/pod_workspaces/${currentSessionId}/${docxName}`;
+                const mdSource = `data/03_output/pod_workspaces/${currentSessionId}/${mdName}`;
+                const auditSource = `data/03_output/pod_workspaces/${currentSessionId}/${auditName}`;
+
+                const docxUrl = `/api/pod/download/${currentSessionId}/${docxName}`;
+                const mdUrl = `/api/pod/download/${currentSessionId}/${mdName}`;
+                const auditUrl = `/api/pod/download/${currentSessionId}/${auditName}`;
 
                 stage2Result.style.display = "block";
                 stage2Result.innerHTML = `
-                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.8rem;">
-                        <h3 style="margin: 0; font-size: 1.05rem; color: ${statusColor};">${statusText}</h3>
-                        <div style="font-size: 0.82rem; color: var(--text-muted);">
-                            <span class="badge-pill" style="background: rgba(37,99,235,0.08); color: var(--primary);">${modeLabel}</span>
-                            模型: <code>${selectedModel}</code>
+                    <div class="result" id="resultCard">
+                        <div class="result-head ${headClass}">
+                            <span>${statusTitle}</span>
+                            <span class="hint">${modeLabel} · ${toolbox.escape(selectedModel)}</span>
                         </div>
-                    </div>
 
-                    <div class="traffic-lights">
-                        <div class="traffic-card green">
-                            <div class="traffic-count">${summary.green_count}</div>
-                            <div class="traffic-label">🟢 骨架 100% 守恆篇章</div>
+                        <div class="stat-row">
+                            <div class="stat is-ok">
+                                <strong>${summary.green_count}</strong>
+                                <span>骨架 100% 守恆篇章</span>
+                            </div>
+                            <div class="stat is-warn">
+                                <strong>${summary.yellow_count}</strong>
+                                <span>視覺補字篇章</span>
+                            </div>
+                            <div class="stat is-bad">
+                                <strong>${summary.red_count}</strong>
+                                <span>格式 / 掉字攔截篇章</span>
+                            </div>
                         </div>
-                        <div class="traffic-card yellow">
-                            <div class="traffic-count">${summary.yellow_count}</div>
-                            <div class="traffic-label">🟡 VLM 視覺補字篇章</div>
-                        </div>
-                        <div class="traffic-card red">
-                            <div class="traffic-count">${summary.red_count}</div>
-                            <div class="traffic-label">🔴 格式/掉字攔截篇章</div>
-                        </div>
-                    </div>
 
-                    <div style="display: flex; gap: 10px; margin-top: 1rem; flex-wrap: wrap;">
-                        <a href="/api/pod/download/${currentSessionId}/${data.final_docx_name}" target="_blank" class="btn-action" style="text-decoration: none;">
-                            📥 下載成品 ${data.final_docx_name}
-                        </a>
-                        <a href="/api/pod/download/${currentSessionId}/Book_POD_Final.md" target="_blank" class="btn-action btn-secondary" style="text-decoration: none;">
-                            📄 下載成品 Markdown
-                        </a>
-                        <a href="/api/pod/download/${currentSessionId}/audit_report.json" target="_blank" class="btn-action btn-secondary" style="text-decoration: none;">
-                            🔍 下載審計報告 (audit_report.json)
-                        </a>
-                    </div>
-                `;
+                        <ul class="result-files">
+                            <li>
+                                <div>
+                                    <span class="file-name">${toolbox.escape(docxName)}</span>
+                                    <span class="file-desc">全書樣式擴散之正式出版級 Word 成果</span>
+                                </div>
+                                <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON}另存 Word</button>
+                            </li>
+                            <li>
+                                <div>
+                                    <span class="file-name">${toolbox.escape(mdName)}</span>
+                                    <span class="file-desc">結構化 Markdown 完稿文件</span>
+                                </div>
+                                <button type="button" class="btn btn-secondary btn-sm" id="saveMdBtn">${toolbox.DOWNLOAD_ICON}另存 Markdown</button>
+                            </li>
+                            <li>
+                                <div>
+                                    <span class="file-name">${toolbox.escape(auditName)}</span>
+                                    <span class="file-desc">全書 CJK 骨架與樣式對齊審計報告</span>
+                                </div>
+                                <button type="button" class="btn btn-secondary btn-sm" id="saveAuditBtn">${toolbox.DOWNLOAD_ICON}另存審計報告</button>
+                            </li>
+                        </ul>
+
+                        <div class="result-note" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                            <span>檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀，請及時另存。</span>
+                            <button type="button" class="btn btn-secondary btn-sm" id="openFolderBtn">在檔案總管中顯示成果</button>
+                        </div>
+                    </div>`;
+
+                document.getElementById('saveDocxBtn').onclick = (ev) => toolbox.nativeSave({
+                    sourcePath: docxSource,
+                    filename: docxName,
+                    button: ev.currentTarget,
+                    fallbackUrl: docxUrl,
+                    mountEl: document.getElementById('resultCard'),
+                    label: 'Word (.docx)'
+                });
+
+                document.getElementById('saveMdBtn').onclick = (ev) => toolbox.nativeSave({
+                    sourcePath: mdSource,
+                    filename: mdName,
+                    button: ev.currentTarget,
+                    fallbackUrl: mdUrl,
+                    mountEl: document.getElementById('resultCard'),
+                    label: 'Markdown (.md)'
+                });
+
+                document.getElementById('saveAuditBtn').onclick = (ev) => toolbox.nativeSave({
+                    sourcePath: auditSource,
+                    filename: auditName,
+                    button: ev.currentTarget,
+                    fallbackUrl: auditUrl,
+                    mountEl: document.getElementById('resultCard'),
+                    label: '審計報告 (JSON)'
+                });
+
+                document.getElementById('openFolderBtn').onclick = () => toolbox.openFolder(docxSource);
 
                 document.getElementById("stepIndicator2").classList.add("completed");
+                toolbox.notify('全書樣式擴散與驗收完成', isValid ? 'success' : 'warning');
             } catch (err) {
-                alert("階段二執行失敗: " + err.message);
+                stage2Result.style.display = "block";
+                stage2Result.innerHTML = toolbox.errorPanel('階段二樣式擴散失敗', err.message);
+                toolbox.notify('樣式擴散失敗: ' + err.message, 'error');
             } finally {
                 propagateBtn.disabled = false;
                 propagateBtn.textContent = engineMode === "vlm_continuation"
                     ? "啟動多模態接續與硬性驗收"
                     : "執行全書智慧擴散與驗收";
             }
-        });
+        };
     </script>
-
+    <script type="module" src="/static/js/pod_contracts.js"></script>
+    <script src="/static/sidebar.js"></script>
+    <script src="/static/js/output.js"></script>
 </body>
 </html>

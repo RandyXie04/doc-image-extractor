@@ -9,6 +9,7 @@ import base64
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, BackgroundTasks, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
@@ -349,72 +350,7 @@ async def get_template_styles():
         
     return {"status": "success", "styles": styles}
 
-@app.get("/api/version")
-async def get_version():
-    from config import VERSION
-    return {
-        "app_version": VERSION.app_version,
-        "model_version": VERSION.model_version
-    }
-
-@app.post("/api/check_update")
-async def check_update():
-    from config import VERSION
-    from src.scripts.updater_service import check_latest_release
-    info = check_latest_release()
-    if not info:
-        return {"has_update": False, "status": "error", "msg": "無法連線至 GitHub 檢查更新。"}
-    
-    if info.get('status') == 'no_releases':
-        info['has_update'] = False
-        info['msg'] = "目前線上尚未發布新版本，您使用的是最新本機版本。"
-        return info
-
-    if info.get('status') == 'error':
-        return info
-    
-    try:
-        if info.get('latest_version'):
-            remote_ver = [int(x) for x in info['latest_version'].split('.')]
-            local_ver = [int(x) for x in VERSION.app_version.split('.')]
-            has_update = remote_ver > local_ver
-        else:
-            has_update = False
-    except Exception:
-        has_update = False
-            
-    info['has_update'] = has_update
-    return info
-
-@app.post("/api/apply_update")
-async def apply_update(request: Request):
-    # 1. 僅允許本機操作更新，防止區網未授權遠端觸發更新或重啟
-    client_host = request.client.host if request.client else ""
-    if client_host not in ("127.0.0.1", "::1", "localhost", "testclient"):
-        raise HTTPException(status_code=403, detail="安全限制：系統更新僅允許伺服器本機操作")
-
-    data = await request.json()
-    download_url = data.get('download_url')
-    if not download_url:
-        return {"status": "error", "msg": "No download URL provided."}
-
-    # 2. 嚴格驗證更新來源網址
-    import urllib.parse
-    parsed = urllib.parse.urlparse(download_url)
-    if parsed.scheme != 'https' or parsed.netloc not in ('github.com', 'objects.githubusercontent.com'):
-        raise HTTPException(status_code=400, detail="不合法的更新下載來源網址")
-        
-    from src.scripts.updater_service import perform_update
-    import threading
-    import time
-    
-    result = perform_update(download_url)
-    if result.get('status') == 'success':
-        def delayed_exit():
-            time.sleep(1)
-            os._exit(0)
-        threading.Thread(target=delayed_exit, daemon=True).start()
-    return result
+# Version & Update routes moved to `src/web/routers/system_router.py` (P3-4)
 
 @app.get("/api/render_preview/{file_id}")
 async def render_preview(file_id: str, page: int = 1, header: float = 0.1, footer: float = 0.1, left: float = 0.0, right: float = 0.0):
@@ -617,18 +553,6 @@ async def get_status(task_id: str):
         return {"status": "not_found"}
     return tasks[task_id]
 
-@app.get("/api/system_config")
-async def get_system_config():
-    """取得系統安全防護與無日誌配置資訊"""
-    from config import CFG
-    return {
-        "max_upload_size_mb": CFG.max_upload_size_mb,
-        "max_template_size_mb": CFG.max_template_size_mb,
-        "file_retention_hours": CFG.file_retention_hours,
-        "enable_disk_logging": CFG.enable_disk_logging,
-        "app_mode": CFG.app_mode
-    }
-
 @app.get("/api/download/{task_id}")
 async def download_result(task_id: str):
     """向下相容通用下載端點"""
@@ -639,12 +563,6 @@ async def download_result(task_id: str):
         media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document" if path.endswith(".docx") else "application/zip"
         return FileResponse(path, media_type=media_type, filename=os.path.basename(path))
     raise HTTPException(status_code=404, detail="成果檔案不存在或任務未完成")
-
-@app.get("/api/hardware_status")
-async def get_hardware_status():
-    from config import CFG
-    profile = CFG.get_hardware_profile()
-    return profile
 
 @app.get("/api/download/{task_id}/formulas")
 async def download_formulas(task_id: str):
@@ -768,97 +686,21 @@ async def open_folder(task_id: str, request: Request):
 
 
 # =========================================================================
-# Founder Tools API (方正排版修復)
+# System, Hardware & Founder Tools API (Modularized via APIRouter in P3-4)
 # =========================================================================
-def _cleanup_temp_files(*file_paths):
-    """背景清理暫存檔，防止磁碟洩漏"""
-    for p in file_paths:
-        if p and os.path.exists(p):
-            try:
-                os.unlink(p)
-            except Exception:
-                pass
+from src.web.routers.system_router import (
+    router as system_router,
+    _cleanup_temp_files,
+    get_version,
+    check_update,
+    apply_update,
+    get_system_config,
+    get_hardware_status,
+    api_founder_repair,
+    report_issue,
+)
 
-@app.post("/api/founder/repair")
-async def api_founder_repair(
-    file: UploadFile = File(...)
-):
-    import os
-    import shutil
-    import asyncio
-    import uuid
-    from src.founder_tools.fix_founder_fonts import repair_pdf_file, repair_docx_file
-    from config import PATHS
-    
-    if not file.filename:
-        raise HTTPException(status_code=400, detail="未提供有效檔案名稱")
-
-    filename = file.filename
-    ext = os.path.splitext(filename)[1].lower()
-    if ext not in [".pdf", ".docx"]:
-        raise HTTPException(status_code=400, detail="不支援的檔案格式，請上傳 PDF 或 DOCX")
-
-    task_id = str(uuid.uuid4())
-    temp_input = PATHS.root / "scratch" / f"founder_repair_{task_id}{ext}"
-    await save_upload_file_safely(file, temp_input, max_mb=CFG.max_upload_size_mb)
-    created_temps = [str(temp_input)]
-    
-    output_dir = PATHS.root / "data" / "03_output"
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    try:
-        if ext == ".pdf":
-            temp_out_txt = str(PATHS.root / "scratch" / f"founder_repair_{task_id}.txt")
-            output_docx = output_dir / f"repaired_{Path(filename).stem}_{task_id[:8]}.docx"
-            created_temps.append(temp_out_txt)
-            
-            await asyncio.to_thread(repair_pdf_file, str(temp_input), temp_out_txt, str(output_docx))
-            _cleanup_temp_files(*created_temps)
-            
-            return {
-                "success": True,
-                "source_path": f"data/03_output/{output_docx.name}",
-                "filename": output_docx.name
-            }
-            
-        elif ext == ".docx":
-            output_docx = output_dir / f"repaired_{Path(filename).stem}_{task_id[:8]}.docx"
-            
-            await asyncio.to_thread(repair_docx_file, str(temp_input), str(output_docx))
-            _cleanup_temp_files(*created_temps)
-            
-            return {
-                "success": True,
-                "source_path": f"data/03_output/{output_docx.name}",
-                "filename": output_docx.name
-            }
-            
-    except Exception as e:
-        _cleanup_temp_files(*created_temps)
-        raise HTTPException(status_code=500, detail=f"修復過程發生異常: {str(e)}")
-
-
-@app.post("/api/report_issue")
-async def report_issue(request: Request):
-    import platform
-    import urllib.parse
-    
-    data = await request.json()
-    description = (data.get("description") or "").strip()[:2000]
-    
-    sys_info = f"OS: {platform.system()} {platform.release()}"
-    body = f"**使用者回報:**\n{description}\n\n---\n**自動收集資訊:**\n```text\n{sys_info}\n```"
-    
-    repo = "RandyXie04/doc-image-extractor"
-    encoded_title = urllib.parse.quote(f"[問題回報] {description[:30]}..." if description else "[問題回報] 請簡述問題")
-    encoded_body = urllib.parse.quote(body)
-    web_url = f"https://github.com/{repo}/issues/new?title={encoded_title}&body={encoded_body}"
-    
-    return {
-        "status": "success",
-        "url": web_url,
-        "msg": "已生成 GitHub 官方回報頁面網址。"
-    }
+app.include_router(system_router)
 
 
 
@@ -986,6 +828,45 @@ async def get_ocr_progress(filename_stem: str):
     return progress
 
 
+def is_meaningful_progress_line(line: str) -> bool:
+    """
+    Filters subprocess stdout lines so third-party library warnings (PyTorch, Surya, Pandoc)
+    or Python tracebacks do not overwrite structured UI progress messages (Risk 3).
+    """
+    s = (line or "").strip()
+    if not s:
+        return False
+    noise_prefixes = (
+        "Traceback ",
+        "File \"",
+        "UserWarning:",
+        "FutureWarning:",
+        "DeprecationWarning:",
+        "RuntimeWarning:",
+        "warnings.warn(",
+    )
+    if s.startswith(noise_prefixes) or "site-packages" in s:
+        return False
+    progress_markers = (
+        "[INFO]",
+        "[WARN]",
+        "[ERROR]",
+        "[PROGRESS]",
+        "[STAGE]",
+        "[EngineDispatcher]",
+        "[FontMap]",
+        "[AI-Kaiti]",
+        "Page ",
+        "頁",
+        "完成",
+        "提取",
+        "建構",
+        "正在",
+        "處理",
+    )
+    return any(m in s for m in progress_markers)
+
+
 @app.post("/api/upload_and_run_ocr")
 async def upload_and_run_ocr(
     background_tasks: BackgroundTasks, 
@@ -1087,6 +968,7 @@ async def upload_and_run_ocr(
     async def run_scripts_async(tid, pdf_path_str, stem, style_map_json, eng, skip_footnotes, ai_kaiti_on, ai_kaiti_thresh):
         import asyncio
         import json as _json
+        style_map_file_path: Path | None = None
         try:
             ocr_progress_dict[stem]["message"] = "已排入轉檔佇列，等待運算資源..."
             queue.update_task(tid, status=TaskStatus.RUNNING.value, message="已排入轉檔佇列，等待運算資源...")
@@ -1118,7 +1000,11 @@ async def upload_and_run_ocr(
                 if ai_kaiti_on:
                     cmd.extend(["--ai_kaiti", "--ai_kaiti_threshold", str(ai_kaiti_thresh)])
                 if style_map_json:
-                    cmd.extend(["--style_mapping", style_map_json])
+                    temp_sm_dir = PATHS.root / "data" / "temp_uploads"
+                    temp_sm_dir.mkdir(parents=True, exist_ok=True)
+                    style_map_file_path = temp_sm_dir / f"style_mapping_{tid}.json"
+                    style_map_file_path.write_text(style_map_json, encoding="utf-8")
+                    cmd.extend(["--style_mapping_file", str(style_map_file_path)])
                     
                 # Use asyncio subprocess to avoid blocking the event loop
                 proc = await asyncio.create_subprocess_exec(
@@ -1145,7 +1031,7 @@ async def upload_and_run_ocr(
                                     queue.update_task(tid, progress=prog, message=msg)
                                 except Exception:
                                     pass
-                            else:
+                            elif is_meaningful_progress_line(line):
                                 short_msg = line[:120]
                                 ocr_progress_dict[stem]["message"] = short_msg
                                 queue.update_task(tid, message=short_msg)
@@ -1201,6 +1087,11 @@ async def upload_and_run_ocr(
             ocr_progress_dict[stem]["message"] = err_msg
             queue.update_task(tid, status=TaskStatus.FAILED.value, message=err_msg, error=str(err))
         finally:
+            if style_map_file_path is not None and style_map_file_path.exists():
+                try:
+                    style_map_file_path.unlink()
+                except Exception:
+                    pass
             if "cropped_" in os.path.basename(pdf_path_str) and os.path.exists(pdf_path_str):
                 try:
                     os.unlink(pdf_path_str)
@@ -1386,326 +1277,18 @@ def api_open_file_folder(req: OpenFileFolderRequest, request: Request):
     return {"status": "success"}
 
 
-# --- POD Automated Markup Production API Endpoints ---
-from typing import Optional, List, Dict, Any
-from src.pod_studio.pod_service import (
-    extract_raw_from_pdf,
-    extract_raw_from_markdown,
-    compile_blueprint_from_seed,
-    propagate_and_validate_session,
-)
-from src.pod_studio.blueprint_schema import BookBlueprint
-from src.pod_studio.vlm_continuation_engine import SecureVLMContinuationEngine
-
-
-
-from src.web.schemas import (
-    PodSectionPreview,
-    PodExtractRawResponse,
-    PodCompileBlueprintResponse,
-    PodAuditSummary,
-    PodPropagateResponse,
+# --- POD Automated Markup Production API Endpoints (Modularized via APIRouter in P3-4) ---
+from src.web.routers.pod_router import (
+    router as pod_router,
+    pod_1_extract_raw,
+    pod_2_compile_blueprint,
+    pod_3_propagate_and_validate,
+    pod_download_file,
+    pod_vlm_continuation,
 )
 
+app.include_router(pod_router)
 
-@app.post("/api/pod/1_extract_raw", response_model=PodExtractRawResponse)
-async def pod_1_extract_raw(
-    file: UploadFile = File(...),
-    split_level: int = Form(2),
-):
-    """
-    階段一：初稿生成 API
-    上傳 PDF 或 MD 原稿，輸出 Book_raw.docx 與包含幾何座標的 Book_raw_ast.json。
-    """
-    session_id = f"pod_{uuid.uuid4().hex[:12]}"
-    session_dir = PATHS.output_dir / "pod_workspaces" / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-
-    input_path = session_dir / (file.filename or "input_book.pdf")
-    await save_upload_file_safely(file, input_path, max_mb=CFG.max_upload_size_mb)
-
-    ext = input_path.suffix.lower()
-    if ext == ".pdf":
-        sections, ast_path, raw_docx_path = extract_raw_from_pdf(input_path, session_dir, split_level=split_level)
-    elif ext in (".md", ".txt"):
-        md_text = input_path.read_text(encoding="utf-8")
-        sections, ast_path, raw_docx_path = extract_raw_from_markdown(md_text, session_dir, split_level=split_level)
-    else:
-        raise HTTPException(status_code=400, detail="生稿僅支援 .pdf 或 .md 檔案")
-
-    return PodExtractRawResponse(
-        status="success",
-        session_id=session_id,
-        raw_docx_name=raw_docx_path.name,
-        ast_json_name=ast_path.name,
-        total_sections=len(sections),
-        sections_preview=[
-            PodSectionPreview(id=s.section_id, title=s.title, paragraphs=len(s.paragraphs))
-            for s in sections[:10]
-        ],
-    )
-
-
-@app.post("/api/pod/2_compile_blueprint", response_model=PodCompileBlueprintResponse)
-async def pod_2_compile_blueprint(
-    seed_file: UploadFile = File(...),
-    pdf_file: Optional[UploadFile] = File(None),
-    session_id: Optional[str] = Form(None),
-    manual_boundary_anchor: Optional[str] = Form(None),
-    manual_boundary_idx: Optional[int] = Form(None),
-):
-    """
-    範本學習與藍圖合成 API
-    比對人工精修範本推導樣式定義與狀態機轉換規則。
-    若提供原始 PDF (pdf_file)，則直接解析完整幾何結構與三線表，建立 Book_raw_ast.json。
-    """
-    if not session_id:
-        session_id = f"pod_{uuid.uuid4().hex[:12]}"
-    session_dir = PATHS.output_dir / "pod_workspaces" / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-
-    seed_path = session_dir / (seed_file.filename or "Book_seed.docx")
-    await save_upload_file_safely(seed_file, seed_path, max_mb=CFG.max_template_size_mb)
-
-    ast_path = session_dir / "Book_raw_ast.json"
-    has_source_pdf = False
-    detected_tables_count = 0
-
-    if pdf_file and pdf_file.filename:
-        source_pdf_path = session_dir / "source_book.pdf"
-        await save_upload_file_safely(pdf_file, source_pdf_path, max_mb=CFG.max_upload_size_mb)
-        has_source_pdf = True
-        try:
-            from src.scripts.book_layout_extractor import extract_book_vector_ast
-            from src.pod_studio.section_ast import SectionAST
-            book_ast = extract_book_vector_ast(source_pdf_path, enable_footnotes=False)
-            SectionAST.dump_book_ast_json(book_ast.sections, ast_path)
-            detected_tables_count = sum(
-                1 for sec in book_ast.sections for p in sec.paragraphs if p.font_name == "table"
-            )
-        except Exception as e:
-            print(f"[POD Warning] Failed to extract vector AST from uploaded source PDF: {e}")
-
-    # When starting directly from docx without prior extraction or PDF, construct paragraph AST
-    if not ast_path.exists() and seed_path.suffix.lower() == ".docx":
-        import docx
-        from src.pod_studio.section_ast import SectionAST, SectionUnit, ParagraphUnit
-        seed_doc = docx.Document(str(seed_path))
-        sections = [
-            SectionUnit(
-                section_id=f"sec_{i:03d}",
-                title=p.text[:30],
-                level=1,
-                paragraphs=[ParagraphUnit(para_id=f"p_{i}", raw_text=p.text)],
-                raw_content=p.text,
-            )
-            for i, p in enumerate(seed_doc.paragraphs)
-        ]
-        SectionAST.dump_book_ast_json(sections, ast_path)
-
-    blueprint = compile_blueprint_from_seed(
-        session_dir,
-        seed_path,
-        manual_boundary_anchor=manual_boundary_anchor,
-        manual_boundary_idx=manual_boundary_idx,
-    )
-    if has_source_pdf:
-        blueprint.metadata["has_source_pdf"] = True
-        blueprint.metadata["detected_tables_count"] = detected_tables_count
-        blueprint.save(session_dir / "book_blueprint.json")
-
-    return PodCompileBlueprintResponse(
-        status="success",
-        session_id=session_id,
-        blueprint=blueprint.to_dict(),
-        inferred_rules_count=len(blueprint.style_rules),
-        mandatory_badges=blueprint.mandatory_section_badges,
-        detected_styles=blueprint.template_styles_used,
-        boundary_idx=blueprint.metadata.get("seed_last_modified_idx", 0),
-        boundary_source=blueprint.metadata.get("boundary_source", "auto_heuristic"),
-        manual_boundary_anchor=blueprint.metadata.get("manual_boundary_anchor", ""),
-        boundary_context_text=blueprint.metadata.get("boundary_context_text", ""),
-        total_paragraphs=blueprint.metadata.get("seed_total_paragraphs", 0),
-        has_source_pdf=has_source_pdf,
-        detected_tables_count=detected_tables_count,
-    )
-
-
-@app.post("/api/pod/3_propagate_and_validate", response_model=PodPropagateResponse)
-async def pod_3_propagate_and_validate(
-    session_id: str = Form(...),
-    engine_mode: str = Form("rule_first"),
-    template_file: Optional[UploadFile] = File(None),
-    blueprint_json: Optional[str] = Form(None),
-    model: Optional[str] = Form(None),
-    max_continuation_sections: Optional[int] = Form(None),
-    manual_boundary_anchor: Optional[str] = Form(None),
-    manual_boundary_idx: Optional[int] = Form(None),
-):
-    """
-    階段三：批量擴散與硬性驗收 API (支援 Dual-Engine: rule_first 與 vlm_continuation)
-    依藍圖執行確定性 AST 標記索引套用或 VLM 接續，並由 CJK 骨架守恆閘門校驗輸出。
-    """
-    session_dir = PATHS.output_dir / "pod_workspaces" / session_id
-    if not session_dir.exists():
-        raise HTTPException(status_code=404, detail="Session 不存在或已過期")
-
-    template_path = None
-    if template_file and template_file.filename:
-        template_path = session_dir / "template.docx"
-        await save_upload_file_safely(template_file, template_path, max_mb=CFG.max_template_size_mb)
-
-    custom_bp = None
-    if blueprint_json:
-        try:
-            custom_bp = BookBlueprint.from_json(blueprint_json)
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"自訂 Blueprint JSON 格式錯誤: {e}")
-
-    pdf_files = list(session_dir.glob("*.pdf"))
-    pdf_path = pdf_files[0] if pdf_files else None
-
-    final_docx_path, report, bp = propagate_and_validate_session(
-        session_dir=session_dir,
-        engine_mode=engine_mode,
-        template_docx_path=template_path,
-        custom_blueprint=custom_bp,
-        pdf_path=pdf_path,
-        model=model,
-        max_sections=max_continuation_sections,
-        manual_boundary_anchor=manual_boundary_anchor,
-        manual_boundary_idx=manual_boundary_idx,
-    )
-
-    resolved_mode = "vlm_continuation" if engine_mode == "vlm_continuation" else "rule_first"
-    return PodPropagateResponse(
-        status="success",
-        session_id=session_id,
-        engine_mode=resolved_mode,
-        is_valid=report.is_valid,
-        final_docx_name=final_docx_path.name,
-        audit_summary=PodAuditSummary(
-            total_sections=report.total_sections,
-            passed_sections=report.passed_sections,
-            failed_sections=report.failed_sections,
-            green_count=report.green_count,
-            yellow_count=report.yellow_count,
-            red_count=report.red_count,
-            violations_count=len(report.violations),
-        ),
-        audit_report=report.to_dict(),
-    )
-
-
-@app.get("/api/pod/download/{session_id}/{filename}")
-async def pod_download_file(session_id: str, filename: str):
-    """下載 POD 工作區之產出物 (Book_raw.docx, Book_POD_Final.docx, audit_report.json 等)"""
-    session_dir = (PATHS.output_dir / "pod_workspaces" / session_id).resolve()
-    if not session_dir.exists():
-        raise HTTPException(status_code=404, detail="Session 不存在")
-
-    target_file = (session_dir / filename).resolve()
-    if not target_file.is_relative_to(session_dir) or not target_file.exists():
-        raise HTTPException(status_code=404, detail="檔案不存在或存取受限")
-
-    media_type = "application/octet-stream"
-    if filename.endswith(".docx"):
-        media_type = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    elif filename.endswith(".json"):
-        media_type = "application/json"
-    elif filename.endswith(".md"):
-        media_type = "text/markdown"
-
-    return FileResponse(path=str(target_file), media_type=media_type, filename=filename)
-
-
-@app.post("/api/pod/vlm_continuation")
-async def pod_vlm_continuation(
-    session_id: Optional[str] = Form(None),
-    pdf_file: Optional[UploadFile] = File(None),
-    seed_file: UploadFile = File(...),
-    template_file: Optional[UploadFile] = File(None),
-    model_name: str = Form("gemini-2.5-flash"),
-    max_continuation_sections: Optional[int] = Form(None),
-    split_level: int = Form(2),
-    manual_boundary_anchor: Optional[str] = Form(None),
-    manual_boundary_idx: Optional[int] = Form(None),
-):
-    """
-    POD 視覺整稿接續 API (VLM Continuation & Infilling)
-    結合階段一 PDF 與前 5%~10% 人工精修 DOCX (Golden Seed)，
-    利用 Gemini 或 Ollama 視覺多模態模型接續完成全書排版。
-    """
-    if session_id:
-        session_dir = (PATHS.output_dir / "pod_workspaces" / session_id).resolve()
-        if not session_dir.exists():
-            raise HTTPException(status_code=404, detail="指定 Session 不存在或已過期")
-    else:
-        session_id = f"pod_vlm_{uuid.uuid4().hex[:12]}"
-        session_dir = PATHS.output_dir / "pod_workspaces" / session_id
-        session_dir.mkdir(parents=True, exist_ok=True)
-
-    # 1. 處理 PDF 檔案
-    pdf_path = None
-    if pdf_file and pdf_file.filename:
-        pdf_path = session_dir / pdf_file.filename
-        await save_upload_file_safely(pdf_file, pdf_path, max_mb=CFG.max_upload_size_mb)
-    else:
-        existing_pdfs = list(session_dir.glob("*.pdf"))
-        if existing_pdfs:
-            pdf_path = existing_pdfs[0]
-
-    if not pdf_path or not pdf_path.exists():
-        raise HTTPException(status_code=400, detail="請提供原始 PDF 檔案")
-
-    # 2. 確保 AST 存在，若不存在則自 PDF 剖析生稿
-    ast_path = session_dir / "Book_raw_ast.json"
-    if not ast_path.exists():
-        try:
-            sections, ast_path, _ = extract_raw_from_pdf(
-                pdf_path, session_dir, split_level=split_level
-            )
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"PDF 生稿剖析失敗: {e}")
-
-    # 3. 處理前 5%~10% 精修範本檔案 (Seed DOCX)
-    seed_path = session_dir / (seed_file.filename or "Book_seed.docx")
-    await save_upload_file_safely(seed_file, seed_path, max_mb=CFG.max_template_size_mb)
-
-    # 4. 處理可選的 Template DOCX
-    template_path = None
-    if template_file and template_file.filename:
-        template_path = session_dir / "template.docx"
-        await save_upload_file_safely(template_file, template_path, max_mb=CFG.max_template_size_mb)
-
-    # 5. 調度 SecureVLMContinuationEngine
-    engine = SecureVLMContinuationEngine(
-        workspace_base=PATHS.output_dir / "pod_workspaces"
-    )
-
-    try:
-        result = await engine.execute_continuation(
-            pdf_path=pdf_path,
-            raw_ast_path=ast_path,
-            seed_docx_path=seed_path,
-            template_docx_path=template_path,
-            model_name=model_name,
-            max_continuation_sections=max_continuation_sections,
-            target_session_dir=session_dir,
-            manual_boundary_anchor=manual_boundary_anchor,
-            manual_boundary_idx=manual_boundary_idx,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"視覺接續流程執行異常: {str(e)}")
-
-    return {
-        "status": "success",
-        "session_id": session_id,
-        "result": result.to_dict(),
-        "download_docx_url": f"/api/pod/download/{session_id}/Book_VLM_Continued.docx",
-        "download_md_url": f"/api/pod/download/{session_id}/Book_VLM_Continued.md",
-        "audit_report_url": f"/api/pod/download/{session_id}/vlm_audit_report.json",
-    }
 
 
 

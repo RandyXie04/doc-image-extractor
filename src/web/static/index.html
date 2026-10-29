@@ -5,252 +5,162 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>書籍轉檔與文檔數位化工具箱</title>
-    <link rel="stylesheet" href="/static/sidebar.css?v=20261016_v5">
+    <link rel="stylesheet" href="/static/sidebar.css">
+    <link rel="stylesheet" href="/static/toolbox.css">
     <style>
-        :root {
-            color-scheme: light;
-            --primary: #2563eb;
-            --primary-hover: #1d4ed8;
-            --bg-color: #f8fafc;
-            --surface: rgba(0, 0, 0, 0.02);
-            --text-main: #0f172a;
-            --text-muted: #64748b;
-            --border: #e2e8f0;
-            --card-bg: #ffffff;
-            --card-hover-border: #cbd5e1;
-            --card-hover-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+        .flow {
+            list-style: none;
+            margin: 0 0 2rem;
+            padding: 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1rem;
         }
 
-        :root[data-theme="dark"] {
-            color-scheme: dark;
-            --primary: #3b82f6;
-            --primary-hover: #2563eb;
-            --bg-color: #0f172a;
-            --surface: rgba(255, 255, 255, 0.03);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --border: rgba(255, 255, 255, 0.08);
-            --card-bg: #1e293b;
-            --card-hover-border: rgba(255, 255, 255, 0.2);
-            --card-hover-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
-        }
-
-        body {
-            font-family: 'Inter', system-ui, sans-serif;
-            color: var(--text-main);
-        }
-
-        .container {
-            background: var(--card-bg);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            padding: clamp(1.5rem, 3vw, 3rem);
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
-            width: 100%;
+        .flow-step {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            padding: 1.25rem 1.5rem;
             border: 1px solid var(--border);
-            animation: fadeIn 0.4s ease-out forwards;
-            box-sizing: border-box;
+            border-radius: var(--radius-md);
+            background: var(--surface-2);
+            color: inherit;
+            text-decoration: none;
         }
 
-        :root[data-theme="dark"] .container {
-            background: #1e293b;
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #f8fafc;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        .flow-step:hover {
+            border-color: var(--accent);
         }
 
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(8px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+        .flow-step .step-no {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--accent);
         }
 
-        .header {
-            margin-bottom: 2.5rem;
-            padding-bottom: 1.5rem;
+        .flow-step h3 {
+            margin: 0;
+            font-size: 1.1rem;
+        }
+
+        .flow-step p {
+            margin: 0;
+            color: var(--text-muted);
+            font-size: 0.92rem;
+        }
+
+        .flow-step .out {
+            margin-top: auto;
+            padding-top: 0.5rem;
+            font-size: 0.83rem;
+            color: var(--text-muted);
+            border-top: 1px dashed var(--border);
+        }
+
+        .tool-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-md);
+            overflow: hidden;
+        }
+
+        .tool-list a {
+            display: grid;
+            grid-template-columns: 9rem 1fr;
+            gap: 1rem;
+            padding: 0.9rem 1.25rem;
+            color: inherit;
+            text-decoration: none;
             border-bottom: 1px solid var(--border);
         }
 
-        .header h1 {
-            margin: 0 0 0.5rem;
-            font-size: 2rem;
-            letter-spacing: -0.02em;
+        .tool-list li:last-child a {
+            border-bottom: none;
+        }
+
+        .tool-list a:hover {
+            background: var(--surface-2);
+        }
+
+        .tool-list strong {
             font-weight: 600;
-            color: var(--text-main);
         }
 
-        .header p {
-            margin: 0;
-            font-size: 1.125rem;
+        .tool-list span {
             color: var(--text-muted);
-            max-width: 600px;
-        }
-
-        .guide-box {
-            background: var(--surface);
-            padding: 1.5rem;
-            border-radius: 14px;
-            margin-bottom: 2.5rem;
-            border: 1px solid var(--border);
-        }
-
-        .guide-box h2 {
-            font-size: 1rem;
-            margin: 0 0 0.5rem;
-            font-weight: 600;
-            color: var(--text-main);
-        }
-
-        .guide-box p {
-            color: var(--text-muted);
-            font-size: 0.95rem;
-            margin: 0;
-            line-height: 1.5;
+            font-size: 0.9rem;
         }
 
         .section-title {
-            margin-bottom: 1.2rem;
+            margin: 0 0 0.75rem;
+            font-size: 1.05rem;
             font-weight: 600;
-            color: var(--text-main);
-            font-size: 1.125rem;
-            letter-spacing: -0.01em;
         }
 
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 1.5rem;
-            margin-bottom: 2.5rem;
-        }
-
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 1.5rem;
-            display: flex;
-            flex-direction: column;
-            text-decoration: none;
-            color: inherit;
-            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .card:hover {
-            border-color: var(--primary);
-            box-shadow: var(--card-hover-shadow);
-            transform: translateY(-2px);
-        }
-
-        .card-label {
-            font-size: 0.75rem;
-            font-weight: 600;
-            color: var(--primary);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 0.75rem;
-        }
-
-        .card h3 {
-            margin: 0 0 0.5rem;
-            font-size: 1.125rem;
-            font-weight: 600;
-            color: var(--text-main);
-        }
-
-        .card p {
-            color: var(--text-muted);
-            line-height: 1.5;
-            margin: 0 0 1.5rem;
-            font-size: 0.95rem;
-            flex-grow: 1;
-        }
-
-        .action-text {
-            color: var(--primary);
-            font-weight: 500;
-            font-size: 0.875rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
+        @media (max-width: 640px) {
+            .tool-list a {
+                grid-template-columns: 1fr;
+                gap: 0.25rem;
+            }
         }
     </style>
 </head>
 
 <body>
     <div class="container">
-        <div class="header">
-            <h1>書籍轉檔與文檔數位化工具箱</h1>
-            <p>整合公式萃取、圖片提取、編碼修復與自動化校註的處理中心。</p>
-        </div>
+        <header class="page-head">
+            <div>
+                <h1>書籍轉檔與文檔數位化工具箱</h1>
+                <p class="page-lead">把書稿 PDF 轉成可排版的 Word 與 Markdown，再依人工預修範本擴散到全書。</p>
+            </div>
+        </header>
 
-        <div class="guide-box">
-            <h2>處理流程建議</h2>
-            <p>處理古老電子書或學術論文時，請先進行編碼修復與圖片提取，確認無誤後再使用主轉換引擎進行 OCR 與格式重構。</p>
-        </div>
+        <h2 class="section-title">主流程：書稿整稿</h2>
+        <ol class="flow">
+            <li>
+                <a class="flow-step" href="/static/ocr_pipeline.html">
+                    <span class="step-no">第 1 步</span>
+                    <h3>全自動整稿</h3>
+                    <p>先以視覺裁切去除頁眉頁尾，再自動重建標題階層、表格與圖片，產出初稿。</p>
+                    <span class="out">輸出：Word、Markdown、圖片資料夾 images/書名/</span>
+                </a>
+            </li>
+            <li>
+                <a class="flow-step" href="/static/pod_studio.html">
+                    <span class="step-no">第 2 步</span>
+                    <h3>POD 整稿</h3>
+                    <p>人工預修前 5%~10% 章節後，上傳預修 Word 與原 PDF，系統學習樣式並擴散到全書。</p>
+                    <span class="out">輸出：成品 Word、Markdown、驗收報告 audit_report.json</span>
+                </a>
+            </li>
+        </ol>
 
-        <div class="section-title">階段一：修復與前置準備</div>
-        <div class="grid">
-            <a href="/static/founder_repair.html" class="card">
-                <div class="card-label">編碼修復</div>
-                <h3>方正書版亂碼修復</h3>
-                <p>修復早期方正系統出版 PDF 的 CMap 編碼缺陷與亂碼問題。</p>
-                <div class="action-text">開啟工具 <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="m9 18 6-6-6-6" />
-                    </svg></div>
-            </a>
-
-            <a href="/static/extract_images.html" class="card">
-                <div class="card-label">資源擷取</div>
-                <h3>文件圖片無損提取</h3>
-                <p>一鍵打包 PDF 內所有高畫質原始圖片，保留原版插圖。</p>
-                <div class="action-text">開啟工具 <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="m9 18 6-6-6-6" />
-                    </svg></div>
-            </a>
-        </div>
-
-        <div class="section-title">階段二：主轉換引擎</div>
-        <div class="grid">
-            <a href="/static/formula.html" class="card">
-                <div class="card-label">理科文獻專用</div>
-                <h3>PDF 數學公式提取</h3>
-                <p>使用 YOLOv8 模型定位獨立公式，轉換為 Word 格式並保留公式圖片。</p>
-                <div class="action-text">開啟工具 <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="m9 18 6-6-6-6" />
-                    </svg></div>
-            </a>
-
-            <a href="/static/ocr_pipeline.html" class="card">
-                <div class="card-label">一般整稿專用</div>
-                <h3>全自動整稿</h3>
-                <p>使用 Surya OCR 自動版面分析，重建層級排版，適合圖文混排文件。</p>
-                <div class="action-text">啟動管線 <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="m9 18 6-6-6-6" />
-                    </svg></div>
-            </a>
-
-            <a href="/static/pod_studio.html" class="card">
-                <div class="card-label">出版 POD 專用</div>
-                <h3>POD 樣式智慧擴散</h3>
-                <p>雙階段智慧整稿：人工範本規則學習、全書批量樣式擴散與 CJK 骨架守恆驗收。</p>
-                <div class="action-text">進入整稿工作區 <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
-                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="m9 18 6-6-6-6" />
-                    </svg></div>
-            </a>
-        </div>
+        <h2 class="section-title">輔助工具</h2>
+        <ul class="tool-list">
+            <li>
+                <a href="/static/founder_repair.html">
+                    <strong>方正修復</strong>
+                    <span>PDF 或 DOCX 出現方正系統亂碼時，先修復編碼再進入整稿。輸出：修復後的 Word。</span>
+                </a>
+            </li>
+            <li>
+                <a href="/static/extract_images.html">
+                    <strong>圖片提取</strong>
+                    <span>從 PDF 或 DOCX 取出內嵌的原始畫質圖片。輸出：圖片 ZIP。</span>
+                </a>
+            </li>
+            <li>
+                <a href="/static/formula.html">
+                    <strong>公式提取</strong>
+                    <span>以 AI 模型定位獨立公式並裁切成圖片。輸出：公式圖片 ZIP。</span>
+                </a>
+            </li>
+        </ul>
     </div>
-    <script src="/static/sidebar.js?v=20261016_v5"></script>
+    <script src="/static/sidebar.js"></script>
 </body>
 
 </html>

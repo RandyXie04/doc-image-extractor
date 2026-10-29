@@ -53,6 +53,15 @@ export interface PodPropagateResponse {
   readonly audit_report: Record<string, unknown>;
 }
 
+export interface PodVlmContinuationResponse {
+  readonly status: "success";
+  readonly session_id: string;
+  readonly result: Record<string, unknown>;
+  readonly download_docx_url: string;
+  readonly download_md_url: string;
+  readonly audit_report_url: string;
+}
+
 export interface RuleFirstPropagationPayload {
   readonly engine_mode: "rule_first";
   readonly session_id: string;
@@ -69,6 +78,133 @@ export interface VlmContinuationPropagationPayload {
   readonly blueprint_json: string | null;
   readonly manual_boundary_anchor: string | null;
   readonly manual_boundary_idx: number | null;
+}
+
+export interface OcrFileUploadResponse {
+  readonly file_id: string;
+  readonly filename_orig: string;
+  readonly filename_stem: string;
+}
+
+export interface OcrRunStartResponse {
+  readonly message: string;
+  readonly filename_stem: string;
+  readonly task_id: string;
+}
+
+export interface OcrProgressResponse {
+  readonly task_id: string | null;
+  readonly progress: number;
+  readonly message: string;
+  readonly status: "processing" | "completed" | "failed" | "queued" | "running";
+  readonly error: string | null;
+  readonly created_at: number | null;
+}
+
+export interface FontInfoItem {
+  readonly name: string;
+  readonly full_name: string;
+  readonly size_pt: number;
+  readonly sample_texts?: string[];
+  readonly current_role: string | null;
+  readonly current_docx_style: string | null;
+}
+
+export interface FontScanResponse {
+  readonly fonts: FontInfoItem[];
+  readonly docx_styles?: string[];
+  readonly default_roles?: string[];
+}
+
+export interface FontMappingEntry {
+  readonly role: string | null;
+  readonly docx_style: string | null;
+  readonly mapped_by: string | null;
+}
+
+export interface FontMappingSaveRequest {
+  readonly mapping?: Record<string, FontMappingEntry>;
+  readonly remove_keys?: string[];
+}
+
+export interface FontMappingSaveResponse {
+  readonly status: "success";
+  readonly saved: number;
+  readonly removed: number;
+  readonly message: string;
+}
+
+export interface QueueTaskItem {
+  readonly task_id: string;
+  readonly stem: string;
+  readonly status: string;
+  readonly progress: number;
+  readonly message: string;
+  readonly engine: string;
+  readonly error: string | null;
+  readonly created_at: number;
+  readonly updated_at: number;
+}
+
+export interface QueueTasksResponse {
+  readonly tasks: QueueTaskItem[];
+}
+
+export interface MarkdownRebuildRequest {
+  readonly content: string;
+}
+
+export interface MarkdownRebuildResponse {
+  readonly status: "success";
+  readonly message: string;
+}
+
+export interface FormulaTaskSubmitResponse {
+  readonly task_id: string;
+}
+
+export interface FormulaTaskStatusResponse {
+  readonly status: "processing" | "completed" | "failed";
+  readonly progress: number;
+  readonly message: string;
+  readonly mode: string;
+  readonly total_pages: number;
+  readonly current_page: number;
+  readonly results?: Record<string, unknown>[];
+  readonly final_files?: Record<string, string>;
+}
+
+export interface ExtractImagesResponse {
+  readonly success: boolean;
+  readonly count: number;
+  readonly message: string;
+  readonly download_url: string;
+  readonly filename: string;
+  readonly source_path: string;
+}
+
+export interface FounderRepairResponse {
+  readonly success: boolean;
+  readonly source_path: string;
+  readonly filename: string;
+}
+
+export interface HardwareStatusResponse {
+  readonly gpu_name: string;
+  readonly target_accelerator: string;
+  readonly active_provider: string;
+  readonly vram_gb: number;
+  readonly is_accelerated: boolean;
+}
+
+export interface UpdateCheckResponse {
+  readonly current_version: string;
+  readonly latest_version: string;
+  readonly has_update: boolean;
+  readonly download_url: string;
+  readonly release_notes: string;
+  readonly published_at: string;
+  readonly error: string | null;
 }
 
 export interface ParagraphLayoutContract {
@@ -148,3 +284,12 @@ export type PodSessionPhase =
   | { readonly phase: "propagating"; readonly sessionId: string; readonly payload: PropagationPayload }
   | { readonly phase: "completed"; readonly response: PodPropagateResponse }
   | { readonly phase: "error"; readonly message: string };
+
+export type OcrWorkbenchPhase =
+  | { readonly phase: "idle" }
+  | { readonly phase: "uploading"; readonly fileName: string }
+  | { readonly phase: "preview_ready"; readonly upload: OcrFileUploadResponse }
+  | { readonly phase: "scanning_fonts"; readonly fileId: string }
+  | { readonly phase: "processing"; readonly stem: string; readonly progress: OcrProgressResponse }
+  | { readonly phase: "completed"; readonly stem: string; readonly progress: OcrProgressResponse }
+  | { readonly phase: "failed"; readonly stem: string; readonly error: string };

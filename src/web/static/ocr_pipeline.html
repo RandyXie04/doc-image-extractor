@@ -1,821 +1,255 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>書籍 PDF 全自動整稿與排版</title>
-    <link rel="stylesheet" href="/static/sidebar.css?v=20261016_v5">
-    <style>
-        :root {
-            color-scheme: light;
-            --primary: #ea580c;
-            --primary-hover: #c2410c;
-            --bg: transparent;
-            --card: #ffffff;
-            --border: #e2e8f0;
-            --text-main: #0f172a;
-            --text-muted: #64748b;
-        }
-
-        :root[data-theme="dark"] {
-            color-scheme: dark;
-            --primary: #ea580c;
-            --primary-hover: #c2410c;
-            --card: #1e293b;
-            --border: rgba(255, 255, 255, 0.12);
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-        }
-
-        .upload-area {
-            background-color: rgba(0, 0, 0, 0.02);
-        }
-
-        .card-section {
-            background-color: rgba(0, 0, 0, 0.02);
-        }
-
-        select {
-            background-color: #ffffff;
-            color: #0f172a;
-        }
-
-        select option {
-            background-color: #ffffff;
-            color: #0f172a;
-        }
-
-        .page-ctrl-btn {
-            background: rgba(0, 0, 0, 0.04);
-            border: 1px solid var(--border);
-        }
-
-        :root[data-theme="dark"] .upload-area {
-            background-color: rgba(255, 255, 255, 0.02);
-        }
-
-        :root[data-theme="dark"] .card-section {
-            background-color: rgba(255, 255, 255, 0.02);
-        }
-
-        :root[data-theme="dark"] select {
-            background-color: rgba(255, 255, 255, 0.05);
-            color: #f8fafc;
-        }
-
-        :root[data-theme="dark"] select option {
-            background-color: #18181b;
-            color: #f4f4f5;
-        }
-
-        :root[data-theme="dark"] .page-ctrl-btn {
-            background: rgba(255, 255, 255, 0.05);
-        }
-
-        body {
-            font-family: 'Inter', system-ui, sans-serif;
-            color: var(--text-main);
-        }
-
-        .container {
-            background: var(--card);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            padding: clamp(1.5rem, 3vw, 3rem);
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.06);
-            width: 100%;
-            border: 1px solid var(--border);
-            animation: fadeIn 0.4s ease-out forwards;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(8px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 2rem;
-        }
-
-        .header a {
-            text-decoration: none;
-            color: var(--primary);
-            font-weight: 500;
-            background: rgba(234, 88, 12, 0.08);
-            padding: 6px 12px;
-            border-radius: 6px;
-            transition: 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .header a:hover {
-            background: rgba(234, 88, 12, 0.15);
-        }
-
-        .upload-area {
-            border: 2px dashed var(--border);
-            border-radius: 16px;
-            padding: clamp(2rem, 4vw, 3.5rem) clamp(1.5rem, 3vw, 2rem);
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            margin-bottom: 2rem;
-            background-color: rgba(255, 255, 255, 0.02);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .upload-area:hover,
-        .upload-area.dragover {
-            border-color: var(--primary);
-            background-color: rgba(255, 255, 255, 0.05);
-            transform: scale(1.01);
-        }
-
-        .upload-area svg {
-            width: 56px;
-            height: 56px;
-            color: var(--primary);
-            margin-bottom: 1.2rem;
-            transition: transform 0.3s;
-        }
-
-        .upload-area:hover svg {
-            transform: translateY(-5px);
-        }
-
-        .upload-area input[type="file"] {
-            display: none;
-        }
-
-        .btn {
-            background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            border-radius: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            width: 100%;
-            font-size: 1.1rem;
-            box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3);
-            transition: all 0.3s;
-            letter-spacing: 0.02em;
-        }
-
-        .btn:hover:not(:disabled) {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 20px rgba(234, 88, 12, 0.4);
-        }
-
-        .btn:disabled {
-            background: #e2e8f0;
-            color: #475569;
-            cursor: not-allowed;
-            box-shadow: none;
-            transform: none;
-        }
-
-        :root[data-theme="dark"] .btn:disabled {
-            background: rgba(255, 255, 255, 0.08);
-            color: #94a3b8;
-        }
-
-        #status {
-            margin-top: 1.5rem;
-            text-align: center;
-            font-weight: 500;
-            color: var(--text-muted);
-        }
-
-        .card-section {
-            background: rgba(255, 255, 255, 0.02);
-            padding: clamp(1rem, 2.5vw, 2rem);
-            border-radius: 16px;
-            margin-bottom: 1.5rem;
-            border: 1px solid var(--border);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
-        }
-
-        .options-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 1.2rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .options-grid .card-section {
-            margin-bottom: 0;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-        }
-
-        .slider-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 1.2rem;
-            text-align: left;
-        }
-
-        /* ── 樣式對應 Grid ── */
-        .style-mapping-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 0.8rem 1.2rem;
-            align-items: end;
-        }
-
-        .style-mapping-grid .mapping-item {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .style-mapping-grid .mapping-item label {
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: var(--text-muted);
-            white-space: nowrap;
-        }
-
-        .style-mapping-grid .mapping-item select {
-            width: 100%;
-            padding: 6px 8px;
-            border-radius: 6px;
-            border: 1px solid var(--border);
-            font-size: 0.88rem;
-        }
-
-        .style-mapping-separator {
-            grid-column: 1 / -1;
-            border-top: 1px solid var(--border);
-            padding-top: 0.6rem;
-            margin-top: 0.2rem;
-        }
-
-        .slider-item {
-            display: flex;
-            flex-direction: column;
-            gap: 6px;
-        }
-
-        .slider-label {
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: var(--text-main);
-            display: flex;
-            justify-content: space-between;
-        }
-
-        .page-ctrl-btn {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 6px 14px;
-            cursor: pointer;
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: var(--text-main);
-            transition: 0.2s;
-        }
-
-        .page-ctrl-btn:hover {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: var(--primary);
-        }
-
-        select {
-            padding: 8px 12px;
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            font-size: 0.95rem;
-            outline: none;
-            transition: 0.2s;
-            background: rgba(255, 255, 255, 0.02);
-            color: var(--text-main);
-        }
-
-        select option {
-            background-color: #ffffff;
-            color: #0f172a;
-        }
-
-        :root[data-theme="dark"] select option {
-            background-color: #18181b;
-            color: #f4f4f5;
-        }
-
-        select:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(234, 88, 12, 0.15);
-        }
-
-        /* ── 字體審閱 Modal ── */
-        .font-modal-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(4px);
-            z-index: 9999;
-            align-items: center;
-            justify-content: center;
-        }
-
-        .font-modal-overlay.open {
-            display: flex;
-        }
-
-        .font-modal {
-            background: #ffffff;
-            border: 1px solid var(--border);
-            border-radius: 12px;
-            padding: clamp(1.2rem, 2.5vw, 2rem);
-            width: min(94vw, 960px);
-            max-height: 85vh;
-            display: flex;
-            flex-direction: column;
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.12);
-            animation: slideUp 0.25s ease-out;
-            color: var(--text-main);
-        }
-
-        :root[data-theme="dark"] .font-modal {
-            background: #18181b;
-            border-color: rgba(255, 255, 255, 0.12);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.45);
-        }
-
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .font-modal h3 {
-            margin: 0 0 1rem 0;
-            font-size: 1.1rem;
-            color: var(--text-main);
-        }
-
-        .font-modal-body {
-            overflow-y: auto;
-            flex: 1;
-            margin-bottom: 1rem;
-        }
-
-        .font-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 0.85rem;
-        }
-
-        .font-table th {
-            background: var(--bg-hover);
-            padding: 8px 10px;
-            text-align: left;
-            color: var(--text-muted);
-            font-weight: 600;
-            position: sticky;
-            top: 0;
-            border-bottom: 1px solid var(--border);
-        }
-
-        .font-table td {
-            padding: 8px 10px;
-            border-bottom: 1px solid var(--border);
-            vertical-align: top;
-            color: var(--text-main);
-        }
-
-        .font-table tr:hover td {
-            background: var(--bg-hover);
-        }
-
-        .font-table .sample-text {
-            font-size: 0.78rem;
-            color: var(--text-muted);
-            max-width: min(45vw, 420px);
-            white-space: pre-wrap;
-            word-break: break-all;
-        }
-
-        .font-modal-footer {
-            display: flex;
-            gap: 10px;
-            justify-content: flex-end;
-        }
-
-        .btn-analyze {
-            background: #7c3aed;
-            color: white;
-            border: none;
-            padding: 9px 18px;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.2s;
-        }
-
-        .btn-analyze:hover:not(:disabled) {
-            transform: translateY(-2px);
-            background: #6d28d9;
-        }
-
-        .btn-analyze:disabled {
-            background: #e2e8f0;
-            color: #475569;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        :root[data-theme="dark"] .btn-analyze:disabled {
-            background: rgba(255, 255, 255, 0.08);
-            color: #94a3b8;
-        }
-
-        .btn-confirm {
-            background: #16a34a;
-            color: white;
-            border: none;
-            padding: 9px 18px;
-            border-radius: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.2s;
-        }
-
-        .btn-confirm:hover {
-            transform: translateY(-2px);
-            background: #15803d;
-        }
-
-        .btn-cancel-modal {
-            background: rgba(0, 0, 0, 0.05);
-            color: var(--text-main);
-            border: 1px solid var(--border);
-            padding: 9px 18px;
-            border-radius: 10px;
-            font-weight: 600;
-            cursor: pointer;
-            font-size: 0.9rem;
-            transition: all 0.2s;
-        }
-
-        .btn-cancel-modal:hover {
-            background: rgba(0, 0, 0, 0.1);
-        }
-
-        :root[data-theme="dark"] .btn-cancel-modal {
-            background: rgba(255, 255, 255, 0.08);
-            border-color: rgba(255, 255, 255, 0.12);
-            color: #e2e8f0;
-        }
-
-        :root[data-theme="dark"] .btn-cancel-modal:hover {
-            background: rgba(255, 255, 255, 0.14);
-        }
-
-        .font-role-select {
-            background: var(--bg-card);
-            color: var(--text-main);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 4px 6px;
-            font-size: 0.82rem;
-            min-width: 120px;
-        }
-
-        .font-role-select:focus {
-            border-color: #7c3aed;
-            outline: none;
-        }
-
-        .font-size-badge {
-            display: inline-block;
-            background: rgba(234, 88, 12, 0.12);
-            color: #ea580c;
-            border-radius: 4px;
-            padding: 1px 6px;
-            font-size: 0.78rem;
-            font-weight: 600;
-        }
-    </style>
+    <title>全自動整稿 - 轉檔工具箱</title>
+    <link rel="stylesheet" href="/static/sidebar.css">
+    <link rel="stylesheet" href="/static/toolbox.css">
 </head>
-
 <body>
     <div class="container">
-        <div class="header">
-            <a href="/">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="m15 18-6-6 6-6" />
-                </svg>
-                返回首頁
+        <header class="page-head">
+            <a href="/" class="back-link">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                返回工具箱
             </a>
-            <h2 style="margin: 0; font-size: 1.4rem; color: var(--text-main);">全自動整稿管線</h2>
-            <div style="width: 80px;"></div>
-        </div>
+            <div>
+                <h1>全自動整稿</h1>
+                <p class="page-lead">智慧解析圖書版面、過濾頁眉頁尾與雜訊，自動生成結構化 Word (.docx) 與 Markdown (.md) 文件。</p>
+            </div>
+        </header>
 
         <!-- 樣式範本設定 -->
-        <div class="card-section">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.8rem; margin-bottom: 0.8rem;">
+        <div class="panel">
+            <div class="panel-row" style="margin-bottom: 0.5rem;">
                 <div>
-                    <h3 style="margin: 0 0 4px 0; color: var(--text-main); font-size: 1.05rem;">樣式範本設定</h3>
-                    <p style="color: var(--text-muted); font-size: 0.9rem; margin: 0;">
-                        目前使用範本: <strong id="currentTemplateName">載入中...</strong>
-                    </p>
+                    <h3 class="panel-title">Word 樣式範本</h3>
+                    <p class="hint" style="margin: 0;">目前使用範本：<strong id="currentTemplateName">載入中…</strong></p>
                 </div>
-                <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <div>
                     <input type="file" id="templateInput" accept=".docx" style="display: none;">
-                    <button type="button" class="btn"
-                        style="background: #475569; width: auto; font-size: 0.9rem; padding: 6px 14px; white-space: nowrap;"
-                        onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
-                    <span id="templateUploadStatus"
-                        style="color: #16a34a; font-weight: bold; font-size: 0.85rem;"></span>
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
+                    <span id="templateUploadStatus" class="hint" style="margin-left: 8px;"></span>
                 </div>
             </div>
 
-            <div id="styleMappingSection" style="margin-top: 0.8rem; display: none;">
-                <h4 style="margin: 0 0 0.5rem 0; color: var(--text-muted); font-size: 0.9rem;">自訂階層樣式對應 (可選)</h4>
-                <div class="style-mapping-grid">
-                    <div class="mapping-item">
-                        <label for="h1Style">一級標題 (#)</label>
-                        <select id="h1Style">
-                            <option value="">(預設 Heading 1)</option>
-                        </select>
+            <div id="styleMappingSection" style="margin-top: 0.75rem; display: none; border-top: 1px solid var(--border); padding-top: 0.75rem;">
+                <p class="hint" style="margin-bottom: 0.5rem; font-weight: 600;">自訂階層樣式對應 (可選)</p>
+                <div class="grid-2">
+                    <div class="field">
+                        <label class="field-label" for="h1Style">一級標題 (#)</label>
+                        <select id="h1Style" class="input"><option value="">(預設 Heading 1)</option></select>
                     </div>
-                    <div class="mapping-item">
-                        <label for="h2Style">二級標題 (##)</label>
-                        <select id="h2Style">
-                            <option value="">(預設 Heading 2)</option>
-                        </select>
+                    <div class="field">
+                        <label class="field-label" for="h2Style">二級標題 (##)</label>
+                        <select id="h2Style" class="input"><option value="">(預設 Heading 2)</option></select>
                     </div>
-                    <div class="mapping-item">
-                        <label for="h3Style">三級標題 (###)</label>
-                        <select id="h3Style">
-                            <option value="">(預設 Heading 3)</option>
-                        </select>
+                    <div class="field">
+                        <label class="field-label" for="h3Style">三級標題 (###)</label>
+                        <select id="h3Style" class="input"><option value="">(預設 Heading 3)</option></select>
                     </div>
-                    <div class="style-mapping-separator"></div>
-                    <div class="mapping-item">
-                        <label for="imageCaptionStyle">圖片標籤</label>
-                        <select id="imageCaptionStyle">
-                            <option value="">(不套用自訂樣式)</option>
-                        </select>
+                    <div class="field">
+                        <label class="field-label" for="imageCaptionStyle">圖片標籤</label>
+                        <select id="imageCaptionStyle" class="input"><option value="">(不套用自訂樣式)</option></select>
                     </div>
-                    <div class="mapping-item">
-                        <label for="kaitiStyle">楷體 / 引言</label>
-                        <select id="kaitiStyle">
-                            <option value="">(不套用自訂樣式)</option>
-                        </select>
+                    <div class="field">
+                        <label class="field-label" for="kaitiStyle">楷體 / 引言</label>
+                        <select id="kaitiStyle" class="input"><option value="">(不套用自訂樣式)</option></select>
                     </div>
                 </div>
             </div>
         </div>
 
         <form id="uploadForm">
-            <!-- 執行選項群組 (響應式雙欄/單欄) -->
-            <div class="options-grid">
-                <!-- 引擎選擇 -->
-                <div class="card-section">
-                    <label for="engineSelect"
-                        style="display:block; margin-bottom: 6px; font-weight:bold; font-size: 0.95rem; color: var(--text-main);">
-                        PDF 處理引擎選擇</label>
-                    <select name="engine" id="engineSelect"
-                        style="padding: 8px 12px; width: 100%; border: 1px solid var(--border); border-radius: 6px; font-size: 0.92rem; background: var(--bg-card); color: var(--text-main);">
-                        <option value="auto">自動偵測 (推薦) - 向量 PDF 啟用 PyMuPDF 高速解析；掃描 PDF 啟用 Surya OCR 深度辨識</option>
-                        <option value="pymupdf">高速提取 (PyMuPDF) - 適用原生向量 PDF，秒級解析且記憶體輕量</option>
-                        <option value="suryaocr">深度識別 (Surya OCR) - 適用掃描書、圖片轉曲 PDF，支援中文 OCR 與複雜版面</option>
+            <!-- 執行選項群組 -->
+            <div class="panel">
+                <div class="field">
+                    <label class="field-label" for="engineSelect">PDF 處理引擎</label>
+                    <select name="engine" id="engineSelect" class="input">
+                        <option value="auto">自動偵測 (推薦) — 原生向量 PDF 秒級解析，掃描版切換深度辨識</option>
+                        <option value="pymupdf">高速提取 (PyMuPDF) — 適用原生向量 PDF，秒級解析且記憶體輕量</option>
+                        <option value="suryaocr">深度識別 (Surya OCR) — 適用掃描書與圖片轉曲 PDF，支援中文 OCR</option>
                     </select>
                 </div>
-
-                <!-- 無腳注模式 -->
-                <div class="card-section">
-                    <label style="display:flex; align-items:center; cursor:pointer;">
-                        <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true" checked
-                            style="width:18px; height:18px; margin-right:8px; cursor:pointer;">
-                        <span style="font-weight:bold; font-size: 0.95rem; color: var(--text-main);">無腳注模式
-                            (純粹內文，無任何腳注標記)</span>
+                <div class="field" style="margin-bottom: 0;">
+                    <label class="check">
+                        <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true" checked>
+                        <span>
+                            <span class="check-title">無腳注模式 (純內文，無任何腳注標記)</span>
+                            <span class="hint" style="display: block;">開啟後，載入純內文解析腳本，避免正文中的圓圈數字被誤判為腳注參照。</span>
+                        </span>
                     </label>
-                    <p style="color: var(--text-muted); font-size: 0.85rem; margin: 4px 0 0 26px;">
-                        開啟後，將載入專屬的無腳注腳本處理，避免內文圓圈數字被誤判為腳注。</p>
                 </div>
             </div>
 
             <!-- PDF 上傳區 -->
-            <div class="upload-area" id="dropZone">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            <div class="dropzone" id="dropZone" role="button" tabindex="0" aria-label="選擇 PDF 檔案">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
-                <h3 id="fileNameDisplay"
-                    style="margin: 0; font-size: 1.1rem; color: var(--text-muted); font-weight: 500;">點擊選擇，或將 PDF 拖曳至此
-                </h3>
-                <input type="file" id="fileInput" accept=".pdf">
+                <p class="dropzone-title" id="fileNameDisplay">點擊選擇，或將 PDF 檔案拖曳到這裡</p>
+                <p class="dropzone-sub">支援向量或掃描版 PDF</p>
+                <input type="file" id="fileInput" accept=".pdf" style="display: none;">
             </div>
 
-            <!-- 裁切邊界預覽圖與四向滑桿 (與公式提取站一致) -->
-            <div id="previewContainer" class="card-section" style="display: none; text-align: center;">
-                <h4 style="margin-top: 0; color: var(--text-main); font-size: 1rem;">裁切邊界預覽 (紅色=頂部, 藍色=底部, 綠色=左右)
-                </h4>
-
-                <div
-                    style="display: flex; align-items: center; justify-content: center; gap: 1rem; margin: 0.8rem 0; flex-wrap: wrap;">
-                    <div style="display: flex; align-items: center; gap: 0.5rem;">
-                        <button type="button" id="prevPageBtn" class="page-ctrl-btn"
-                            style="display: inline-flex; align-items: center; gap: 4px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="m15 18-6-6 6-6" />
-                            </svg>
+            <!-- 裁切邊界預覽圖與四向滑桿 -->
+            <div id="previewContainer" class="panel" style="display: none;">
+                <div class="panel-row" style="margin-bottom: 0.75rem;">
+                    <div>
+                        <h3 class="panel-title">版面邊界預覽與範圍</h3>
+                        <p class="hint" style="margin: 0;">設定裁切線過濾頁眉、頁尾與側邊注記；亦可指定轉檔頁碼區間。</p>
+                    </div>
+                    <div class="pager">
+                        <button type="button" id="prevPageBtn" class="btn btn-secondary btn-sm">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
                             上一頁
                         </button>
-                        <span style="font-size: 0.9rem; color: var(--text-muted);">預覽頁碼: <span id="previewPageDisplay"
-                                style="font-weight: bold; color: var(--primary);">1</span> / <span
-                                id="totalPagesDisplay">?</span></span>
-                        <button type="button" id="nextPageBtn" class="page-ctrl-btn"
-                            style="display: inline-flex; align-items: center; gap: 4px;">
+                        <span>第 <strong id="previewPageDisplay">1</strong> / <span id="totalPagesDisplay">1</span> 頁</span>
+                        <button type="button" id="nextPageBtn" class="btn btn-secondary btn-sm">
                             下一頁
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                                <path d="m9 18 6-6-6-6" />
-                            </svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
                         </button>
                     </div>
-                    <div
-                        style="border-left: 1px solid var(--border); padding-left: 1rem; display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem;">
-                        <label for="startPageInput" style="font-weight: 600;">轉檔範圍:</label>
-                        <input type="number" id="startPageInput" min="1" placeholder="首頁"
-                            style="width: 60px; padding: 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-hover); color: var(--text-main);">
-                        <span>~</span>
-                        <input type="number" id="endPageInput" min="1" placeholder="末頁"
-                            style="width: 60px; padding: 4px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-hover); color: var(--text-main);">
-                        <span style="color: var(--text-muted); font-size: 0.8rem;">(留空代表全部)</span>
-                    </div>
+                </div>
+
+                <div class="crop-legend">
+                    <span><span class="swatch swatch-top"></span>頂部頁眉 (<span id="headerVal" class="val-top">0.10</span>)</span>
+                    <span><span class="swatch swatch-bottom"></span>底部頁尾 (<span id="footerVal" class="val-bottom">0.10</span>)</span>
+                    <span><span class="swatch swatch-side"></span>左側邊距 (<span id="leftVal" class="val-side">0.00</span>)</span>
+                    <span><span class="swatch swatch-side"></span>右側邊距 (<span id="rightVal" class="val-side">0.00</span>)</span>
                 </div>
 
                 <div class="slider-grid">
                     <div class="slider-item">
-                        <div class="slider-label">
-                            <span>頂部裁切 (紅線):</span>
-                            <span id="headerVal" style="color: #dc2626;">0.10</span>
-                        </div>
-                        <input type="range" id="headerSlider" min="0" max="0.5" step="0.01" value="0.10"
-                            style="width: 100%;">
+                        <label for="headerSlider">頂部裁切 <span id="headerValLabel" class="val-top">0.10</span></label>
+                        <input type="range" id="headerSlider" min="0" max="0.5" step="0.01" value="0.10">
                     </div>
                     <div class="slider-item">
-                        <div class="slider-label">
-                            <span>底部裁切 (藍線):</span>
-                            <span id="footerVal" style="color: #2563eb;">0.10</span>
-                        </div>
-                        <input type="range" id="footerSlider" min="0" max="0.5" step="0.01" value="0.10"
-                            style="width: 100%;">
+                        <label for="footerSlider">底部裁切 <span id="footerValLabel" class="val-bottom">0.10</span></label>
+                        <input type="range" id="footerSlider" min="0" max="0.5" step="0.01" value="0.10">
                     </div>
                     <div class="slider-item">
-                        <div class="slider-label">
-                            <span>左側邊距 (綠線):</span>
-                            <span id="leftVal" style="color: #16a34a;">0.00</span>
-                        </div>
-                        <input type="range" id="leftSlider" min="0" max="0.3" step="0.01" value="0.00"
-                            style="width: 100%;">
+                        <label for="leftSlider">左側邊距 <span id="leftValLabel" class="val-side">0.00</span></label>
+                        <input type="range" id="leftSlider" min="0" max="0.3" step="0.01" value="0.00">
                     </div>
                     <div class="slider-item">
-                        <div class="slider-label">
-                            <span>右側邊距 (綠線):</span>
-                            <span id="rightVal" style="color: #16a34a;">0.00</span>
-                        </div>
-                        <input type="range" id="rightSlider" min="0" max="0.3" step="0.01" value="0.00"
-                            style="width: 100%;">
+                        <label for="rightSlider">右側邊距 <span id="rightValLabel" class="val-side">0.00</span></label>
+                        <input type="range" id="rightSlider" min="0" max="0.3" step="0.01" value="0.00">
                     </div>
                 </div>
 
-                <div
-                    style="margin-top: 1rem; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: #fff;">
-                    <img id="previewImage" src="" alt="預覽載入中..."
-                        style="max-width: 100%; height: auto; max-height: 420px; display: block; margin: 0 auto;">
+                <div class="panel-row" style="margin-top: 1rem; align-items: center;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <label class="field-label" style="margin: 0;">轉檔頁碼：</label>
+                        <input type="number" id="startPageInput" min="1" placeholder="首頁" class="input input-narrow">
+                        <span class="hint">至</span>
+                        <input type="number" id="endPageInput" min="1" placeholder="末頁" class="input input-narrow">
+                        <span class="hint">(留空代表全本)</span>
+                    </div>
+                </div>
+
+                <div class="preview-frame">
+                    <img id="previewImage" src="" alt="裁切預覽載入中">
                 </div>
             </div>
 
-            <div id="fileInfo" style="text-align: center; margin-bottom: 1rem; font-weight: bold;"></div>
-            <div style="display: flex; gap: 12px; margin-top: 0; flex-wrap: wrap;">
-                <button type="button" class="btn-analyze" id="analyzeFontsBtn" disabled
-                    title="先上傳 PDF，再點此分析字體並手動指定各字體的樣式角色（H1/H2/H3/圖說/楷體等）"
-                    style="display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 12px 20px; font-size: 0.95rem;">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                        stroke-linecap="round" stroke-linejoin="round">
-                        <polyline points="4 7 4 4 20 4 20 7" />
-                        <line x1="9" x2="15" y1="20" y2="20" />
-                        <line x1="12" x2="12" y1="4" y2="20" />
-                    </svg>
-                    分析字體
+            <!-- 操作按鈕列 -->
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button type="button" class="btn btn-secondary" id="analyzeFontsBtn" disabled title="先上傳 PDF，再分析字體並指定各字體的樣式角色">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg>
+                    審閱字體樣式
                 </button>
-                <button type="submit" class="btn" id="submitBtn" disabled style="flex: 1; min-width: 220px;">開始執行 OCR / 轉檔</button>
+                <button type="submit" class="btn btn-primary" id="submitBtn" disabled style="flex: 1; min-width: 220px;">開始全自動整稿</button>
             </div>
         </form>
 
-        <div id="status"></div>
-        <div id="outlineEditorBtnGroup" style="margin-top: 1rem; display: none;">
-            <a id="outlineEditorBtn" href="javascript:void(0)" class="btn"
-                style="background: #8b5cf6; text-decoration: none; display: flex; align-items: center; justify-content: center; gap: 6px; text-align: center;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
-                    stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 20h9" />
-                    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                </svg>
-                檢視與微調大綱 (Outline Editor)</a>
+        <!-- 進度與成果區 -->
+        <div id="progressArea" style="display: none; margin-top: 1.25rem;">
+            <div class="progress">
+                <span id="progressBar"></span>
+            </div>
+            <div class="progress-meta">
+                <span id="statusMessage">準備啟動轉檔任務…</span>
+                <span id="percentageText">0%</span>
+            </div>
         </div>
 
-        <!-- Outline Editor Modal/Section -->
-        <div id="outlineEditorSection"
-            style="display: none; margin-top: 2rem; background: var(--bg-card); padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border);">
-            <h3 style="margin-top: 0; color: var(--text-main);">大綱微調 (Outline Editor)</h3>
-            <p style="color: var(--text-muted); font-size: 0.9rem;">系統擷取出的標題如下，您可以手動修正階層，完成後點擊重新產生 DOCX。</p>
-            <div id="outlineList"
-                style="max-height: 400px; overflow-y: auto; background: var(--bg-hover); padding: 1rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 1rem; color: var(--text-main);">
-                載入中...
-            </div>
-            <button id="saveOutlineBtn" class="btn" style="background: #16a34a; width: 100%;">儲存並重新產生 Word 文件</button>
-            <div id="outlineSaveStatus" style="margin-top: 1rem; text-align: center; font-weight: bold;"></div>
-        </div>
+        <div id="status" role="status" aria-live="polite"></div>
 
         <!-- ══════════════════════════════════════════════════════
-         字體 → 樣式 審閱 Modal
-         ══════════════════════════════════════════════════════ -->
-        <div class="font-modal-overlay" id="fontModalOverlay" role="dialog" aria-modal="true"
-            aria-labelledby="fontModalTitle">
-            <div class="font-modal">
-                <h3 id="fontModalTitle">字體樣式對應審閱</h3>
-                <p style="color: var(--text-muted); font-size:0.82rem; margin: 0 0 1rem 0;">
-                    以下為本 PDF 中偵測到的字體，請為每種字體選擇對應的 Word 樣式角色。<br>
-                    設定後點擊「確認套用」儲存至 fonts.json，下次執行 OCR 將自動使用。
+             字體 → 樣式 審閱 Modal
+             ══════════════════════════════════════════════════════ -->
+        <div class="modal-overlay" id="fontModalOverlay" role="dialog" aria-modal="true" aria-labelledby="fontModalTitle">
+            <div class="modal">
+                <h2 id="fontModalTitle">字體樣式對應審閱</h2>
+                <p class="hint" style="margin: 0 0 0.75rem 0;">
+                    以下為本 PDF 中偵測到的字體。請為每種字體指定對應的 Word 樣式角色；確認後儲存至 fonts.json，下次整稿時將自動套用。
                 </p>
-                <div class="font-modal-body">
-                    <table class="font-table" id="fontTable">
+                <div class="modal-body">
+                    <table class="data-table" id="fontTable">
                         <thead>
                             <tr>
-                                <th>字體名稱</th>
-                                <th>字級</th>
-                                <th>範例文字</th>
-                                <th>對應樣式</th>
+                                <th style="width: 28%;">字體名稱</th>
+                                <th style="width: 14%;">字級</th>
+                                <th style="width: 32%;">範例文字</th>
+                                <th style="width: 26%;">對應樣式角色</th>
                             </tr>
                         </thead>
                         <tbody id="fontTableBody">
                             <tr>
-                                <td colspan="4" style="text-align:center; color: var(--text-muted); padding: 2rem;">
-                                    正在分析字體，請稍候...</td>
+                                <td colspan="4" class="cell-empty">正在分析字體，請稍候…</td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
-                <div style="font-size:0.78rem; color: var(--text-muted); margin-bottom:0.8rem;"
-                    id="fontMappingSaveStatus"></div>
-                <div class="font-modal-footer">
-                    <button class="btn-cancel-modal" id="fontModalCancelBtn">取消</button>
-                    <button class="btn-confirm" id="fontModalConfirmBtn">確認套用</button>
+                <div class="modal-foot">
+                    <span class="modal-status" id="fontMappingSaveStatus"></span>
+                    <button type="button" class="btn btn-secondary btn-sm" id="fontModalCancelBtn">取消</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="fontModalConfirmBtn">確認套用</button>
                 </div>
             </div>
         </div>
 
+        <!-- ══════════════════════════════════════════════════════
+             大綱微調 (Outline Editor) Modal
+             ══════════════════════════════════════════════════════ -->
+        <div class="modal-overlay" id="outlineModalOverlay" role="dialog" aria-modal="true" aria-labelledby="outlineModalTitle">
+            <div class="modal">
+                <h2 id="outlineModalTitle">大綱階層微調 (Outline Editor)</h2>
+                <p class="hint" style="margin: 0 0 0.75rem 0;">
+                    系統擷取出之章節標題如下。您可手動調整其層級 (H1/H2/H3) 或降為一般內文；完成後儲存即可重新產生 Word 文件。
+                </p>
+                <div class="modal-body" id="outlineList" style="max-height: 55vh;">
+                    載入中…
+                </div>
+                <div class="modal-foot">
+                    <span class="modal-status" id="outlineSaveStatus"></span>
+                    <button type="button" class="btn btn-secondary btn-sm" id="outlineModalCancelBtn">關閉</button>
+                    <button type="button" class="btn btn-primary btn-sm" id="saveOutlineBtn">儲存並重新產生 Word</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const uploadForm = document.getElementById('uploadForm');
         const submitBtn = document.getElementById('submitBtn');
+        const analyzeFontsBtn = document.getElementById('analyzeFontsBtn');
+        const progressArea = document.getElementById('progressArea');
+        const progressBar = document.getElementById('progressBar');
+        const statusMessage = document.getElementById('statusMessage');
+        const percentageText = document.getElementById('percentageText');
         const statusDiv = document.getElementById('status');
-        const outlineEditorBtnGroup = document.getElementById('outlineEditorBtnGroup');
-        const outlineEditorBtn = document.getElementById('outlineEditorBtn');
 
         const templateInput = document.getElementById('templateInput');
         const templateUploadStatus = document.getElementById('templateUploadStatus');
         const currentTemplateName = document.getElementById('currentTemplateName');
+        const styleMappingSection = document.getElementById('styleMappingSection');
 
-        // Preview & Sliders
         const previewContainer = document.getElementById('previewContainer');
         const previewImage = document.getElementById('previewImage');
         const headerSlider = document.getElementById('headerSlider');
@@ -826,10 +260,16 @@
         const footerVal = document.getElementById('footerVal');
         const leftVal = document.getElementById('leftVal');
         const rightVal = document.getElementById('rightVal');
+        const headerValLabel = document.getElementById('headerValLabel');
+        const footerValLabel = document.getElementById('footerValLabel');
+        const leftValLabel = document.getElementById('leftValLabel');
+        const rightValLabel = document.getElementById('rightValLabel');
         const prevPageBtn = document.getElementById('prevPageBtn');
         const nextPageBtn = document.getElementById('nextPageBtn');
         const previewPageDisplay = document.getElementById('previewPageDisplay');
         const totalPagesDisplay = document.getElementById('totalPagesDisplay');
+        const startPageInput = document.getElementById('startPageInput');
+        const endPageInput = document.getElementById('endPageInput');
 
         let currentFile = null;
         let currentFileId = null;
@@ -837,19 +277,16 @@
         let currentPreviewPage = 1;
         let totalPdfPages = 1;
         let debounceTimer = null;
+        let activeStem = null;
 
-        // Fetch current template on load
         async function loadCurrentTemplate() {
             try {
                 const res = await fetch('/api/get_current_template');
                 const data = await res.json();
-                currentTemplateName.textContent = data.name;
-                if (data.has_custom) {
-                    currentTemplateName.style.color = '#ea580c';
-                }
+                currentTemplateName.textContent = data.name || '預設範本';
                 fetchTemplateStyles();
             } catch (err) {
-                currentTemplateName.textContent = '無法取得狀態';
+                currentTemplateName.textContent = '無法取得範本資訊';
             }
         }
 
@@ -857,7 +294,7 @@
             try {
                 const res = await fetch('/api/get_template_styles');
                 const data = await res.json();
-                if (data.status === 'success' && data.styles.length > 0) {
+                if (data.status === 'success' && data.styles && data.styles.length > 0) {
                     const h1 = document.getElementById('h1Style');
                     const h2 = document.getElementById('h2Style');
                     const h3 = document.getElementById('h3Style');
@@ -871,15 +308,14 @@
                     kaiti.innerHTML = '<option value="">(不套用自訂樣式)</option>';
 
                     data.styles.forEach(s => {
-                        const opt = `<option value="${s}">${s}</option>`;
+                        const opt = `<option value="${toolbox.escape(s)}">${toolbox.escape(s)}</option>`;
                         h1.innerHTML += opt;
                         h2.innerHTML += opt;
                         h3.innerHTML += opt;
                         imgCaption.innerHTML += opt;
                         kaiti.innerHTML += opt;
                     });
-
-                    document.getElementById('styleMappingSection').style.display = 'block';
+                    styleMappingSection.style.display = 'block';
                 }
             } catch (err) {
                 console.error("無法取得樣式", err);
@@ -896,32 +332,27 @@
             }
             const formData = new FormData();
             formData.append('file', file);
-
-            templateUploadStatus.textContent = '上傳中...';
-            templateUploadStatus.style.color = '#64748b';
+            templateUploadStatus.textContent = '上傳中…';
 
             try {
-                const res = await fetch('/api/upload_template', {
-                    method: 'POST',
-                    body: formData
-                });
+                const res = await fetch('/api/upload_template', { method: 'POST', body: formData });
                 const data = await res.json();
                 if (res.ok) {
-                    templateUploadStatus.textContent = data.message;
-                    templateUploadStatus.style.color = '#16a34a';
+                    templateUploadStatus.textContent = data.message || '範本上傳成功';
+                    toolbox.notify('Word 範本已更新', 'success');
                     loadCurrentTemplate();
                 } else {
-                    throw new Error(data.detail);
+                    throw new Error(data.detail || '上傳失敗');
                 }
             } catch (err) {
-                templateUploadStatus.textContent = '上傳失敗: ' + err.message;
-                templateUploadStatus.style.color = '#dc2626';
+                templateUploadStatus.textContent = '上傳失敗';
+                toolbox.notify('範本上傳失敗: ' + err.message, 'error');
             }
             templateInput.value = '';
         };
 
-        // File Selection & Drag-and-Drop
         dropZone.onclick = () => fileInput.click();
+        dropZone.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } };
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
         dropZone.ondragleave = () => dropZone.classList.remove('dragover');
         dropZone.ondrop = (e) => {
@@ -935,7 +366,7 @@
 
         async function handleFile(file) {
             if (!file.name.toLowerCase().endsWith('.pdf')) {
-                alert('請選擇 PDF 格式之檔案！');
+                toolbox.notify('請選擇 PDF 格式之檔案', 'warning');
                 return;
             }
             if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
@@ -946,14 +377,11 @@
             currentFileOrigName = file.name.replace(/\.[^/.]+$/, "");
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
 
-            fileNameDisplay.innerHTML = `已選擇: <b>${file.name}</b> (${sizeMB} MB)`;
+            fileNameDisplay.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong><small>上傳中 (${sizeMB} MB)…</small></span>`;
             submitBtn.disabled = true;
             analyzeFontsBtn.disabled = true;
-            submitBtn.textContent = '正在上傳並產生預覽...';
-            statusDiv.textContent = '';
-            outlineEditorBtnGroup.style.display = 'none';
+            statusDiv.innerHTML = '';
 
-            // 呼叫 upload_file 取得預覽與頁數
             const formData = new FormData();
             formData.append('file', file);
 
@@ -968,17 +396,18 @@
                 totalPagesDisplay.textContent = totalPdfPages;
                 previewPageDisplay.textContent = currentPreviewPage;
 
+                fileNameDisplay.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong><small>${sizeMB} MB</small></span>`;
                 previewContainer.style.display = 'block';
                 updatePreview();
 
                 submitBtn.disabled = false;
                 analyzeFontsBtn.disabled = false;
-                submitBtn.textContent = '開始執行 OCR / 轉檔';
+                submitBtn.textContent = '開始全自動整稿';
             } catch (err) {
-                alert('無法載入 PDF 預覽: ' + err.message);
-                submitBtn.disabled = false;
-                analyzeFontsBtn.disabled = false;
-                submitBtn.textContent = '開始執行 OCR / 轉檔';
+                fileNameDisplay.textContent = '點擊選擇，或將 PDF 檔案拖曳到這裡';
+                statusDiv.innerHTML = toolbox.errorPanel('上傳預覽失敗', err.message, 'fileInput.click()');
+                submitBtn.disabled = true;
+                analyzeFontsBtn.disabled = true;
             }
         }
 
@@ -990,9 +419,13 @@
             const r = rightSlider.value;
 
             headerVal.textContent = h;
+            headerValLabel.textContent = h;
             footerVal.textContent = f;
+            footerValLabel.textContent = f;
             leftVal.textContent = l;
+            leftValLabel.textContent = l;
             rightVal.textContent = r;
+            rightValLabel.textContent = r;
 
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
@@ -1021,14 +454,20 @@
             }
         };
 
-        // Form Submit
-        document.getElementById('uploadForm').onsubmit = async (e) => {
+        uploadForm.onsubmit = async (e) => {
             e.preventDefault();
-            if (!currentFile && !currentFileId) return;
+            if (!currentFile && !currentFileId) {
+                toolbox.notify('請先上傳 PDF 檔案', 'warning');
+                return;
+            }
 
             submitBtn.disabled = true;
             analyzeFontsBtn.disabled = true;
-            outlineEditorBtnGroup.style.display = 'none';
+            statusDiv.innerHTML = '';
+            progressArea.style.display = 'block';
+            progressBar.style.width = '0%';
+            percentageText.textContent = '0%';
+            statusMessage.textContent = '正在啟動背景整稿任務…';
 
             const formData = new FormData();
             if (currentFileId) {
@@ -1058,253 +497,169 @@
             formData.append('footer_ratio', footerSlider.value);
             formData.append('left_ratio', leftSlider.value);
             formData.append('right_ratio', rightSlider.value);
-            formData.append('start_page', document.getElementById('startPageInput')?.value || 0);
-            formData.append('end_page', document.getElementById('endPageInput')?.value || 0);
+            formData.append('start_page', startPageInput?.value || 0);
+            formData.append('end_page', endPageInput?.value || 0);
             formData.append('no_footnote', document.getElementById('noFootnoteToggle')?.checked || false);
 
-            statusDiv.innerHTML = `
-                <div style="margin-top:20px; padding:20px; border:1px solid var(--border); border-radius:8px; background:var(--bg-card); text-align: left;">
-                    <div style="font-weight:bold; margin-bottom:10px; color:var(--text-main);">伺服器處理進度</div>
-                    <div style="width: 100%; background: var(--bg-hover); border-radius: 4px; overflow: hidden; height: 12px; margin-bottom:10px;">
-                        <div id="progressBar" style="height: 12px; background: var(--primary); width: 0%; transition: width 0.3s;"></div>
-                    </div>
-                    <div id="progressText" style="color: var(--text-muted); font-size: 0.9rem;">正在啟動背景轉檔任務...</div>
-                </div>
-            `;
-
             try {
-                const response = await fetch('/api/upload_and_run_ocr', {
-                    method: 'POST',
-                    body: formData
-                });
-
+                const response = await fetch('/api/upload_and_run_ocr', { method: 'POST', body: formData });
                 if (!response.ok) {
                     const errorData = await response.json().catch(() => ({}));
-                    const errMsg = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail || 'OCR 啟動失敗');
+                    const errMsg = typeof errorData.detail === 'string' ? errorData.detail : JSON.stringify(errorData.detail || '整稿任務啟動失敗');
                     throw new Error(errMsg);
                 }
 
                 const result = await response.json();
                 const stem = result.filename_stem;
+                activeStem = stem;
 
                 let isFinished = false;
                 const pollInterval = setInterval(async () => {
                     if (isFinished) return;
                     try {
                         const res = await fetch(`/api/ocr_progress/${stem}`);
-                        const prog = await res.json();
+                        if (!res.ok) return;
+                        const progRaw = await res.json();
+                        const prog = window.OcrContracts ? window.OcrContracts.assertOcrProgressContract(progRaw) : progRaw;
 
-                        const pBar = document.getElementById('progressBar');
-                        const pText = document.getElementById('progressText');
-
-                        if (pBar && prog.progress !== undefined) {
-                            pBar.style.width = prog.progress + '%';
+                        if (prog.progress !== undefined) {
+                            const pct = Math.round(prog.progress);
+                            progressBar.style.width = pct + '%';
+                            percentageText.textContent = pct + '%';
                         }
-                        if (pText && prog.message) {
-                            pText.innerText = prog.message;
+                        if (prog.message) {
+                            statusMessage.textContent = prog.message;
                         }
 
                         if (prog.status === 'failed') {
                             isFinished = true;
                             clearInterval(pollInterval);
                             onFailure(prog.message || '後端轉檔發生錯誤');
-                            return;
                         } else if (prog.status === 'completed') {
                             isFinished = true;
                             clearInterval(pollInterval);
                             onComplete(stem);
-                            return;
                         }
                     } catch (e) {
                         console.error('Polling error:', e);
                     }
-                }, 1000);
-
-                function onFailure(errMsg) {
-                    statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background: rgba(220, 38, 38, 0.08); border:1px solid rgba(220, 38, 38, 0.25); border-radius:8px; color:#ef4444; text-align: left;">
-                        <b>轉檔失敗：</b>${errMsg} <br>
-                        <button type="button" onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                            重新嘗試執行
-                        </button>
-                    </div>`;
-                    submitBtn.disabled = false;
-                    analyzeFontsBtn.disabled = false;
-                }
-
-                function onComplete(filename_stem) {
-                    statusDiv.innerHTML += `<div style="margin-top:1rem; color:#16a34a; font-weight:bold;">處理完成！請點選以下按鈕另存新檔：</div>`;
-
-                    const btnContainer = document.createElement('div');
-                    btnContainer.id = 'saveBtnContainer';
-                    btnContainer.style.display = 'flex';
-                    btnContainer.style.gap = '10px';
-                    btnContainer.style.marginTop = '15px';
-                    btnContainer.style.flexWrap = 'wrap';
-
-                    const dlIcon = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>`;
-
-                    const btnDocx = document.createElement('button');
-                    btnDocx.className = 'btn';
-                    btnDocx.style.background = '#2563eb';
-                    btnDocx.style.flex = '1';
-                    btnDocx.style.display = 'inline-flex';
-                    btnDocx.style.alignItems = 'center';
-                    btnDocx.style.justifyContent = 'center';
-                    btnDocx.style.gap = '8px';
-                    btnDocx.innerHTML = `${dlIcon} 本機另存 DOCX (原生視窗)`;
-                    btnDocx.onclick = (e) => nativeSave(filename_stem, 'docx', e.currentTarget);
-
-                    const btnMd = document.createElement('button');
-                    btnMd.className = 'btn';
-                    btnMd.style.background = '#16a34a';
-                    btnMd.style.flex = '1';
-                    btnMd.style.display = 'inline-flex';
-                    btnMd.style.alignItems = 'center';
-                    btnMd.style.justifyContent = 'center';
-                    btnMd.style.gap = '8px';
-                    btnMd.innerHTML = `${dlIcon} 本機另存 Markdown (原生視窗)`;
-                    btnMd.onclick = (e) => nativeSave(filename_stem, 'md', e.currentTarget);
-
-                    btnContainer.appendChild(btnDocx);
-                    btnContainer.appendChild(btnMd);
-                    statusDiv.appendChild(btnContainer);
-
-                    outlineEditorBtnGroup.style.display = 'block';
-                    outlineEditorBtn.dataset.stem = filename_stem;
-                    submitBtn.disabled = false;
-                    analyzeFontsBtn.disabled = false;
-                }
+                }, 1200);
 
             } catch (err) {
-                statusDiv.innerHTML = `<div style="margin-top:1rem; padding:1rem; background: rgba(220, 38, 38, 0.08); border:1px solid rgba(220, 38, 38, 0.25); border-radius:8px; color:#ef4444;">
-                    <b>執行失敗：</b>${err.message} <br>
-                    <button type="button" onclick="submitBtn.click()" style="margin-top:10px; padding: 8px 16px; cursor:pointer; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 6px; display: inline-flex; align-items: center; gap: 6px;">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
-                        重新嘗試上傳
-                    </button>
-                </div>`;
-                submitBtn.disabled = false;
-                analyzeFontsBtn.disabled = false;
+                onFailure(err.message);
             }
         };
 
-        async function nativeSave(stem, ext, btnElement) {
-            const origHtml = btnElement ? btnElement.innerHTML : '';
-            if (btnElement) {
-                btnElement.disabled = true;
-                btnElement.innerText = '請在開啟的視窗中選擇儲存位置...';
-            }
-            try {
-                const source_path = `data/03_output/${stem}.${ext}`;
-                const res = await fetch('/api/native_save_file', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ source_path, suggested_filename: `${stem}.${ext}` })
-                });
-
-                if (!res.ok) {
-                    if (res.status === 404) {
-                        alert(`另存失敗：指定的 ${ext.toUpperCase()} 輸出檔案尚未生成或不存在。`);
-                        if (btnElement) {
-                            btnElement.innerHTML = origHtml;
-                            btnElement.disabled = false;
-                        }
-                        return;
-                    }
-                    throw new Error(`伺服器回應異常 (${res.status})`);
-                }
-                const result = await res.json();
-
-                if (result.status === 'success') {
-                    if (btnElement) {
-                        btnElement.innerText = `已儲存 ${ext.toUpperCase()}`;
-                        btnElement.disabled = false;
-                    }
-
-                    let saveInfoId = `savedInfo_${ext}`;
-                    let savedInfo = document.getElementById(saveInfoId);
-                    if (!savedInfo) {
-                        savedInfo = document.createElement('div');
-                        savedInfo.id = saveInfoId;
-                        savedInfo.style.marginTop = '0.8rem';
-                        savedInfo.style.padding = '0.8rem';
-                        savedInfo.style.background = 'rgba(22, 163, 74, 0.08)';
-                        savedInfo.style.border = '1px solid rgba(22, 163, 74, 0.25)';
-                        savedInfo.style.borderRadius = '8px';
-                        savedInfo.style.color = '#166534';
-                        savedInfo.style.fontSize = '0.9rem';
-                        const container = document.getElementById('saveBtnContainer') || statusDiv;
-                        container.parentNode.insertBefore(savedInfo, container.nextSibling);
-                    }
-                    const folderIcon = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`;
-                    savedInfo.innerHTML = `<div><b>${ext.toUpperCase()} 文件已成功儲存至：</b></div>
-                    <div style="margin:4px 0; word-break:break-all; font-family:monospace; background:var(--bg-card); padding:6px; border-radius:4px; border:1px solid var(--border); color:var(--text-main);">${result.saved_path}</div>
-                    <button type="button" class="btn" style="margin-top:6px; padding:6px 12px; background:#15803d; color:white; font-size:0.85rem; width:auto; display:inline-flex; align-items:center;" onclick="openSavedPath('${result.saved_path.replace(/\\/g, '\\\\')}')">${folderIcon} 在 Windows 檔案總管中開啟</button>`;
-                } else if (result.status === 'cancelled') {
-                    if (btnElement) {
-                        btnElement.innerHTML = origHtml;
-                        btnElement.disabled = false;
-                    }
-                } else {
-                    console.warn('原生另存降級為瀏覽器直接下載:', result.message);
-                    window.location.href = `/api/download_ocr_result/${stem}/${ext}`;
-                    if (btnElement) {
-                        btnElement.innerHTML = origHtml;
-                        btnElement.disabled = false;
-                    }
-                }
-            } catch (e) {
-                console.warn('原生另存發生錯誤，降級為瀏覽器下載:', e);
-                window.location.href = `/api/download_ocr_result/${stem}/${ext}`;
-                if (btnElement) {
-                    btnElement.innerHTML = origHtml;
-                    btnElement.disabled = false;
-                }
-            }
+        function onFailure(errMsg) {
+            submitBtn.disabled = false;
+            analyzeFontsBtn.disabled = false;
+            progressArea.style.display = 'none';
+            statusDiv.innerHTML = toolbox.errorPanel('整稿失敗', errMsg, 'uploadForm.dispatchEvent(new Event("submit"))');
         }
 
-        async function openSavedPath(filePath) {
-            try {
-                await fetch('/api/open_file_folder', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ file_path: filePath })
-                });
-            } catch (err) {
-                alert('無法開啟檔案總管: ' + err.message);
-            }
+        function onComplete(stem) {
+            progressBar.style.width = '100%';
+            percentageText.textContent = '100%';
+            statusMessage.textContent = '整稿完成';
+            submitBtn.disabled = false;
+            analyzeFontsBtn.disabled = false;
+            submitBtn.textContent = '重新執行整稿';
+
+            const docxName = `${stem}.docx`;
+            const mdName = `${stem}.md`;
+            const docxSource = `data/03_output/${stem}.docx`;
+            const mdSource = `data/03_output/${stem}.md`;
+            const docxUrl = `/api/download_ocr_result/${stem}/docx`;
+            const mdUrl = `/api/download_ocr_result/${stem}/md`;
+
+            statusDiv.innerHTML = `
+                <div class="result" id="resultCard">
+                    <div class="result-head is-ok">
+                        <span>全自動整稿完成</span>
+                        <button type="button" class="btn btn-secondary btn-sm" id="openOutlineModalBtn">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+                            微調大綱階層 (Outline Editor)
+                        </button>
+                    </div>
+                    <ul class="result-files">
+                        <li>
+                            <div>
+                                <span class="file-name">${toolbox.escape(docxName)}</span>
+                                <span class="file-desc">已套用 Word 樣式範本之排版文件</span>
+                            </div>
+                            <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON}另存 Word</button>
+                        </li>
+                        <li>
+                            <div>
+                                <span class="file-name">${toolbox.escape(mdName)}</span>
+                                <span class="file-desc">標準結構化 Markdown 文件</span>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" id="saveMdBtn">${toolbox.DOWNLOAD_ICON}另存 Markdown</button>
+                        </li>
+                    </ul>
+                    <div class="result-note" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <span>檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀，請及時另存。</span>
+                        <button type="button" class="btn btn-secondary btn-sm" id="openFolderBtn">在檔案總管中顯示成果</button>
+                    </div>
+                </div>`;
+
+            document.getElementById('saveDocxBtn').onclick = (ev) => toolbox.nativeSave({
+                sourcePath: docxSource,
+                filename: docxName,
+                button: ev.currentTarget,
+                fallbackUrl: docxUrl,
+                mountEl: document.getElementById('resultCard'),
+                label: 'Word (.docx)'
+            });
+
+            document.getElementById('saveMdBtn').onclick = (ev) => toolbox.nativeSave({
+                sourcePath: mdSource,
+                filename: mdName,
+                button: ev.currentTarget,
+                fallbackUrl: mdUrl,
+                mountEl: document.getElementById('resultCard'),
+                label: 'Markdown (.md)'
+            });
+
+            document.getElementById('openOutlineModalBtn').onclick = () => openOutlineEditor(stem);
+            document.getElementById('openFolderBtn').onclick = () => toolbox.openFolder(docxSource);
         }
 
-        // Outline Editor Logic
+        // ════════════════════════════════════════════════════════
+        // 大綱微調 Modal 邏輯
+        // ════════════════════════════════════════════════════════
+        const outlineModalOverlay = document.getElementById('outlineModalOverlay');
+        const outlineList = document.getElementById('outlineList');
+        const outlineSaveStatus = document.getElementById('outlineSaveStatus');
+        const saveOutlineBtn = document.getElementById('saveOutlineBtn');
+        const outlineModalCancelBtn = document.getElementById('outlineModalCancelBtn');
         let currentMdLines = [];
 
-        outlineEditorBtn.onclick = async function () {
-            const stem = this.dataset.stem;
-            if (!stem) return;
-
-            document.getElementById('outlineEditorSection').style.display = 'block';
-            document.getElementById('outlineList').innerHTML = '讀取中...';
+        async function openOutlineEditor(stem) {
+            outlineModalOverlay.classList.add('open');
+            outlineList.innerHTML = '<p class="hint">讀取章節大綱中…</p>';
+            outlineSaveStatus.textContent = '';
 
             try {
                 const res = await fetch(`/api/get_markdown/${stem}`);
                 const data = await res.json();
-                if (!res.ok) throw new Error(data.detail);
+                if (!res.ok) throw new Error(data.detail || '無法讀取 Markdown');
 
-                currentMdLines = data.content.split('\n');
+                currentMdLines = (data.content || '').split('\n');
                 renderOutlineList();
             } catch (err) {
-                document.getElementById('outlineList').innerHTML = `<span style="color:#ef4444">無法讀取 Markdown 檔案: ${err.message}</span>`;
+                outlineList.innerHTML = `<span style="color:var(--danger)">無法讀取 Markdown 檔案: ${toolbox.escape(err.message)}</span>`;
             }
-        };
+        }
 
         function renderOutlineList() {
-            const listDiv = document.getElementById('outlineList');
-            listDiv.innerHTML = '';
+            outlineList.innerHTML = '';
+            let count = 0;
 
             currentMdLines.forEach((line, index) => {
                 const match = line.match(/^(#{1,3})\s+(.*)$/);
                 if (match) {
+                    count++;
                     const level = match[1].length;
                     const text = match[2];
 
@@ -1313,18 +668,21 @@
                     row.style.gap = '10px';
                     row.style.marginBottom = '8px';
                     row.style.alignItems = 'center';
-                    row.style.paddingLeft = `${(level - 1) * 20}px`;
+                    row.style.paddingLeft = `${(level - 1) * 18}px`;
 
                     const select = document.createElement('select');
+                    select.className = 'input';
+                    select.style.width = '120px';
+                    select.style.flexShrink = '0';
                     select.innerHTML = `
                         <option value="0">一般內文</option>
-                        <option value="1" ${level === 1 ? 'selected' : ''}>H1</option>
-                        <option value="2" ${level === 2 ? 'selected' : ''}>H2</option>
-                        <option value="3" ${level === 3 ? 'selected' : ''}>H3</option>
+                        <option value="1" ${level === 1 ? 'selected' : ''}>H1 一級標題</option>
+                        <option value="2" ${level === 2 ? 'selected' : ''}>H2 二級標題</option>
+                        <option value="3" ${level === 3 ? 'selected' : ''}>H3 三級標題</option>
                     `;
                     select.onchange = (e) => {
-                        const newLevel = parseInt(e.target.value);
-                        let cleanText = line.replace(/^(#{1,3})\s+/, '');
+                        const newLevel = parseInt(e.target.value, 10);
+                        const cleanText = line.replace(/^(#{1,3})\s+/, '');
                         if (newLevel > 0) {
                             currentMdLines[index] = '#'.repeat(newLevel) + ' ' + cleanText;
                         } else {
@@ -1335,44 +693,49 @@
                     const span = document.createElement('span');
                     span.textContent = text;
                     span.style.flex = '1';
+                    span.style.fontSize = '0.92rem';
 
                     row.appendChild(select);
                     row.appendChild(span);
-                    listDiv.appendChild(row);
+                    outlineList.appendChild(row);
                 }
             });
 
-            if (listDiv.children.length === 0) {
-                listDiv.innerHTML = '<span style="color:var(--text-muted);">未偵測到任何標題，這可能是因為全文書籍皆為內文，或者偵測未命中。</span>';
+            if (count === 0) {
+                outlineList.innerHTML = '<span class="hint">未偵測到任何 H1~H3 標題，全篇可能皆判定為一般段落。</span>';
             }
         }
 
-        document.getElementById('saveOutlineBtn').onclick = async function () {
-            const stem = outlineEditorBtn.dataset.stem;
-            const statusDiv = document.getElementById('outlineSaveStatus');
-
-            statusDiv.textContent = '儲存並重新產生 Word 中...';
-            statusDiv.style.color = '#ea580c';
-            this.disabled = true;
+        saveOutlineBtn.onclick = async function () {
+            if (!activeStem) return;
+            outlineSaveStatus.textContent = '儲存並重新產生 Word 中…';
+            saveOutlineBtn.disabled = true;
 
             try {
-                const res = await fetch(`/api/update_and_rebuild_docx/${stem}`, {
+                const res = await fetch(`/api/update_and_rebuild_docx/${activeStem}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ content: currentMdLines.join('\n') })
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    statusDiv.textContent = data.message;
-                    statusDiv.style.color = '#16a34a';
+                    outlineSaveStatus.textContent = data.message || '重新產生成功！';
+                    toolbox.notify('Word 文件已根據新大綱重新產生', 'success');
+                    setTimeout(() => outlineModalOverlay.classList.remove('open'), 1200);
                 } else {
-                    throw new Error(data.detail);
+                    throw new Error(data.detail || '重新產生失敗');
                 }
             } catch (err) {
-                statusDiv.textContent = '失敗: ' + err.message;
-                statusDiv.style.color = '#dc2626';
+                outlineSaveStatus.textContent = '失敗: ' + err.message;
+                toolbox.notify('重新產生 Word 失敗: ' + err.message, 'error');
+            } finally {
+                saveOutlineBtn.disabled = false;
             }
-            this.disabled = false;
+        };
+
+        outlineModalCancelBtn.onclick = () => outlineModalOverlay.classList.remove('open');
+        outlineModalOverlay.onclick = (e) => {
+            if (e.target === outlineModalOverlay) outlineModalOverlay.classList.remove('open');
         };
 
         // ════════════════════════════════════════════════════════
@@ -1383,7 +746,6 @@
         const fontModalConfirmBtn = document.getElementById('fontModalConfirmBtn');
         const fontModalCancelBtn = document.getElementById('fontModalCancelBtn');
         const fontMappingSaveStatus = document.getElementById('fontMappingSaveStatus');
-        const analyzeFontsBtn = document.getElementById('analyzeFontsBtn');
 
         let _docxStyleList = [];
         let _defaultRoles = ['H1', 'H2', 'H3', '圖說', '楷體', '正文', '忽略'];
@@ -1391,10 +753,10 @@
 
         analyzeFontsBtn.addEventListener('click', async () => {
             if (!currentFileId) {
-                alert('請先上傳 PDF 檔案');
+                toolbox.notify('請先上傳 PDF 檔案', 'warning');
                 return;
             }
-            fontTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:2rem;">正在掃描字體，請稍候...</td></tr>';
+            fontTableBody.innerHTML = '<tr><td colspan="4" class="cell-empty">正在掃描字體，請稍候…</td></tr>';
             fontModalOverlay.classList.add('open');
             fontMappingSaveStatus.textContent = '';
 
@@ -1408,30 +770,26 @@
                     })
                 });
                 if (!resp.ok) {
-                    const err = await resp.json();
+                    const err = await resp.json().catch(() => ({}));
                     throw new Error(err.detail || resp.statusText);
                 }
-                const data = await resp.json();
+                const raw = await resp.json();
+                const data = window.OcrContracts ? window.OcrContracts.assertFontScanContract(raw) : raw;
                 _fontData = data.fonts || [];
                 _docxStyleList = data.docx_styles || [];
                 _defaultRoles = data.default_roles || _defaultRoles;
                 renderFontTable(_fontData, _docxStyleList, _defaultRoles);
             } catch (e) {
-                fontTableBody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#ef4444;padding:2rem;">錯誤：${e.message}</td></tr>`;
+                fontTableBody.innerHTML = `<tr><td colspan="4" class="cell-empty" style="color:var(--danger)">字體掃描失敗：${toolbox.escape(e.message)}</td></tr>`;
             }
         });
 
         function buildStyleOptions(styleList, roles, currentRole, currentDocxStyle) {
             const allOptions = [];
-            // First option: 自動 / 依規則辨識 (預設)
             const isAuto = (!currentRole && !currentDocxStyle) || currentRole === 'auto' || currentRole === '自動';
-            const defaultSel = isAuto ? ' selected' : '';
-            allOptions.push(`<option value="auto"${defaultSel}>自動（依版面與章節規則辨識）</option>`);
+            allOptions.push(`<option value="auto"${isAuto ? ' selected' : ''}>自動（依版面與章節規則辨識）</option>`);
 
-            // Filter out 'auto' and '自動' from roles
             const filteredRoles = (roles || []).filter(r => r !== 'auto' && r !== '自動');
-
-            // Role group (fixed roles like H1/H2/H3/正文/圖說/楷體/忽略)
             if (filteredRoles.length) {
                 allOptions.push('<optgroup label="版面角色">');
                 for (const r of filteredRoles) {
@@ -1439,17 +797,16 @@
                     let label = r;
                     if (r === '忽略') label = '忽略（強制排除，不作為標題/楷體）';
                     else if (r === '正文') label = '正文（強制為內文段落）';
-                    allOptions.push(`<option value="role::${r}"${sel}>${label}</option>`);
+                    allOptions.push(`<option value="role::${toolbox.escape(r)}"${sel}>${toolbox.escape(label)}</option>`);
                 }
                 allOptions.push('</optgroup>');
             }
 
-            // Docx styles group
             if (styleList.length) {
-                allOptions.push('<optgroup label="Word 樣式">');
+                allOptions.push('<optgroup label="Word 範本樣式">');
                 for (const s of styleList) {
                     const sel = (!isAuto && currentDocxStyle === s) ? ' selected' : '';
-                    allOptions.push(`<option value="style::${s}"${sel}>${s}</option>`);
+                    allOptions.push(`<option value="style::${toolbox.escape(s)}"${sel}>${toolbox.escape(s)}</option>`);
                 }
                 allOptions.push('</optgroup>');
             }
@@ -1459,18 +816,18 @@
 
         function renderFontTable(fonts, styles, roles) {
             if (!fonts.length) {
-                fontTableBody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:2rem;">未偵測到任何字體資訊</td></tr>';
+                fontTableBody.innerHTML = '<tr><td colspan="4" class="cell-empty">未偵測到任何內嵌字體資訊</td></tr>';
                 return;
             }
             const rows = fonts.map((f, idx) => {
                 const samples = (f.sample_texts || []).slice(0, 2).join(' / ');
                 const opts = buildStyleOptions(styles, roles, f.current_role, f.current_docx_style);
                 return `<tr>
-                    <td style="font-family:monospace; font-size:0.8rem; max-width:160px; word-break:break-all;">${escHtml(f.name)}</td>
-                    <td><span class="font-size-badge">${f.size_pt}pt</span></td>
-                    <td class="sample-text">${escHtml(samples)}</td>
+                    <td class="cell-mono">${toolbox.escape(f.name)}</td>
+                    <td><span class="badge">${toolbox.escape(f.size_pt)} pt</span></td>
+                    <td class="cell-sample">${toolbox.escape(samples)}</td>
                     <td>
-                        <select class="font-role-select" data-font-name="${escHtml(f.name)}" data-idx="${idx}">
+                        <select class="input font-role-select" data-font-name="${toolbox.escape(f.name)}" data-idx="${idx}">
                             ${opts}
                         </select>
                     </td>
@@ -1479,26 +836,19 @@
             fontTableBody.innerHTML = rows.join('');
         }
 
-        function escHtml(str) {
-            return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-        }
-
-        fontModalCancelBtn.addEventListener('click', () => {
-            fontModalOverlay.classList.remove('open');
-        });
-
-        fontModalOverlay.addEventListener('click', (e) => {
+        fontModalCancelBtn.onclick = () => fontModalOverlay.classList.remove('open');
+        fontModalOverlay.onclick = (e) => {
             if (e.target === fontModalOverlay) fontModalOverlay.classList.remove('open');
-        });
+        };
 
-        fontModalConfirmBtn.addEventListener('click', async () => {
+        fontModalConfirmBtn.onclick = async () => {
             const selects = fontTableBody.querySelectorAll('.font-role-select');
             const mapping = {};
             const removeKeys = [];
 
             selects.forEach(sel => {
                 const fontName = sel.dataset.fontName;
-                const val = sel.value;  // e.g. "role::H2", "auto", or "style::標題 2"
+                const val = sel.value;
                 if (!val || val === 'auto') {
                     removeKeys.push(fontName);
                     return;
@@ -1506,7 +856,6 @@
                 if (val.startsWith('role::')) {
                     mapping[fontName] = { role: val.slice(6), docx_style: null };
                 } else if (val.startsWith('style::')) {
-                    // Try to map Word style name to a role heuristically
                     const docxStyle = val.slice(7);
                     let role = null;
                     if (/標題\s*1|heading\s*1/i.test(docxStyle)) role = 'H1';
@@ -1520,13 +869,11 @@
 
             if (!selects.length) {
                 fontMappingSaveStatus.textContent = '未偵測到任何字體，無法儲存。';
-                fontMappingSaveStatus.style.color = '#f59e0b';
                 return;
             }
 
             fontModalConfirmBtn.disabled = true;
-            fontMappingSaveStatus.textContent = '正在儲存...';
-            fontMappingSaveStatus.style.color = 'var(--text-muted, #475569)';
+            fontMappingSaveStatus.textContent = '正在儲存…';
 
             try {
                 const resp = await fetch('/api/save_font_mapping', {
@@ -1536,22 +883,22 @@
                 });
                 const result = await resp.json();
                 if (resp.ok) {
-                    fontMappingSaveStatus.textContent = `${result.message}，OCR 時將自動套用。`;
-                    fontMappingSaveStatus.style.color = '#16a34a';
-                    setTimeout(() => fontModalOverlay.classList.remove('open'), 1500);
+                    fontMappingSaveStatus.textContent = `${result.message || '儲存成功'}，整稿時將自動套用。`;
+                    toolbox.notify('字體樣式對應已儲存', 'success');
+                    setTimeout(() => fontModalOverlay.classList.remove('open'), 1200);
                 } else {
                     throw new Error(result.detail || '儲存失敗');
                 }
             } catch (e) {
                 fontMappingSaveStatus.textContent = `錯誤：${e.message}`;
-                fontMappingSaveStatus.style.color = '#ef4444';
+                toolbox.notify('字體對應儲存失敗: ' + e.message, 'error');
             } finally {
                 fontModalConfirmBtn.disabled = false;
             }
-        });
-
+        };
     </script>
-    <script src="/static/sidebar.js?v=20261016_v5"></script>
+    <script type="module" src="/static/js/ocr_contracts.js"></script>
+    <script src="/static/sidebar.js"></script>
+    <script src="/static/js/output.js"></script>
 </body>
-
 </html>

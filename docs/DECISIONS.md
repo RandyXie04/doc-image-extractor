@@ -74,3 +74,36 @@ Accepted
 - 即使在無 Node.js 的純 Python 部署環境，仍可 100% 自動生成與校驗 TypeScript 契約定義。
 
 
+
+---
+
+# ADR-009 — P3 全棧強型別契約擴展（P2-A~P2-D）、每本書圖片命名空間隔離、子行程 JSON 檔案傳遞與 FastAPI `APIRouter` 模組化
+
+## Status
+Accepted
+
+## Context
+完成 P2 基礎建設後，審計發現專案仍存在四個未納管之前端工作台（`ocr_pipeline`、`pod_studio` VLM、`formula`、`extract_images`/`founder_repair`）與五項潛在架構風險：
+1. `process_ocr.py`（22 項）與 `core_agent.py`（6 項）存在 `pyright` 靜態型別錯誤，且純 OCR 區塊尚未強制執行 `LayoutRecordContract` 驗證。
+2. `book_layout_extractor.py` 與 `process_ocr.py` 共用扁平 `data/03_output/images/` 目錄，不同書籍之同頁圖片（如 `image_p1_0.png`）會互相覆寫。
+3. `app.py` 以 CLI 原始字串傳遞 `--style_mapping` 並在讀取 `stdout` 時未過濾第三方套件警告（`UserWarning`/`FutureWarning`），易污染前端進度文字。
+4. `src/web/app.py` 單檔超過 1,700 行，路由職責高度耦合，不利於長期維護與 Agent 精準閱讀。
+
+## Decision
+1. **全量核心腳本零靜態錯誤（Zero Pyright Errors）與純 OCR 契約對齊**：
+   - 修正 `process_ocr.py` 與 `core_agent.py` 所有未綁定變數與型別不匹配問題，並於 `process_ocr.py` 實作 `build_ocr_layout_contracts()`，確保純 OCR 通道輸出之段落、標題、表格、圖片、腳注均通過 `validate_layout_records()` 嚴格校驗。
+2. **每本書圖片目錄命名空間隔離（Per-Book Image Namespace Isolation）**：
+   - 當指定 `output_stem`（或 `isolate_images_by_stem=True`）時，將圖片提取目錄隔離至 `data/03_output/images/{stem}/`，Markdown 相對路徑輸出為 `![](images/{stem}/image_p{page}_{idx}.png)`；同時保留未傳入 `output_stem` 時之預設 `images/` 行為以 100% 相容既有單元測試。
+3. **檔案型子行程 IPC 與結構化進度過濾**：
+   - 在 `pdf_engine_dispatcher.py` 與 `process_ocr.py` 新增 `--style_mapping_file` 參數，由 `app.py` 將 `style_mapping` 寫入任務專屬暫存 JSON 檔傳遞並於 `finally` 自動清理。
+   - 新增 `is_meaningful_progress_line()` 過濾子行程非 JSON 輸出，攔截 `Traceback`、`UserWarning`、`site-packages` 等第三方雜訊。
+4. **P2-A ~ P2-D 契約擴展與 FastAPI `APIRouter` 領域拆分**：
+   - 擴充 `src/web/schemas.py` 與 `generate_ts_contracts.py`，自動生成涵蓋自動整稿、字體審閱、POD VLM 接續、公式擷取、方正修復與硬體狀態之 `frontend/src/types/contracts.ts`，以及 `ocrClient.ts`、`formulaClient.ts` 與 `ocr_contracts.js`。
+   - 將 POD 智慧整稿路由與系統/硬體/方正修復路由分別抽離至 `src/web/routers/pod_router.py` 與 `src/web/routers/system_router.py`，並在 `src/web/app.py` 透過 `app.include_router()` 掛載且保留原函式符號匯出。
+
+## Consequences
+- 消除多書並行或連續轉檔時的圖片覆寫風險，且 Pandoc `--resource-path` 無需修改即可自動解析 `images/{stem}/` 下的圖片。
+- `src/web/app.py` 大幅瘦身約 400 行，同時 100% 保持對既有測試中 `monkeypatch.setattr(web_app.PATHS, ...)` 與直接匯入函式的向下相容性。
+
+## Related Bug
+BUG-008

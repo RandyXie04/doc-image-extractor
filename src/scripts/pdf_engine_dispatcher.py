@@ -81,6 +81,7 @@ def main():
     parser.add_argument("--output_dir", type=str, default="data/03_output", help="Output directory")
     parser.add_argument("--output_stem", type=str, default=None, help="Stem name for output files")
     parser.add_argument("--style_mapping", type=str, default="{}", help="JSON string for heading style mapping")
+    parser.add_argument("--style_mapping_file", type=str, default=None, help="Path to JSON file for heading style mapping")
     parser.add_argument("--engine", type=str, default="auto", choices=["auto", "pymupdf", "suryaocr", "rapiddoc"], help="Forced engine choice")
     parser.add_argument("--header_ratio", type=float, default=0.1)
     parser.add_argument("--footer_ratio", type=float, default=0.1)
@@ -90,6 +91,13 @@ def main():
     parser.add_argument("--ai_kaiti", action="store_true", help="Enable Gemini Vision AI Kaiti detection")
     parser.add_argument("--ai_kaiti_threshold", type=float, default=0.65, help="Confidence threshold for AI Kaiti detection")
     args = parser.parse_args()
+
+    if args.style_mapping_file and os.path.exists(args.style_mapping_file):
+        try:
+            with open(args.style_mapping_file, "r", encoding="utf-8") as smf:
+                args.style_mapping = smf.read()
+        except Exception as sm_err:
+            print(f"[WARN] Failed to read style_mapping_file {args.style_mapping_file}: {sm_err}")
 
     engine_choice = "suryaocr" if args.engine == "rapiddoc" else args.engine
     
@@ -121,6 +129,7 @@ def main():
                 output_dir=args.output_dir,
                 output_stem=args.output_stem,
                 style_mapping=args.style_mapping,
+                style_mapping_file=args.style_mapping_file,
                 no_footnote=args.no_footnote,
                 image_dir=None
             )
@@ -139,6 +148,8 @@ def main():
                     "--output_dir", args.output_dir, 
                     "--style_mapping", args.style_mapping
                 ]
+                if args.style_mapping_file:
+                    cmd.extend(["--style_mapping_file", args.style_mapping_file])
                 if args.output_stem:
                     cmd.extend(["--output_stem", args.output_stem])
                 if args.no_footnote:

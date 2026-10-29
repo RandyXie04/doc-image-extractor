@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-OpenAPI & Pydantic v2 -> TypeScript Contract Generator (P2 Iron Rule 2)
-=======================================================================
+OpenAPI & Pydantic v2 -> TypeScript Contract Generator (P2/P3 Iron Rule 2)
+==========================================================================
 Introspects FastAPI Pydantic v2 strict models (`src.web.schemas` and
 `src.extraction.contracts`) and generates `frontend/src/types/contracts.ts`
 without requiring external Node.js toolchains at generation time.
@@ -21,8 +21,27 @@ try:
         PodCompileBlueprintResponse,
         PodAuditSummary,
         PodPropagateResponse,
+        PodVlmContinuationResponse,
         RuleFirstPropagationPayload,
         VlmContinuationPropagationPayload,
+        OcrFileUploadResponse,
+        OcrRunStartResponse,
+        OcrProgressResponse,
+        FontInfoItem,
+        FontScanResponse,
+        FontMappingEntry,
+        FontMappingSaveRequest,
+        FontMappingSaveResponse,
+        QueueTaskItem,
+        QueueTasksResponse,
+        MarkdownRebuildRequest,
+        MarkdownRebuildResponse,
+        FormulaTaskSubmitResponse,
+        FormulaTaskStatusResponse,
+        ExtractImagesResponse,
+        FounderRepairResponse,
+        HardwareStatusResponse,
+        UpdateCheckResponse,
     )
     from src.extraction.contracts import (
         ParagraphLayoutContract,
@@ -42,8 +61,27 @@ except ImportError:
         PodCompileBlueprintResponse,
         PodAuditSummary,
         PodPropagateResponse,
+        PodVlmContinuationResponse,
         RuleFirstPropagationPayload,
         VlmContinuationPropagationPayload,
+        OcrFileUploadResponse,
+        OcrRunStartResponse,
+        OcrProgressResponse,
+        FontInfoItem,
+        FontScanResponse,
+        FontMappingEntry,
+        FontMappingSaveRequest,
+        FontMappingSaveResponse,
+        QueueTaskItem,
+        QueueTasksResponse,
+        MarkdownRebuildRequest,
+        MarkdownRebuildResponse,
+        FormulaTaskSubmitResponse,
+        FormulaTaskStatusResponse,
+        ExtractImagesResponse,
+        FounderRepairResponse,
+        HardwareStatusResponse,
+        UpdateCheckResponse,
     )
     from src.extraction.contracts import (
         ParagraphLayoutContract,
@@ -60,8 +98,27 @@ EXPORTED_MODELS: List[Type[BaseModel]] = [
     PodCompileBlueprintResponse,
     PodAuditSummary,
     PodPropagateResponse,
+    PodVlmContinuationResponse,
     RuleFirstPropagationPayload,
     VlmContinuationPropagationPayload,
+    OcrFileUploadResponse,
+    OcrRunStartResponse,
+    OcrProgressResponse,
+    FontInfoItem,
+    FontScanResponse,
+    FontMappingEntry,
+    FontMappingSaveRequest,
+    FontMappingSaveResponse,
+    QueueTaskItem,
+    QueueTasksResponse,
+    MarkdownRebuildRequest,
+    MarkdownRebuildResponse,
+    FormulaTaskSubmitResponse,
+    FormulaTaskStatusResponse,
+    ExtractImagesResponse,
+    FounderRepairResponse,
+    HardwareStatusResponse,
+    UpdateCheckResponse,
     ParagraphLayoutContract,
     HeadingLayoutContract,
     TableLayoutContract,
@@ -109,6 +166,10 @@ def _json_schema_prop_to_ts(prop: Dict[str, Any], defs: Dict[str, Any]) -> str:
             return f"Array<{item_ts}>"
         return f"{item_ts}[]"
     if schema_type == "object":
+        add_props = prop.get("additionalProperties")
+        if isinstance(add_props, dict):
+            val_ts = _json_schema_prop_to_ts(add_props, defs)
+            return f"Record<string, {val_ts}>"
         return "Record<string, unknown>"
 
     return "unknown"
@@ -160,6 +221,15 @@ def generate_typescript_contracts_source() -> str:
         "  | { readonly phase: \"propagating\"; readonly sessionId: string; readonly payload: PropagationPayload }",
         "  | { readonly phase: \"completed\"; readonly response: PodPropagateResponse }",
         "  | { readonly phase: \"error\"; readonly message: string };",
+        "",
+        "export type OcrWorkbenchPhase =",
+        "  | { readonly phase: \"idle\" }",
+        "  | { readonly phase: \"uploading\"; readonly fileName: string }",
+        "  | { readonly phase: \"preview_ready\"; readonly upload: OcrFileUploadResponse }",
+        "  | { readonly phase: \"scanning_fonts\"; readonly fileId: string }",
+        "  | { readonly phase: \"processing\"; readonly stem: string; readonly progress: OcrProgressResponse }",
+        "  | { readonly phase: \"completed\"; readonly stem: string; readonly progress: OcrProgressResponse }",
+        "  | { readonly phase: \"failed\"; readonly stem: string; readonly error: string };",
         "",
     ]
     return "\n".join(header) + "\n\n".join(blocks) + "\n\n" + "\n".join(unions)

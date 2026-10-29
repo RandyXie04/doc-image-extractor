@@ -56,6 +56,19 @@ def _clean_hallucinations(text: str) -> str:
             return ""
     return text
 
+from typing import Any
+from PIL import Image
+import fitz
+import urllib.request
+
+run_recognition: Any = None
+batch_layout_detection: Any = None
+load_rec_model: Any = None
+load_rec_processor: Any = None
+load_layout_model: Any = None
+load_layout_processor: Any = None
+settings: Any = None
+
 try:
     from surya.ocr import run_recognition
     from surya.layout import batch_layout_detection
@@ -64,9 +77,6 @@ try:
     from surya.model.layout.model import load_model as load_layout_model
     from surya.model.layout.processor import load_processor as load_layout_processor
     from surya.settings import settings
-    from PIL import Image
-    import fitz
-    import urllib.request
     SURYA_AVAILABLE = True
 except Exception as e:
     import traceback
@@ -701,6 +711,79 @@ def generate_audit_report(pdf_name, total_pages, audit_records, report_path):
         f.write("\n".join(lines))
 
 
+def build_ocr_layout_contracts(pages_data: list[dict[str, Any]]) -> list[Any]:
+    """
+    Constructs and validates strict `LayoutRecordContract` objects from assembled OCR `pages_data`
+    to enforce P2/P3 Zero Raw-Dict schema parity with `book_layout_extractor.py`.
+    """
+    from src.extraction.contracts import validate_layout_records
+
+    raw_records: list[dict[str, Any]] = []
+    for p in pages_data:
+        p_num = int(p.get("page_num", 1))
+        for md_dict in p.get("body", []):
+            orig_idx = int(md_dict.get("orig_idx", 0))
+            md_item = str(md_dict.get("md", "")).strip()
+            blk = md_dict.get("block") or {}
+            bbox_raw = blk.get("bbox")
+            bbox_list = [float(x) for x in bbox_raw[:4]] if isinstance(bbox_raw, (list, tuple)) and len(bbox_raw) >= 4 else [0.0, 0.0, 0.0, 0.0]
+            orig_label = str(blk.get("original_label", "")).lower()
+
+            if md_item == "![img]()" or orig_label in ("picture", "figure", "image"):
+                raw_records.append({
+                    "type": "figure",
+                    "page_num": p_num,
+                    "block_idx": orig_idx,
+                    "raw_md": md_item or "![img]()",
+                    "bbox": bbox_list,
+                })
+            elif orig_label == "table" or (md_item.startswith("|") and "\n|" in md_item):
+                raw_records.append({
+                    "type": "table",
+                    "raw_md": md_item,
+                    "caption_text": "",
+                    "page_num": p_num,
+                    "bbox": bbox_list,
+                })
+            elif md_item.startswith("#"):
+                hashes = len(md_item) - len(md_item.lstrip("#"))
+                lvl = min(max(hashes, 1), 6)
+                title_str = md_item.lstrip("#").strip()
+                raw_records.append({
+                    "type": "heading",
+                    "level": lvl,
+                    "title": title_str,
+                    "raw_text": md_item,
+                    "page_num": p_num,
+                    "bbox": bbox_list,
+                })
+            elif md_item:
+                raw_records.append({
+                    "type": "paragraph",
+                    "raw_text": md_item,
+                    "page_num": p_num,
+                    "bbox": bbox_list,
+                })
+
+        for fn_idx, fn in enumerate(p.get("footnotes", []), start=1):
+            fn_id_raw = fn.get("id", fn_idx)
+            try:
+                fn_id_int = int(str(fn_id_raw).strip())
+            except Exception:
+                fn_id_int = fn_idx
+            fn_content = str(fn.get("content", ""))
+            if fn_content:
+                raw_records.append({
+                    "type": "footnote",
+                    "fn_id": fn_id_int,
+                    "tag": f"[^p{p_num}_{fn_id_raw}]",
+                    "content": fn_content,
+                    "page_num": p_num,
+                })
+
+    return validate_layout_records(raw_records)
+
+
 def main(args=None):
     import argparse
     import json
@@ -709,6 +792,7 @@ def main(args=None):
         parser.add_argument("--file", type=str, help="Specific PDF file to process")
         parser.add_argument("--output_dir", type=str, default=str(PATHS.root / "data" / "03_output"), help="Output directory")
         parser.add_argument("--style_mapping", type=str, default="{}", help="JSON string for heading style mapping")
+        parser.add_argument("--style_mapping_file", type=str, default=None, help="Path to JSON file for heading style mapping")
         parser.add_argument("--image_dir", type=str, default=None, help="Directory containing pre-extracted images")
         parser.add_argument("--no_footnote", action="store_true", help="Disable footnote extraction and keep all blocks as body text")
         parser.add_argument("--output_stem", type=str, default=None, help="Stem name for output files")
@@ -717,10 +801,18 @@ def main(args=None):
     enable_footnotes = not getattr(args, "no_footnote", False)
     no_footnote = not enable_footnotes
     style_mapping = {}
-    try:
-        style_mapping = json.loads(args.style_mapping)
-    except Exception:
-        pass
+    style_mapping_file = getattr(args, "style_mapping_file", None)
+    if style_mapping_file and os.path.exists(style_mapping_file):
+        try:
+            with open(style_mapping_file, "r", encoding="utf-8") as smf:
+                style_mapping = json.load(smf)
+        except Exception:
+            style_mapping = {}
+    elif getattr(args, "style_mapping", None):
+        try:
+            style_mapping = json.loads(args.style_mapping)
+        except Exception:
+            pass
 
     if not SURYA_AVAILABLE:
         print(json.dumps({"progress": 0, "message": "[ERROR] Surya OCR is not installed. Please run: pip install 'surya-ocr<0.7.0' pymupdf"}))
@@ -775,7 +867,7 @@ def main(args=None):
     # Fix for transformers >= 4.41.0 "Multiple valid text configs were found"
     def patched_get_text_config(self, **kwargs):
         return self.decoder if hasattr(self, "decoder") else None
-    SuryaOCRConfig.get_text_config = patched_get_text_config
+    setattr(SuryaOCRConfig, "get_text_config", patched_get_text_config)
 
     # Fix for transformers >= 4.41.0 "AttributeError: 'Image' object has no attribute 'ndim'"
     import surya.model.detection.processor
@@ -831,7 +923,8 @@ def main(args=None):
                     chunk_end = min(chunk_start + chunk_size, total_pages)
                     chunk_imgs = []
                     for p_idx in range(chunk_start, chunk_end):
-                        pix = doc[p_idx].get_pixmap(dpi=150)
+                        p_doc_page: Any = doc[p_idx]
+                        pix = p_doc_page.get_pixmap(dpi=150)
                         chunk_imgs.append(Image.frombytes("RGB", (pix.width, pix.height), pix.samples))
 
                     pct = 20 + int(30 * (chunk_start / max(1, total_pages)))
@@ -847,7 +940,7 @@ def main(args=None):
 
                     for offset, (img, layout) in enumerate(zip(chunk_imgs, chunk_layouts)):
                         page_idx = chunk_start + offset
-                        p_page = doc[page_idx]
+                        p_page: Any = doc[page_idx]
                         sx = img.width / max(1.0, p_page.rect.width)
                         sy = img.height / max(1.0, p_page.rect.height)
 
@@ -867,6 +960,7 @@ def main(args=None):
                             label = box.label.lower()
 
                             r = fitz.Rect(bbox[0]/sx, bbox[1]/sy, bbox[2]/sx, bbox[3]/sy)
+                            r_area = max(0.0, float(r.width) * float(r.height))
                             vec_text = p_page.get_text("text", clip=r).strip()
 
                             # Check if box overlaps a reconstructed 3-line table on this page
@@ -875,7 +969,9 @@ def main(args=None):
                                 tr = fitz.Rect(rtbl.bbox)
                                 if r.intersects(tr):
                                     inter = r & tr
-                                    if inter.get_area() > 0.25 * min(max(r.get_area(), 1.0), max(tr.get_area(), 1.0)):
+                                    inter_area = max(0.0, float(inter.width) * float(inter.height))
+                                    tr_area = max(0.0, float(tr.width) * float(tr.height))
+                                    if inter_area > 0.25 * min(max(r_area, 1.0), max(tr_area, 1.0)):
                                         matched_3line_md = rtbl.markdown
                                         break
 
@@ -889,7 +985,9 @@ def main(args=None):
                                 for img_rect in p_page.get_image_rects(img_info[0]):
                                     if r.intersects(img_rect):
                                         inter = r & img_rect
-                                        if inter.get_area() > 0.25 * min(r.get_area(), img_rect.get_area()):
+                                        inter_area = max(0.0, float(inter.width) * float(inter.height))
+                                        img_rect_area = max(0.0, float(img_rect.width) * float(img_rect.height))
+                                        if inter_area > 0.25 * min(r_area, img_rect_area):
                                             has_overlapping_image = True
                                             break
                                 if has_overlapping_image:
@@ -929,7 +1027,7 @@ def main(args=None):
 
                     if all_slices_to_rec:
                         from surya.ocr import batch_recognition
-                        all_langs = [["zh"]] * len(all_slices_to_rec)
+                        all_langs: Any = [["zh"]] * len(all_slices_to_rec)
                         all_preds, _ = batch_recognition(
                             all_slices_to_rec, all_langs, rec_model, rec_processor, batch_size=_rec_batch
                         )
@@ -1004,8 +1102,12 @@ def main(args=None):
                         "footnotes": parsed_entries
                     })
 
-                # ── Phase 2: Image Extraction (independent, decoupled) ──
-                images_dir = os.path.join(output_dir, "images")
+                # Validate OCR blocks against strict LayoutRecordContract (P2/P3 Zero Raw-Dict Policy)
+                build_ocr_layout_contracts(pages_data)
+
+                # ── Phase 2: Image Extraction (independent, decoupled & per-book isolated) ──
+                out_stem = getattr(args, "output_stem", None) or Path(pdf_path).stem
+                images_dir = os.path.join(output_dir, "images", out_stem)
                 image_path_map = {}  # (page_num, block_idx) -> saved path
                 try:
                     from src.scripts.pdf_image_extractor import (

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
-Strict FastAPI Request & Response Schemas (P2 Guardrail: Schema-Driven Development)
-===================================================================================
+Strict FastAPI Request & Response Schemas (P2/P3 Guardrail: Schema-Driven Development)
+======================================================================================
 Single Source of Truth for FastAPI OpenAPI generation and TypeScript contract codegen.
 All models use `ConfigDict(extra="forbid")` to reject hallucinated keys at runtime.
 """
@@ -15,6 +15,10 @@ class StrictApiSchema(BaseModel):
     """Base API schema forbidding undeclared fields."""
     model_config = ConfigDict(extra="forbid")
 
+
+# ---------------------------------------------------------------------------
+# P2 / P2-B: POD Studio Contracts
+# ---------------------------------------------------------------------------
 
 class PodSectionPreview(StrictApiSchema):
     id: str
@@ -67,6 +71,15 @@ class PodPropagateResponse(StrictApiSchema):
     audit_report: Dict[str, Any]
 
 
+class PodVlmContinuationResponse(StrictApiSchema):
+    status: Literal["success"] = "success"
+    session_id: str
+    result: Dict[str, Any]
+    download_docx_url: str
+    download_md_url: str
+    audit_report_url: str
+
+
 class RuleFirstPropagationPayload(StrictApiSchema):
     """Discriminated union branch for Rule-First deterministic propagation."""
     engine_mode: Literal["rule_first"] = "rule_first"
@@ -92,3 +105,141 @@ PropagationPayload = Annotated[
     Field(discriminator="engine_mode"),
 ]
 
+
+# ---------------------------------------------------------------------------
+# P2-A: Automated Draft & Font Mapping Workbench (`ocr_pipeline.html`)
+# ---------------------------------------------------------------------------
+
+class OcrFileUploadResponse(StrictApiSchema):
+    file_id: str
+    filename_orig: str
+    filename_stem: str
+
+
+class OcrRunStartResponse(StrictApiSchema):
+    message: str
+    filename_stem: str
+    task_id: str
+
+
+class OcrProgressResponse(StrictApiSchema):
+    task_id: Optional[str] = None
+    progress: int = Field(..., ge=0, le=100)
+    message: str
+    status: Literal["processing", "completed", "failed", "queued", "running"]
+    error: Optional[str] = None
+    created_at: Optional[float] = None
+
+
+class FontInfoItem(StrictApiSchema):
+    name: str
+    full_name: str
+    size_pt: float
+    sample_texts: List[str] = Field(default_factory=list)
+    current_role: Optional[str] = "auto"
+    current_docx_style: Optional[str] = None
+
+
+class FontScanResponse(StrictApiSchema):
+    fonts: List[FontInfoItem]
+    docx_styles: List[str] = Field(default_factory=list)
+    default_roles: List[str] = Field(default_factory=list)
+
+
+class FontMappingEntry(StrictApiSchema):
+    role: Optional[str] = None
+    docx_style: Optional[str] = None
+    mapped_by: Optional[str] = "user"
+
+
+class FontMappingSaveRequest(StrictApiSchema):
+    mapping: Dict[str, FontMappingEntry] = Field(default_factory=dict)
+    remove_keys: List[str] = Field(default_factory=list)
+
+
+class FontMappingSaveResponse(StrictApiSchema):
+    status: Literal["success"] = "success"
+    saved: int = Field(..., ge=0)
+    removed: int = Field(default=0, ge=0)
+    message: str
+
+
+class QueueTaskItem(StrictApiSchema):
+    task_id: str
+    stem: str
+    status: str
+    progress: int = Field(..., ge=0, le=100)
+    message: str
+    engine: str = "auto"
+    error: Optional[str] = None
+    created_at: float
+    updated_at: float
+
+
+class QueueTasksResponse(StrictApiSchema):
+    tasks: List[QueueTaskItem]
+
+
+class MarkdownRebuildRequest(StrictApiSchema):
+    content: str
+
+
+class MarkdownRebuildResponse(StrictApiSchema):
+    status: Literal["success"] = "success"
+    message: str
+
+
+# ---------------------------------------------------------------------------
+# P2-C: AI Formula & Dual-Mode Workbench (`formula.html`)
+# ---------------------------------------------------------------------------
+
+class FormulaTaskSubmitResponse(StrictApiSchema):
+    task_id: str
+
+
+class FormulaTaskStatusResponse(StrictApiSchema):
+    status: Literal["processing", "completed", "failed"]
+    progress: int = Field(..., ge=0, le=100)
+    message: str
+    mode: str
+    total_pages: int = Field(default=0, ge=0)
+    current_page: int = Field(default=0, ge=0)
+    results: List[Dict[str, Any]] = Field(default_factory=list)
+    final_files: Dict[str, str] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# P2-D: Utility Subpages & Global Sidebar (`extract_images`, `founder_repair`, `sidebar`)
+# ---------------------------------------------------------------------------
+
+class ExtractImagesResponse(StrictApiSchema):
+    success: bool
+    count: int = Field(..., ge=0)
+    message: str = ""
+    download_url: str = ""
+    filename: str = ""
+    source_path: str = ""
+
+
+class FounderRepairResponse(StrictApiSchema):
+    success: bool = True
+    source_path: str
+    filename: str
+
+
+class HardwareStatusResponse(StrictApiSchema):
+    gpu_name: str = "Unknown"
+    target_accelerator: str = "CPU"
+    active_provider: str = "CPUExecutionProvider"
+    vram_gb: float = 0.0
+    is_accelerated: bool = False
+
+
+class UpdateCheckResponse(StrictApiSchema):
+    current_version: str
+    latest_version: str
+    has_update: bool
+    download_url: str = ""
+    release_notes: str = ""
+    published_at: str = ""
+    error: Optional[str] = None
