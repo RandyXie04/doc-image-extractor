@@ -595,12 +595,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const modeToggleBtn = document.getElementById('modeToggleBtn');
     const MODE_LABEL = { editor: '出版社編輯模式', dev: '工程師除錯模式' };
+    let telemetryTimer = null;
+
+    function renderDevTelemetry(data) {
+        let hud = document.getElementById('devTelemetryHUD');
+        if (!hud) {
+            hud = document.createElement('div');
+            hud.id = 'devTelemetryHUD';
+            hud.style.cssText = 'margin: 6px 12px; padding: 8px 10px; background: rgba(0,0,0,0.04); border: 1px solid var(--border, #cbd5e1); border-radius: 6px; font-size: 0.75rem; font-family: monospace; line-height: 1.4;';
+            if (modeToggleBtn && modeToggleBtn.parentElement) {
+                modeToggleBtn.parentElement.insertBefore(hud, modeToggleBtn.nextSibling);
+            }
+        }
+        const vramText = data.total_vram_gb > 0
+            ? `${data.reserved_vram_mb} MB / ${(data.total_vram_gb * 1024).toFixed(0)} MB (${data.vram_usage_percent}%)`
+            : 'CPU 模式';
+        const lockStatus = data.gpu_locked
+            ? '<span style="color:#ea580c; font-weight:bold;">運算中</span>'
+            : '<span style="color:#16a34a;">閒置</span>';
+
+        hud.innerHTML = `
+            <div style="font-weight:600; margin-bottom:3px; color:var(--text, #334155); display:flex; justify-content:space-between;">
+                <span>${data.gpu_name}</span>
+                <span>${data.target_accelerator}</span>
+            </div>
+            <div>VRAM: ${vramText}</div>
+            <div>佇列狀態: ${lockStatus}</div>
+        `;
+    }
+
+    async function pollTelemetry() {
+        try {
+            const res = await fetch('/api/dev/telemetry');
+            if (res.ok) {
+                const data = await res.json();
+                renderDevTelemetry(data);
+            }
+        } catch (e) {}
+    }
+
     function updateModeBtnUI(mode) {
         modeToggleBtn.dataset.mode = mode;
         modeToggleBtn.textContent = `模式：${MODE_LABEL[mode] || mode}`;
         modeToggleBtn.classList.toggle('is-active', mode === 'dev');
         if (globalReportBtn) {
             globalReportBtn.style.display = (mode === 'dev') ? 'block' : 'none';
+        }
+        const hud = document.getElementById('devTelemetryHUD');
+        if (mode === 'dev') {
+            pollTelemetry();
+            if (!telemetryTimer) telemetryTimer = setInterval(pollTelemetry, 4000);
+        } else {
+            if (telemetryTimer) {
+                clearInterval(telemetryTimer);
+                telemetryTimer = null;
+            }
+            if (hud) hud.remove();
         }
         loadAndRenderDocCatalogue(mode);
     }

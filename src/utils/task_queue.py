@@ -18,9 +18,56 @@ import time
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from config import PATHS
+
+
+class TaskEventBroadcaster:
+    """In-memory asynchronous pub/sub broadcaster for SSE streaming."""
+
+    def __init__(self):
+        self._subscribers: Dict[str, Set[asyncio.Queue]] = {}
+        self._global_subscribers: Set[asyncio.Queue] = set()
+
+    def subscribe(self, task_id: Optional[str] = None) -> asyncio.Queue:
+        q: asyncio.Queue = asyncio.Queue(maxsize=100)
+        if task_id:
+            self._subscribers.setdefault(task_id, set()).add(q)
+        else:
+            self._global_subscribers.add(q)
+        return q
+
+    def unsubscribe(self, q: asyncio.Queue, task_id: Optional[str] = None) -> None:
+        if task_id and task_id in self._subscribers:
+            self._subscribers[task_id].discard(q)
+            if not self._subscribers[task_id]:
+                self._subscribers.pop(task_id, None)
+        self._global_subscribers.discard(q)
+
+    def publish(self, task_id: str, data: Dict[str, Any]) -> None:
+        targets = list(self._subscribers.get(task_id, set())) + list(self._global_subscribers)
+        for q in targets:
+            try:
+                q.put_nowait(data)
+            except asyncio.QueueFull:
+                try:
+                    q.get_nowait()
+                except Exception:
+                    pass
+                try:
+                    q.put_nowait(data)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+
+
+_GLOBAL_BROADCASTER = TaskEventBroadcaster()
+
+
+def get_event_broadcaster() -> TaskEventBroadcaster:
+    return _GLOBAL_BROADCASTER
 
 
 class TaskStatus(str, Enum):
@@ -207,6 +254,18 @@ class PersistentSQLiteTaskQueue(BaseTaskQueue):
                 ),
             )
             conn.commit()
+        _GLOBAL_BROADCASTER.publish(
+            task.task_id,
+            {
+                "task_id": task.task_id,
+                "stem": task.stem,
+                "status": task.status,
+                "progress": task.progress,
+                "message": task.message,
+                "error": task.error,
+                "timestamp": time.time(),
+            }
+        )
         return task.task_id
 
     def get_task(self, task_id: str) -> Optional[TaskRecord]:
@@ -265,6 +324,18 @@ class PersistentSQLiteTaskQueue(BaseTaskQueue):
         with self._get_connection() as conn:
             conn.execute(sql, tuple(params))
             conn.commit()
+
+        _GLOBAL_BROADCASTER.publish(
+            task_id,
+            {
+                "task_id": task_id,
+                "status": status,
+                "progress": progress,
+                "message": message,
+                "error": error,
+                "timestamp": time.time(),
+            }
+        )
 
     def list_tasks(self, limit: int = 50, status: Optional[str] = None) -> List[TaskRecord]:
         with self._get_connection() as conn:

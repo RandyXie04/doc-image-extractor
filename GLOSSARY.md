@@ -146,6 +146,42 @@ TypeScript tagged unions (`type: "paragraph" | "heading" | "table" | "figure" | 
 
 Responsive shell, layout tokens, and device category classification (`mobile` | `tablet` | `desktop` | `ultrawide`) implemented in `frontend/src/layout/` and bridged to vanilla web runtime via `src/web/static/js/viewport_manager.js`.
 
+### GPU Mutual Exclusion Semaphore (GPU 互斥信號量 / `_GPU_SEMAPHORE`)
+
+Global single-concurrency asynchronous lock (`_GPU_SEMAPHORE = asyncio.Semaphore(1)` in `src/web/dependencies.py`) enforcing strict sequential execution across heavy GPU workloads (RTX 3060 12GB), including YOLO ONNX formula extraction, Surya layout OCR, and VLM multimodal inference, preventing VRAM Out-Of-Memory (OOM) panics.
+
+### In-Memory Task Event Broadcaster (記憶體任務事件廣播器 / `TaskEventBroadcaster`)
+
+An asynchronous Pub/Sub broadcast coordinator in `src/utils/task_queue.py` providing non-blocking event distribution (`publish`, `subscribe`, `unsubscribe`) to active HTTP Server-Sent Events (SSE) connections, eliminating high-frequency SQLite polling loops during live task tracking.
+
+### Server-Sent Events Streaming Channel (SSE 即時串流通道)
+
+Unidirectional HTTP streaming endpoints (`/api/tasks/{task_id}/events`, `/api/ocr_events/{stem}`) that push instant execution progress percentages, status transitions, and log messages from background worker threads directly to frontend UI components (`EventSource`), featuring automatic graceful fallback to periodic polling upon connection disruption.
+
+### Pipeline State Handoff (主流程跨階無縫串接)
+
+The automated transition mechanism (`/api/pod/handoff_from_ocr` in `src/web/routers/pod_router.py`) bridging Step 1 (Full-auto OCR/Vector manuscript reconstruction) directly to Step 2 (POD Studio custom styling), automatically cloning `Book_seed.docx` and `source_book.pdf` into dedicated `pod_workspaces/{session_id}` directories without requiring manual file download and re-upload.
+
+### Interactive Audit Inspector (互動式審計檢視器 / `AuditReportVisualizer`)
+
+Client-side diagnostic interface in `src/web/static/pod_studio.html` visualizing `audit_report.json` quality gates: provides real-time traffic-light filtering (🔴 Red / 🟡 Yellow / 🟢 Green tabs), accordion-based section inspections, and boundary resilience against malformed or empty reports.
+
+### Sub-Router Modular Architecture (子路由模組化架構)
+
+FastAPI routing reorganization decomposing the monolithic `src/web/app.py` into dedicated high-cohesion sub-routers (`ocr_router`, `formula_router`, `pod_router`, `tools_router`, `system_router`) mounted under centralized lifespan management, establishing clear module boundaries and strict Pydantic v2 `response_model` contract adherence.
+
+### Web Dependency Injection Hub (Web 依賴注入中樞 / `dependencies.py`)
+
+Decoupled dependency container (`src/web/dependencies.py`) hosting shared singleton state (`_GPU_SEMAPHORE`, `_OCR_SEMAPHORE`, `PATHS`, `CFG`, `save_upload_file_safely`, `track_background_task`), completely eradicating brittle legacy `_get_web_deps()` delayed imports and circular dependency hazards.
+
+### Hardware Telemetry HUD (硬體遙測抬頭顯示 / `/api/dev/telemetry`)
+
+Real-time observability dashboard integrated into the developer mode sidebar (`src/web/static/sidebar.js`), monitoring live GPU hardware device names, dedicated VRAM usage vs budget, active concurrency queue counts, and semaphore lock states.
+
+### Zero-Log POD Workspace Sweeper (零日誌 POD 工作區排程清理器)
+
+Lifecycle sanitation extension within `run_full_cleanup()` (`src/web/app.py`) ensuring all ephemeral user sessions under `03_output/pod_workspaces/` and `backup_originals` strictly expire and burn after 24 hours in accordance with local privacy mandates.
+
 ---
 
 ## 2. Architectural Design Vocabulary

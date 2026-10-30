@@ -243,3 +243,29 @@ class UpdateCheckResponse(StrictApiSchema):
     release_notes: str = ""
     published_at: str = ""
     error: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# P1 / P2 / P3 Upgrades: Handoff, SSE & Observability Contracts
+# ---------------------------------------------------------------------------
+
+class PodHandoffResponse(StrictApiSchema):
+    status: Literal["success"] = "success"
+    session_id: str
+    docx_name: str
+    pdf_name: str
+    total_paragraphs: int = Field(default=0, ge=0)
+    message: str = "已成功由 OCR 產出初稿建立 POD 整稿工作區"
+
+
+class HardwareTelemetryResponse(StrictApiSchema):
+    gpu_name: str = "Unknown"
+    target_accelerator: str = "CPU"
+    active_provider: str = "CPUExecutionProvider"
+    total_vram_gb: float = 0.0
+    allocated_vram_mb: float = 0.0
+    reserved_vram_mb: float = 0.0
+    vram_usage_percent: float = 0.0
+    is_accelerated: bool = False
+    gpu_locked: bool = False
+    app_mode: str = "editor"

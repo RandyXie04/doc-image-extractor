@@ -2,13 +2,20 @@
 """
 POD Studio FastAPI Router (`src/web/routers/pod_router.py`)
 ===========================================================
-Modularized from `src/web/app.py` (P3-4 Risk 4 Remediation).
+Modularized from `src/web/app.py`.
 All endpoints enforce strict Pydantic v2 `response_model` contracts from `src/web/schemas.py`.
+Heavy CPU/PDF extraction and VLM inference run in dedicated threadpool tasks to prevent event loop starvation.
 """
 
 from __future__ import annotations
+
+import asyncio
+import os
+import shutil
 import uuid
+from pathlib import Path
 from typing import Optional
+
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
@@ -20,10 +27,12 @@ from src.pod_studio.pod_service import (
     propagate_and_validate_session,
 )
 from src.pod_studio.vlm_continuation_engine import SecureVLMContinuationEngine
+from src.web.dependencies import CFG, PATHS, save_upload_file_safely
 from src.web.schemas import (
     PodAuditSummary,
     PodCompileBlueprintResponse,
     PodExtractRawResponse,
+    PodHandoffResponse,
     PodPropagateResponse,
     PodSectionPreview,
     PodVlmContinuationResponse,
@@ -33,8 +42,61 @@ router = APIRouter(tags=["pod_studio"])
 
 
 def _get_web_deps():
-    import src.web.app as _web_app
-    return _web_app.PATHS, _web_app.CFG, _web_app.save_upload_file_safely
+    """Backward-compatibility shim for older test fixtures."""
+    return PATHS, CFG, save_upload_file_safely
+
+
+@router.post("/api/pod/handoff_from_ocr", response_model=PodHandoffResponse)
+async def pod_handoff_from_ocr(
+    filename_stem: str = Form(...),
+) -> PodHandoffResponse:
+    """
+    主流程無縫串接：由全自動整稿（第 1 步）完成後，一鍵建立 POD 工作區（第 2 步）。
+    自動移轉產出 Word (Book_seed.docx) 與原始 PDF (source_book.pdf)，免去使用者重複手動下載與上傳。
+    """
+    clean_stem = Path(filename_stem).stem
+    session_id = f"pod_{uuid.uuid4().hex[:12]}"
+    session_dir = PATHS.output_dir / "pod_workspaces" / session_id
+    session_dir.mkdir(parents=True, exist_ok=True)
+
+    candidate_docx = PATHS.output_dir / f"{clean_stem}.docx"
+    if not candidate_docx.exists():
+        raise HTTPException(status_code=404, detail=f"找不到整稿初稿檔案: {clean_stem}.docx，請先確認第 1 步全自動整稿是否完成")
+
+    target_seed = session_dir / "Book_seed.docx"
+    shutil.copy2(candidate_docx, target_seed)
+
+    target_pdf_name = ""
+    candidate_pdfs = [
+        PATHS.root / "data" / "database_text" / f"{clean_stem}.pdf",
+        PATHS.input_dir / f"{clean_stem}.pdf",
+    ]
+    for p in PATHS.input_dir.glob(f"*{clean_stem}*.pdf"):
+        candidate_pdfs.append(p)
+
+    for c_pdf in candidate_pdfs:
+        if c_pdf.exists():
+            shutil.copy2(c_pdf, session_dir / "source_book.pdf")
+            target_pdf_name = "source_book.pdf"
+            break
+
+    total_paras = 0
+    try:
+        import docx
+
+        doc = docx.Document(str(target_seed))
+        total_paras = len(doc.paragraphs)
+    except Exception:
+        pass
+
+    return PodHandoffResponse(
+        status="success",
+        session_id=session_id,
+        docx_name="Book_seed.docx",
+        pdf_name=target_pdf_name or "未偵測到對應 PDF (可手動補充)",
+        total_paragraphs=total_paras,
+        message=f"已成功為《{clean_stem}》建立 POD 工作區 (Session: {session_id})",
+    )
 
 
 @router.post("/api/pod/1_extract_raw", response_model=PodExtractRawResponse)
@@ -43,10 +105,9 @@ async def pod_1_extract_raw(
     split_level: int = Form(2),
 ) -> PodExtractRawResponse:
     """
-    階段一：初稿生成 API
+    階段一：生稿剖析 API
     上傳 PDF 或 MD 原稿，輸出 Book_raw.docx 與包含幾何座標的 Book_raw_ast.json。
     """
-    PATHS, CFG, save_upload_file_safely = _get_web_deps()
     session_id = f"pod_{uuid.uuid4().hex[:12]}"
     session_dir = PATHS.output_dir / "pod_workspaces" / session_id
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -56,10 +117,14 @@ async def pod_1_extract_raw(
 
     ext = input_path.suffix.lower()
     if ext == ".pdf":
-        sections, ast_path, raw_docx_path = extract_raw_from_pdf(input_path, session_dir, split_level=split_level)
+        sections, ast_path, raw_docx_path = await asyncio.to_thread(
+            extract_raw_from_pdf, input_path, session_dir, split_level=split_level
+        )
     elif ext in (".md", ".txt"):
         md_text = input_path.read_text(encoding="utf-8")
-        sections, ast_path, raw_docx_path = extract_raw_from_markdown(md_text, session_dir, split_level=split_level)
+        sections, ast_path, raw_docx_path = await asyncio.to_thread(
+            extract_raw_from_markdown, md_text, session_dir, split_level=split_level
+        )
     else:
         raise HTTPException(status_code=400, detail="生稿僅支援 .pdf 或 .md 檔案")
 
@@ -89,7 +154,6 @@ async def pod_2_compile_blueprint(
     比對人工精修範本推導樣式定義與狀態機轉換規則。
     若提供原始 PDF (pdf_file)，則直接解析完整幾何結構與三線表，建立 Book_raw_ast.json。
     """
-    PATHS, CFG, save_upload_file_safely = _get_web_deps()
     if not session_id:
         session_id = f"pod_{uuid.uuid4().hex[:12]}"
     session_dir = PATHS.output_dir / "pod_workspaces" / session_id
@@ -107,33 +171,42 @@ async def pod_2_compile_blueprint(
         await save_upload_file_safely(pdf_file, source_pdf_path, max_mb=CFG.max_upload_size_mb)
         has_source_pdf = True
         try:
-            from src.scripts.book_layout_extractor import extract_book_vector_ast
-            from src.pod_studio.section_ast import SectionAST
-            book_ast = extract_book_vector_ast(source_pdf_path, enable_footnotes=False)
-            SectionAST.dump_book_ast_json(book_ast.sections, ast_path)
-            detected_tables_count = sum(
-                1 for sec in book_ast.sections for p in sec.paragraphs if p.font_name == "table"
-            )
+            def _extract_ast():
+                from src.pod_studio.section_ast import SectionAST
+                from src.scripts.book_layout_extractor import extract_book_vector_ast
+
+                book_ast = extract_book_vector_ast(source_pdf_path, enable_footnotes=False)
+                SectionAST.dump_book_ast_json(book_ast.sections, ast_path)
+                return sum(
+                    1 for sec in book_ast.sections for p in sec.paragraphs if p.font_name == "table"
+                )
+
+            detected_tables_count = await asyncio.to_thread(_extract_ast)
         except Exception as e:
             print(f"[POD Warning] Failed to extract vector AST from uploaded source PDF: {e}")
 
     if not ast_path.exists() and seed_path.suffix.lower() == ".docx":
-        import docx
-        from src.pod_studio.section_ast import SectionAST, SectionUnit, ParagraphUnit
-        seed_doc = docx.Document(str(seed_path))
-        sections = [
-            SectionUnit(
-                section_id=f"sec_{i:03d}",
-                title=p.text[:30],
-                level=1,
-                paragraphs=[ParagraphUnit(para_id=f"p_{i}", raw_text=p.text)],
-                raw_content=p.text,
-            )
-            for i, p in enumerate(seed_doc.paragraphs)
-        ]
-        SectionAST.dump_book_ast_json(sections, ast_path)
+        def _fallback_docx_ast():
+            import docx
+            from src.pod_studio.section_ast import ParagraphUnit, SectionAST, SectionUnit
 
-    blueprint = compile_blueprint_from_seed(
+            seed_doc = docx.Document(str(seed_path))
+            secs = [
+                SectionUnit(
+                    section_id=f"sec_{i:03d}",
+                    title=p.text[:30],
+                    level=1,
+                    paragraphs=[ParagraphUnit(para_id=f"p_{i}", raw_text=p.text)],
+                    raw_content=p.text,
+                )
+                for i, p in enumerate(seed_doc.paragraphs)
+            ]
+            SectionAST.dump_book_ast_json(secs, ast_path)
+
+        await asyncio.to_thread(_fallback_docx_ast)
+
+    blueprint = await asyncio.to_thread(
+        compile_blueprint_from_seed,
         session_dir,
         seed_path,
         manual_boundary_anchor=manual_boundary_anchor,
@@ -175,7 +248,6 @@ async def pod_3_propagate_and_validate(
     """
     階段三：批量擴散與硬性驗收 API (支援 Dual-Engine: rule_first 與 vlm_continuation)
     """
-    PATHS, CFG, save_upload_file_safely = _get_web_deps()
     session_dir = PATHS.output_dir / "pod_workspaces" / session_id
     if not session_dir.exists():
         raise HTTPException(status_code=404, detail="Session 不存在或已過期")
@@ -195,7 +267,8 @@ async def pod_3_propagate_and_validate(
     pdf_files = list(session_dir.glob("*.pdf"))
     pdf_path = pdf_files[0] if pdf_files else None
 
-    final_docx_path, report, _ = propagate_and_validate_session(
+    final_docx_path, report, _ = await asyncio.to_thread(
+        propagate_and_validate_session,
         session_dir=session_dir,
         engine_mode=engine_mode,
         template_docx_path=template_path,
@@ -230,7 +303,6 @@ async def pod_3_propagate_and_validate(
 @router.get("/api/pod/download/{session_id}/{filename}")
 async def pod_download_file(session_id: str, filename: str):
     """下載 POD 工作區之產出物 (Book_raw.docx, Book_POD_Final.docx, audit_report.json 等)"""
-    PATHS, _, _ = _get_web_deps()
     session_dir = (PATHS.output_dir / "pod_workspaces" / session_id).resolve()
     if not session_dir.exists():
         raise HTTPException(status_code=404, detail="Session 不存在")
@@ -267,7 +339,6 @@ async def pod_vlm_continuation(
     結合階段一 PDF 與前 5%~10% 人工精修 DOCX (Golden Seed)，
     利用 Gemini 或 Ollama 視覺多模態模型接續完成全書排版。
     """
-    PATHS, CFG, save_upload_file_safely = _get_web_deps()
     if session_id:
         session_dir = (PATHS.output_dir / "pod_workspaces" / session_id).resolve()
         if not session_dir.exists():
@@ -292,8 +363,8 @@ async def pod_vlm_continuation(
     ast_path = session_dir / "Book_raw_ast.json"
     if not ast_path.exists():
         try:
-            _, ast_path, _ = extract_raw_from_pdf(
-                pdf_path, session_dir, split_level=split_level
+            _, ast_path, _ = await asyncio.to_thread(
+                extract_raw_from_pdf, pdf_path, session_dir, split_level=split_level
             )
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"PDF 生稿剖析失敗: {e}")
@@ -333,4 +404,3 @@ async def pod_vlm_continuation(
         download_md_url=f"/api/pod/download/{session_id}/Book_VLM_Continued.md",
         audit_report_url=f"/api/pod/download/{session_id}/vlm_audit_report.json",
     )
-

@@ -482,6 +482,8 @@
                             </div>
                         </div>
 
+                        ${buildAuditVisualizerHtml(data.audit_report, summary, isValid)}
+
                         <ul class="result-files">
                             <li>
                                 <div>
@@ -554,6 +556,139 @@
                     : "執行全書智慧擴散與驗收";
             }
         };
+
+        function buildAuditVisualizerHtml(auditReport, summary, isValid) {
+            const report = auditReport || {};
+            const violations = report.violations || [];
+            const sectionAudits = report.section_audits || [];
+
+            if (violations.length === 0 && sectionAudits.length === 0) {
+                return `
+                    <div style="margin: 1rem 0; padding: 0.85rem; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; color: #166534; font-size: 0.9rem;">
+                        ✓ <strong>審計合格：</strong>全書章節結構、樣式規則與文字骨架 100% 守恆，未檢出任何格式脫落或異常。
+                    </div>`;
+            }
+
+            let itemsHtml = '';
+            if (sectionAudits.length > 0) {
+                itemsHtml = sectionAudits.map((sec, idx) => {
+                    const light = sec.traffic_light || (sec.violations && sec.violations.length > 0 ? 'red' : 'green');
+                    const lightColor = light === 'green' ? '#16a34a' : (light === 'yellow' ? '#d97706' : '#dc2626');
+                    const lightBg = light === 'green' ? '#f0fdf4' : (light === 'yellow' ? '#fffbeb' : '#fef2f2');
+                    const lightBorder = light === 'green' ? '#bbf7d0' : (light === 'yellow' ? '#fde68a' : '#fecaca');
+                    const vList = sec.violations || [];
+                    const vBadge = vList.length > 0
+                        ? `<span style="font-size:0.75rem; background:${lightColor}; color:#fff; padding:2px 6px; border-radius:10px;">${vList.length} 條違規</span>`
+                        : `<span style="font-size:0.75rem; color:#16a34a;">守恆 100%</span>`;
+
+                    let violationsDetailHtml = '';
+                    if (vList.length > 0) {
+                        violationsDetailHtml = `<div style="margin-top:6px; padding-top:6px; border-top:1px dashed ${lightBorder}; font-size:0.8rem;">` +
+                            vList.map(v => `<div style="margin-bottom:2px;">• <strong>[${toolbox.escape(v.severity || 'WARN')}] [${toolbox.escape(v.check_type || 'CHECK')}]</strong> ${toolbox.escape(v.message || '')}</div>`).join('') +
+                            `</div>`;
+                    }
+
+                    return `
+                        <div class="audit-item" data-light="${light}" style="margin-bottom: 6px; padding: 8px 10px; background: ${lightBg}; border: 1px solid ${lightBorder}; border-radius: 6px;">
+                            <div style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:${lightColor};"></span>
+                                    <strong style="font-size:0.88rem;">${toolbox.escape(sec.title || sec.section_id || `第 ${idx+1} 篇`)}</strong>
+                                </div>
+                                <div style="display:flex; align-items:center; gap:8px;">
+                                    ${vBadge}
+                                    <span style="font-size:0.8rem; color:var(--text-muted);">▼</span>
+                                </div>
+                            </div>
+                            <div style="display:none; margin-top:6px;">
+                                <div style="font-size:0.8rem; color:var(--text-muted); display:flex; gap:16px;">
+                                    <span>字數: ${sec.char_count || 0}</span>
+                                    <span>段落數: ${sec.paragraph_count || 0}</span>
+                                </div>
+                                ${violationsDetailHtml}
+                            </div>
+                        </div>`;
+                }).join('');
+            } else {
+                itemsHtml = violations.map(v => {
+                    const isError = (v.severity || '').toUpperCase() === 'ERROR';
+                    const bg = isError ? '#fef2f2' : '#fffbeb';
+                    const bdr = isError ? '#fecaca' : '#fde68a';
+                    const clr = isError ? '#dc2626' : '#d97706';
+                    return `
+                        <div class="audit-item" data-light="${isError ? 'red' : 'yellow'}" style="margin-bottom:6px; padding:8px 10px; background:${bg}; border:1px solid ${bdr}; border-radius:6px; font-size:0.85rem;">
+                            <div style="color:${clr}; font-weight:600; margin-bottom:2px;">[${toolbox.escape(v.severity || 'WARN')}] [${toolbox.escape(v.check_type || 'CHECK')}] ${toolbox.escape(v.section_id || '')}</div>
+                            <div>${toolbox.escape(v.message || '')}</div>
+                        </div>`;
+                }).join('');
+            }
+
+            return `
+                <div style="margin: 1rem 0; border: 1px solid var(--border, #e2e8f0); border-radius: 8px; padding: 12px; background: var(--bg-surface, #ffffff);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+                        <div style="font-weight:600; font-size:0.92rem; display:flex; align-items:center; gap:6px;">
+                            <span>📋 品質審計報告檢視器 (Audit Inspector)</span>
+                        </div>
+                        <div style="display:flex; gap:4px;" id="auditFilterBtns">
+                            <button type="button" class="btn btn-secondary btn-sm is-active" style="padding:2px 8px; font-size:0.75rem;" onclick="filterAuditItems('all', this)">全部</button>
+                            <button type="button" class="btn btn-secondary btn-sm" style="padding:2px 8px; font-size:0.75rem; color:#dc2626;" onclick="filterAuditItems('red', this)">紅燈 (${summary.red_count || 0})</button>
+                            <button type="button" class="btn btn-secondary btn-sm" style="padding:2px 8px; font-size:0.75rem; color:#d97706;" onclick="filterAuditItems('yellow', this)">黃燈 (${summary.yellow_count || 0})</button>
+                            <button type="button" class="btn btn-secondary btn-sm" style="padding:2px 8px; font-size:0.75rem; color:#16a34a;" onclick="filterAuditItems('green', this)">綠燈 (${summary.green_count || 0})</button>
+                        </div>
+                    </div>
+                    <div id="auditItemsContainer" style="max-height: 280px; overflow-y: auto;">
+                        ${itemsHtml}
+                    </div>
+                </div>`;
+        }
+
+        function filterAuditItems(filter, btn) {
+            const parent = btn.parentElement;
+            parent.querySelectorAll('button').forEach(b => b.classList.remove('is-active'));
+            btn.classList.add('is-active');
+
+            const container = document.getElementById('auditItemsContainer');
+            if (!container) return;
+            const items = container.querySelectorAll('.audit-item');
+            items.forEach(el => {
+                if (filter === 'all' || el.getAttribute('data-light') === filter) {
+                    el.style.display = 'block';
+                } else {
+                    el.style.display = 'none';
+                }
+            });
+        }
+        window.filterAuditItems = filterAuditItems;
+
+        // Auto-initialize if routed from Step 1 (OCR Handoff)
+        window.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            const sessId = params.get('session_id');
+            const fromOcr = params.get('from_ocr');
+            const stem = params.get('stem');
+
+            if (sessId && fromOcr === '1') {
+                currentSessionId = sessId;
+                const containerEl = document.querySelector('.container');
+                const noticeEl = document.createElement('div');
+                noticeEl.className = 'panel';
+                noticeEl.style.cssText = 'border-left: 4px solid var(--accent, #ea580c); background: #fff7ed; margin-bottom: 1.25rem; padding: 0.85rem 1.2rem;';
+                noticeEl.innerHTML = `
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                        <div>
+                            <strong style="color: #c2410c; font-size:0.95rem;">🚀 已成功載入全自動整稿初稿《${toolbox.escape(stem || sessId)}》</strong>
+                            <p class="hint" style="margin: 4px 0 0 0; color: #7c2d12; font-size:0.83rem;">初稿 Word (Book_seed.docx) 與原始 PDF 已移轉至 POD 工作區。請確認段落後直接啟動「範本學習與藍圖合成」。</p>
+                        </div>
+                        <span class="file-chip" style="background:#ffedd5; color:#9a3412; font-weight:600;">Step 2 就緒</span>
+                    </div>`;
+                if (containerEl && containerEl.children.length > 1) {
+                    containerEl.insertBefore(noticeEl, containerEl.children[1]);
+                }
+                seedFileLabel.innerHTML = `<span class="file-chip"><strong>已載入初稿 (Book_seed.docx)</strong></span>`;
+                sourcePdfLabel.innerHTML = `<span class="file-chip"><strong>已載入原始 PDF (source_book.pdf)</strong></span>`;
+                compileBlueprintBtn.disabled = false;
+            }
+        });
     </script>
     <script src="/static/js/viewport_manager.js"></script>
     <script type="module" src="/static/js/pod_contracts.js"></script>

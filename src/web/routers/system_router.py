@@ -2,27 +2,34 @@
 """
 System, Hardware & Founder Tools FastAPI Router (`src/web/routers/system_router.py`)
 ====================================================================================
-Modularized from `src/web/app.py` (P3-4 Risk 4 Remediation).
+Modularized from `src/web/app.py`.
+Provides versioning, update inspection, hardware profiling, dev telemetry,
+Founder system encoding repairs, issue reporting, and documentation catalogs.
 """
 
 from __future__ import annotations
+
 import os
+import platform
+import subprocess
 import threading
 import time
 import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile, Query
 
-from src.web.schemas import FounderRepairResponse
+from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
+
+from src.web.dependencies import CFG, PATHS, _GPU_SEMAPHORE, save_upload_file_safely
+from src.web.schemas import FounderRepairResponse, HardwareTelemetryResponse
 
 router = APIRouter(tags=["system"])
 
 
 def _get_web_deps():
-    import src.web.app as _web_app
-    return _web_app.PATHS, _web_app.CFG, _web_app.save_upload_file_safely
+    """Backward-compatibility shim for older test fixtures."""
+    return PATHS, CFG, save_upload_file_safely
 
 
 def _cleanup_temp_files(*file_paths: str) -> None:
@@ -38,6 +45,7 @@ def _cleanup_temp_files(*file_paths: str) -> None:
 @router.get("/api/version")
 async def get_version():
     from config import VERSION
+
     return {
         "app_version": VERSION.app_version,
         "model_version": VERSION.model_version,
@@ -48,6 +56,7 @@ async def get_version():
 async def check_update():
     from config import VERSION
     from src.scripts.updater_service import check_latest_release
+
     info = check_latest_release()
     if not info:
         return {"has_update": False, "status": "error", "msg": "無法連線至 GitHub 檢查更新。"}
@@ -96,6 +105,7 @@ async def apply_update(request: Request):
         def delayed_exit():
             time.sleep(1)
             os._exit(0)
+
         threading.Thread(target=delayed_exit, daemon=True).start()
     return result
 
@@ -103,7 +113,6 @@ async def apply_update(request: Request):
 @router.get("/api/system_config")
 async def get_system_config():
     """取得系統安全防護與無日誌配置資訊"""
-    _, CFG, _ = _get_web_deps()
     return {
         "max_upload_size_mb": CFG.max_upload_size_mb,
         "max_template_size_mb": CFG.max_template_size_mb,
@@ -115,8 +124,42 @@ async def get_system_config():
 
 @router.get("/api/hardware_status")
 async def get_hardware_status():
-    _, CFG, _ = _get_web_deps()
+    """取得靜態硬體規格設定檔"""
     return CFG.get_hardware_profile()
+
+
+@router.get("/api/dev/telemetry", response_model=HardwareTelemetryResponse)
+async def get_dev_telemetry() -> HardwareTelemetryResponse:
+    """工程師模式即時遙測：VRAM 佔用、GPU 鎖狀態、記憶體使用"""
+    base_profile = CFG.get_hardware_profile()
+    total_vram = float(base_profile.get("vram_gb", 0.0))
+    allocated_mb = 0.0
+    reserved_mb = 0.0
+    percent = 0.0
+
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            allocated_mb = round(torch.cuda.memory_allocated() / (1024 * 1024), 2)
+            reserved_mb = round(torch.cuda.memory_reserved() / (1024 * 1024), 2)
+            if total_vram > 0:
+                percent = round((reserved_mb / (total_vram * 1024)) * 100, 1)
+    except Exception:
+        pass
+
+    return HardwareTelemetryResponse(
+        gpu_name=base_profile.get("gpu_name", "Unknown"),
+        target_accelerator=base_profile.get("target_accelerator", "CPU"),
+        active_provider=base_profile.get("active_provider", "CPUExecutionProvider"),
+        total_vram_gb=total_vram,
+        allocated_vram_mb=allocated_mb,
+        reserved_vram_mb=reserved_mb,
+        vram_usage_percent=percent,
+        is_accelerated=bool(base_profile.get("is_accelerated", False)),
+        gpu_locked=_GPU_SEMAPHORE.locked(),
+        app_mode=CFG.app_mode,
+    )
 
 
 @router.post("/api/founder/repair", response_model=FounderRepairResponse)
@@ -126,7 +169,6 @@ async def api_founder_repair(
     import asyncio
     from src.founder_tools.fix_founder_fonts import repair_docx_file, repair_pdf_file
 
-    PATHS, CFG, save_upload_file_safely = _get_web_deps()
     if not file.filename:
         raise HTTPException(status_code=400, detail="未提供有效檔案名稱")
 
@@ -138,8 +180,8 @@ async def api_founder_repair(
     task_id = str(uuid.uuid4())
     temp_input = PATHS.root / "scratch" / f"founder_repair_{task_id}{ext}"
     await save_upload_file_safely(file, temp_input, max_mb=CFG.max_upload_size_mb)
-    created_temps = [str(temp_input)]
 
+    created_temps = [str(temp_input)]
     output_dir = PATHS.root / "data" / "03_output"
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -174,8 +216,6 @@ async def api_founder_repair(
 
 @router.post("/api/report_issue")
 async def report_issue(request: Request):
-    import platform
-
     data = await request.json()
     description = (data.get("description") or "").strip()[:2000]
 
@@ -272,8 +312,7 @@ async def get_doc_content(doc_id: str):
     if not item:
         raise HTTPException(status_code=404, detail=f"文件不存在: {doc_id}")
 
-    from src.utils.path_helper import get_project_dir, get_bundled_pandoc
-    import subprocess
+    from src.utils.path_helper import get_bundled_pandoc, get_project_dir
 
     project_root = get_project_dir()
     file_path = project_root / item["file"]
@@ -299,6 +338,7 @@ async def get_doc_content(doc_id: str):
 
     if not html_content:
         import html
+
         escaped_text = html.escape(markdown_text)
         html_content = f"<pre style='white-space: pre-wrap; font-family: inherit;'>{escaped_text}</pre>"
 
@@ -310,5 +350,3 @@ async def get_doc_content(doc_id: str):
         "html": html_content,
         "markdown": markdown_text,
     }
-
-
