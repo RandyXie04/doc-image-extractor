@@ -696,7 +696,7 @@ def propagate_and_validate_session(
         import asyncio
 
         vlm_engine = SecureVLMContinuationEngine(workspace_base=s_dir.parent)
-        vlm_model = model or os.getenv("OLLAMA_MODEL") or os.getenv("DEFAULT_AI_MODEL") or "qwen2.5vl:3b"
+        vlm_model = model or os.getenv("OLLAMA_MODEL") or os.getenv("DEFAULT_AI_MODEL") or "qwen3.5:4b"
 
         try:
             loop = asyncio.get_event_loop()

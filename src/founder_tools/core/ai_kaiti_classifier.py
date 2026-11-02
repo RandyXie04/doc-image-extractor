@@ -70,7 +70,8 @@ class AIKaitiClassifier:
     ):
         # Resolve API key
         self.api_key = api_key or os.getenv("GEMINI_API_KEY")
-        self.model = model or os.getenv("AI_KAITI_MODEL", "gemini-3.1-pro-preview")
+        self.model = model or os.getenv("AI_KAITI_MODEL", "gemini-3.8-flash")
+        self.backend = "gemini" if ("gemini" in self.model.lower() and self.api_key) else "ollama"
         self.timeout = timeout
         self.screenshot_dpi = screenshot_dpi
         self.min_confidence = float(min_confidence if min_confidence is not None else os.getenv("AI_KAITI_THRESHOLD", 0.65))
@@ -88,7 +89,14 @@ class AIKaitiClassifier:
 
         # Lazy-init the Gemini client
         self._client = None
-        self._available = bool(self.api_key)
+        if self.backend == "gemini":
+            self._available = bool(self.api_key)
+        else:
+            try:
+                from src.utils.ollama_client import is_ollama_available
+                self._available = is_ollama_available()
+            except Exception:
+                self._available = False
 
         # ── Font Name Learning Cache ──
         # 將 PDF 內部字型名稱對映到視覺字型標籤，適用於任何排版系統：
@@ -158,6 +166,53 @@ class AIKaitiClassifier:
                 f"(後續相同 font name 的 block 將免呼叫 API)"
             )
 
+    def infer_font_tag_from_name(self, font_name: str) -> Optional[str]:
+        """
+        從字型名稱字串理解其字體風格 (楷體/宋體/黑體/仿宋)。
+        優先使用出版排版系統命名規則 (方正、Adobe、華文、微軟)，未命中時調用本地文字模型。
+        """
+        fn_lower = font_name.lower().strip()
+        if not fn_lower:
+            return None
+
+        # 1. 出版字型命名特徵比對 (方正/華文/微軟/開源/Adobe)
+        if any(k in fn_lower for k in ["kaiti", "kai_ti", "fzkt", "fzkai", "stkaiti", "kai", "楷"]):
+            return "kaiti"
+        if any(k in fn_lower for k in ["fangsong", "fang_song", "fzfs", "stfangsong", "仿宋"]):
+            return "fangsong"
+        if any(k in fn_lower for k in ["songti", "song_ti", "fzss", "fzsong", "stsong", "simsun", "nsimsun", "mingliu", "pmingliu", "宋", "明體", "明朝"]):
+            return "songti"
+        if any(k in fn_lower for k in ["heiti", "hei_ti", "fzht", "fzhei", "stheiti", "simhei", "yahei", "pingfang", "notosans", "sourcehansans", "黑"]):
+            return "heiti"
+        if any(k in fn_lower for k in ["helv", "arial", "times", "courier", "calibri", "cambria", "georgia", "verdana", "tahoma", "symbol", "roboto", "opensans", "latin", "italic", "oblique"]):
+            return "other"
+
+        # 2. 本機離線 Ollama 文字模型語義判定 (完全離線隔離)
+        try:
+            from src.utils.ollama_client import ollama_structured_chat, is_ollama_available, get_default_text_model
+            if is_ollama_available():
+                schema = {
+                    "type": "object",
+                    "properties": {
+                        "font": {"type": "string", "enum": ["kaiti", "songti", "heiti", "fangsong", "other"]},
+                    },
+                    "required": ["font"],
+                }
+                res = ollama_structured_chat(
+                    prompt=f"請判斷出版排版中文字型名稱所屬的風格類別：'{font_name}'。",
+                    system="你是一位中文書籍字型專家。判斷字型名稱所屬風格：kaiti, songti, heiti, fangsong 或 other。只回傳 JSON。",
+                    schema=schema,
+                    model=get_default_text_model(),
+                    timeout=5.0,
+                    think=False,
+                )
+                if isinstance(res, dict) and "font" in res:
+                    return res["font"]
+        except Exception:
+            pass
+
+        return None
+
     def classify_block_font(
         self,
         page: fitz.Page,
@@ -192,6 +247,12 @@ class AIKaitiClassifier:
                 if cached_tag is not None:
                     self.stats["font_name_cache_hits"] += 1
                     return cached_tag
+
+                # 直接從字型名稱理解字體風格（免截圖，100% 離線毫秒級）
+                inferred = self.infer_font_tag_from_name(fn)
+                if inferred:
+                    self._learn_font_name(fn, inferred)
+                    return inferred
 
         # ── Step 2: 磁碟快取檢查 ──
         cache_key = self._compute_hash(f"vision:{block_text}:{list(block_bbox)}")
@@ -283,6 +344,37 @@ class AIKaitiClassifier:
         """
         呼叫 Gemini Vision API 進行字型辨識。
         """
+        if self.backend == "ollama":
+            from src.utils.ollama_client import ollama_structured_chat, get_default_vision_model
+            user_prompt = "請辨識這段 PDF 截圖中文字的字型。"
+            if text_hint:
+                user_prompt += f"\n截圖中的文字內容為：「{text_hint[:200]}」"
+            schema = {
+                "type": "object",
+                "properties": {
+                    "font": {"type": "string", "enum": ["kaiti", "songti", "heiti", "fangsong", "other"]},
+                    "confidence": {"type": "number"},
+                    "reasoning": {"type": "string"},
+                },
+                "required": ["font", "confidence"],
+            }
+            target_model = self.model if "gemini" not in self.model.lower() else get_default_vision_model()
+            try:
+                res = ollama_structured_chat(
+                    prompt=user_prompt,
+                    images=[image_bytes],
+                    system=self.VISION_SYSTEM_PROMPT,
+                    schema=schema,
+                    model=target_model,
+                    timeout=self.timeout,
+                    think=False,
+                )
+                if isinstance(res, dict) and "font" in res:
+                    return res
+            except Exception as e:
+                print(f"[AIKaitiClassifier] Ollama Vision 例外: {e}")
+            return None
+
         client = self._get_client()
         if client is None:
             return None
@@ -402,8 +494,39 @@ class AIKaitiClassifier:
         self, system: str, user: str
     ) -> Optional[list]:
         """
-        呼叫 Gemini LLM API 進行文字分析。
+        呼叫 LLM API 進行文字分析 (支援 Gemini API 與本地離線 Ollama)。
         """
+        if self.backend == "ollama":
+            from src.utils.ollama_client import ollama_structured_chat, get_default_text_model
+            schema = {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "paragraph_id": {"type": "integer"},
+                        "block_indices": {"type": "array", "items": {"type": "integer"}},
+                        "indent_type": {"type": "string", "enum": ["first_line", "block", "none"]},
+                        "is_kaiti_quote": {"type": "boolean"},
+                    },
+                    "required": ["paragraph_id", "block_indices", "indent_type", "is_kaiti_quote"],
+                },
+            }
+            target_model = self.model if "gemini" not in self.model.lower() else get_default_text_model()
+            try:
+                res = ollama_structured_chat(
+                    prompt=user,
+                    system=system,
+                    schema=schema,
+                    model=target_model,
+                    timeout=self.timeout,
+                    think=False,
+                )
+                if isinstance(res, list):
+                    return res
+            except Exception as e:
+                print(f"[AIKaitiClassifier] Ollama 段落結構例外: {e}")
+            return None
+
         client = self._get_client()
         if client is None:
             return None

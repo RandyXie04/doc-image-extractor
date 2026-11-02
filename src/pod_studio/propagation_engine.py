@@ -311,8 +311,13 @@ class PropagationEngine:
                     except Exception:
                         pass
 
-            if ai_client is not None:
-                target_model = model or os.getenv("DEFAULT_AI_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
+            target_model = model or os.getenv("DEFAULT_AI_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
+            from src.utils.ollama_client import is_ollama_available, ollama_structured_chat, get_default_text_model
+
+            ollama_ready = is_ollama_available()
+            can_run_ai = (ai_client is not None) or ollama_ready
+
+            if can_run_ai:
                 valid_styles = list(self.blueprint.template_styles_used)
                 if "Normal" not in valid_styles:
                     valid_styles.append("Normal")
@@ -359,18 +364,49 @@ class PropagationEngine:
 
                     for attempt in range(4):
                         try:
-                            resp_text = ""
-                            if hasattr(ai_client, "models") and hasattr(ai_client.models, "generate_content"):
-                                resp = ai_client.models.generate_content(
-                                    model=target_model,
-                                    contents=prompt,
+                            # 優先嘗試本機離線 Ollama（若指定本地模型或未設定 Gemini API Key）
+                            if ollama_ready and (ai_client is None or "gemini" not in target_model.lower()):
+                                schema = {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "style": {"type": "string", "enum": valid_styles},
+                                        },
+                                        "required": ["id", "style"],
+                                    },
+                                }
+                                local_model = target_model if "gemini" not in target_model.lower() else get_default_text_model()
+                                parsed = ollama_structured_chat(
+                                    prompt=prompt,
+                                    schema=schema,
+                                    model=local_model,
+                                    think=False,
+                                    timeout=120.0,
                                 )
-                                resp_text = resp.text.strip()
-                            elif hasattr(ai_client, "generate_content"):
-                                resp = ai_client.generate_content(prompt)
-                                resp_text = resp.text.strip()
-                            elif callable(ai_client):
-                                resp_text = str(ai_client(prompt)).strip()
+                                if isinstance(parsed, list):
+                                    for item in parsed:
+                                        if isinstance(item, dict) and "id" in item and "style" in item:
+                                            p_id = int(item["id"])
+                                            s_name = str(item["style"]).strip()
+                                            if s_name in valid_styles or s_name == "Normal":
+                                                results[p_id] = s_name
+                                    print(f"[POD Studio AI] Batch {b_idx}/{total_batches} done: processed {len(parsed)} paragraphs via Ollama ({local_model}).", flush=True)
+                                    break
+                            elif ai_client is not None:
+                                resp_text = ""
+                                if hasattr(ai_client, "models") and hasattr(ai_client.models, "generate_content"):
+                                    resp = ai_client.models.generate_content(
+                                        model=target_model,
+                                        contents=prompt,
+                                    )
+                                    resp_text = resp.text.strip()
+                                elif hasattr(ai_client, "generate_content"):
+                                    resp = ai_client.generate_content(prompt)
+                                    resp_text = resp.text.strip()
+                                elif callable(ai_client):
+                                    resp_text = str(ai_client(prompt)).strip()
 
                             if resp_text:
                                 clean_json = re.sub(r'^```(?:json)?\s*', '', resp_text)

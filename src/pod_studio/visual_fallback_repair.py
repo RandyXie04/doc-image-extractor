@@ -125,7 +125,8 @@ def repair_corrupted_section_with_vlm(
         missing_badges=missing_badges,
     )
 
-    if ai_client is not None:
+    # 1. 優先嘗試 Gemini（若指定 Gemini 模型且已配置 API Key）
+    if ai_client is not None and ("gemini" in target_model.lower()):
         if hasattr(ai_client, "models") and hasattr(ai_client.models, "generate_content"):
             resp = ai_client.models.generate_content(
                 model=target_model,
@@ -137,5 +138,24 @@ def repair_corrupted_section_with_vlm(
             return resp.text.strip()
         elif callable(ai_client):
             return ai_client(prompt, image_bytes)
+
+    # 2. 本機離線 Ollama 視覺多模態修復 (完全離線隔離)
+    try:
+        from src.utils.ollama_client import ollama_chat, get_default_vision_model, is_ollama_available
+
+        local_model = target_model if ("gemini" not in target_model.lower()) else get_default_vision_model()
+        if is_ollama_available():
+            repaired_text = ollama_chat(
+                prompt=prompt,
+                images=[image_bytes],
+                model=local_model,
+                think=False,
+                timeout=120.0,
+                strip_fence=True,
+            )
+            if repaired_text:
+                return repaired_text
+    except Exception as e:
+        print(f"[VisualFallbackRepair] Ollama 修復例外: {e}")
 
     return f"<!-- VLM Repair Prompt Prepared ({len(image_bytes)} bytes image rendered) -->\n{prompt}"

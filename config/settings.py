@@ -1,4 +1,4 @@
-﻿# // ==============================================================================
+# // ==============================================================================
 # // config.py: Project Configuration Hub
 # // - Paths: Dynamically resolved via pathlib(__file__).
 # // - API Keys & Settings: Loaded from .env.
@@ -180,8 +180,15 @@ class _Config:
     
     # // AI Kaiti Paragraph Classifier Settings (Gemini Vision)
     ai_kaiti_enabled:    bool  = field(default_factory=lambda: os.getenv("AI_KAITI_ENABLED", "false").lower() == "true")
-    ai_kaiti_model:      str   = field(default_factory=lambda: os.getenv("AI_KAITI_MODEL", "gemini-3.1-pro-preview"))
+    ai_kaiti_model:      str   = field(default_factory=lambda: os.getenv("AI_KAITI_MODEL", "gemini-3.8-flash"))
     ai_kaiti_threshold:  float = field(default_factory=lambda: float(os.getenv("AI_KAITI_THRESHOLD", "0.65")))
+    
+    # // Ollama Local Inference Settings (100% Offline & Local Isolation)
+    ollama_host:         str   = field(default_factory=lambda: os.getenv("OLLAMA_HOST", "http://localhost:11434"))
+    ollama_model:        str   = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "qwen3.5:4b"))
+    ollama_text_model:   str   = field(default_factory=lambda: os.getenv("OLLAMA_TEXT_MODEL", "qwen3.5:4b"))
+    ollama_num_ctx:      int   = field(default_factory=lambda: int(os.getenv("OLLAMA_NUM_CTX", "16384")))
+    ollama_keep_alive:   str   = field(default_factory=lambda: os.getenv("OLLAMA_KEEP_ALIVE", "10m"))
     
     # // Operation Mode: 'editor' (default for publishing house) or 'dev' (for engineers)
     app_mode:       str   = field(default_factory=lambda: os.getenv("APP_MODE", "editor").lower())

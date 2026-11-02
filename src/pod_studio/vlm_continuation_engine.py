@@ -305,35 +305,23 @@ class SecureVLMContinuationEngine:
                 except Exception as err:
                     return f"<!-- VLM_FAIL: Gemini 推論異常 ({type(err).__name__}) -->"
 
-            # 2. 本機 Ollama 視覺模型 (預設 qwen2.5vl:3b, 可由 OLLAMA_MODEL 指定)
-            ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-            default_ollama = os.getenv("OLLAMA_MODEL", "qwen2.5vl:3b")
+            # 2. 本機 Ollama 視覺模型 (預設由 OLLAMA_MODEL 指定，如 qwen3.5:4b)
+            from src.utils.ollama_client import async_ollama_chat, OllamaClientError, get_default_vision_model
+
+            default_ollama = get_default_vision_model()
             target_ollama_model = model_name if ("gemini" not in model_name.lower()) else default_ollama
             try:
-                import urllib.request
-
-                b64_img = base64.b64encode(image_bytes).decode("utf-8")
-                payload = json.dumps({
-                    "model": target_ollama_model,
-                    "prompt": prompt,
-                    "images": [b64_img],
-                    "stream": False,
-                }).encode("utf-8")
-
-                def _sync_ollama():
-                    req = urllib.request.Request(
-                        f"{ollama_host}/api/generate",
-                        data=payload,
-                        headers={"Content-Type": "application/json"},
-                    )
-                    with urllib.request.urlopen(req, timeout=180) as resp:
-                        res_data = json.loads(resp.read().decode("utf-8"))
-                        return res_data.get("response", "")
-
-                raw_resp = await asyncio.to_thread(_sync_ollama)
-                raw_resp = re.sub(r'^```(?:markdown)?\n?', '', raw_resp.strip())
-                raw_resp = re.sub(r'\n?```$', '', raw_resp.strip())
+                raw_resp = await async_ollama_chat(
+                    prompt=prompt,
+                    images=[image_bytes],
+                    model=target_ollama_model,
+                    think=False,
+                    timeout=180.0,
+                    strip_fence=True,
+                )
                 return raw_resp
+            except OllamaClientError as err:
+                return f"<!-- VLM_FAIL: Ollama 推論異常 ({type(err).__name__}) -->"
             except Exception as err:
                 return f"<!-- VLM_FAIL: Ollama 推論異常 ({type(err).__name__}) -->"
 
