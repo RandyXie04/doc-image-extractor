@@ -1,4 +1,4 @@
-PyMuPDF==1.26.4
+PyMuPDF==2.0
 opencv-python==5.0.0.93
 numpy==2.3.2
 onnxruntime>=1.17.0
