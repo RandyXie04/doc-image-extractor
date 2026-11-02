@@ -305,9 +305,10 @@ class SecureVLMContinuationEngine:
                 except Exception as err:
                     return f"<!-- VLM_FAIL: Gemini 推論異常 ({type(err).__name__}) -->"
 
-            # 2. 本機 Ollama 視覺模型 (如 qwen2.5-vl:7b, llama3.2-vision)
+            # 2. 本機 Ollama 視覺模型 (預設 qwen2.5vl:3b, 可由 OLLAMA_MODEL 指定)
             ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
-            target_ollama_model = model_name if ("gemini" not in model_name.lower()) else "qwen2.5-vl:7b"
+            default_ollama = os.getenv("OLLAMA_MODEL", "qwen2.5vl:3b")
+            target_ollama_model = model_name if ("gemini" not in model_name.lower()) else default_ollama
             try:
                 import urllib.request
 

@@ -328,7 +328,7 @@ async def pod_vlm_continuation(
     pdf_file: Optional[UploadFile] = File(None),
     seed_file: UploadFile = File(...),
     template_file: Optional[UploadFile] = File(None),
-    model_name: str = Form("gemini-2.5-flash"),
+    model_name: str = Form(os.getenv("OLLAMA_MODEL", "qwen2.5vl:3b")),
     max_continuation_sections: Optional[int] = Form(None),
     split_level: int = Form(2),
     manual_boundary_anchor: Optional[str] = Form(None),
