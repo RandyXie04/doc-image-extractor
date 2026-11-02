@@ -196,6 +196,17 @@ def analyze_pdf_for_ui(pdf_path: str, template_path: Optional[str], fonts_json_p
         else:
             font["current_role"] = "auto"
             font["current_docx_style"] = None
+        font_str = font["name"].lower()
+        if any(k in font_str for k in ["kaiti", "kai_ti", "fzkt", "fzkai", "stkaiti", "kai", "楷"]):
+            font["suggested_role"] = "楷體"
+        elif any(k in font_str for k in ["fangsong", "fang_song", "fzfs", "stfangsong", "仿宋"]):
+            font["suggested_role"] = "楷體"
+        elif any(k in font_str for k in ["songti", "song_ti", "fzss", "fzsong", "stsong", "simsun", "nsimsun", "mingliu", "宋"]):
+            font["suggested_role"] = "正文"
+        elif any(k in font_str for k in ["heiti", "hei_ti", "fzht", "fzhei", "stheiti", "simhei", "yahei", "黑"]):
+            font["suggested_role"] = "H2" if font.get("size_pt", 0) >= 12.0 else "正文"
+        else:
+            font["suggested_role"] = None
 
     # 固定預設角色清單（作為 fallback，若 docx 無樣式時使用）
     default_roles = ["H1", "H2", "H3", "圖說", "楷體", "正文", "忽略"]

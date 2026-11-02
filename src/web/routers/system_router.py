@@ -112,13 +112,20 @@ async def apply_update(request: Request):
 
 @router.get("/api/system_config")
 async def get_system_config():
-    """取得系統安全防護與無日誌配置資訊"""
+    """取得系統安全防護、無日誌架構與本機離線 AI 模型配置資訊"""
+    from src.utils.ollama_client import is_ollama_available
     return {
         "max_upload_size_mb": CFG.max_upload_size_mb,
         "max_template_size_mb": CFG.max_template_size_mb,
         "file_retention_hours": CFG.file_retention_hours,
         "enable_disk_logging": CFG.enable_disk_logging,
         "app_mode": CFG.app_mode,
+        "default_ai_model": os.getenv("DEFAULT_AI_MODEL", "qwen3.5:4b"),
+        "ollama_host": CFG.ollama_host,
+        "ollama_model": CFG.ollama_model,
+        "ollama_text_model": CFG.ollama_text_model,
+        "ollama_available": is_ollama_available(),
+        "offline_isolated": True,
     }
 
 

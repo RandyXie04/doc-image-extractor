@@ -862,10 +862,11 @@
             }
         });
 
-        function buildStyleOptions(styleList, roles, currentRole, currentDocxStyle) {
+        function buildStyleOptions(styleList, roles, currentRole, currentDocxStyle, suggestedRole) {
             const allOptions = [];
             const isAuto = (!currentRole && !currentDocxStyle) || currentRole === 'auto' || currentRole === '自動';
-            allOptions.push(`<option value="auto"${isAuto ? ' selected' : ''}>自動（依版面與章節規則辨識）</option>`);
+            const autoLabel = suggestedRole ? `自動 (字名推薦: ${toolbox.escape(suggestedRole)})` : '自動（依版面與章節規則辨識）';
+            allOptions.push(`<option value="auto"${isAuto ? ' selected' : ''}>${autoLabel}</option>`);
 
             const filteredRoles = (roles || []).filter(r => r !== 'auto' && r !== '自動');
             if (filteredRoles.length) {
@@ -899,9 +900,10 @@
             }
             const rows = fonts.map((f, idx) => {
                 const samples = (f.sample_texts || []).slice(0, 2).join(' / ');
-                const opts = buildStyleOptions(styles, roles, f.current_role, f.current_docx_style);
+                const opts = buildStyleOptions(styles, roles, f.current_role, f.current_docx_style, f.suggested_role);
+                const sugBadge = f.suggested_role ? `<span class="badge" style="margin-left:6px;font-size:0.75rem;opacity:0.85;">${toolbox.escape(f.suggested_role)}</span>` : '';
                 return `<tr>
-                    <td class="cell-mono">${toolbox.escape(f.name)}</td>
+                    <td class="cell-mono">${toolbox.escape(f.name)}${sugBadge}</td>
                     <td><span class="badge">${toolbox.escape(f.size_pt)} pt</span></td>
                     <td class="cell-sample">${toolbox.escape(samples)}</td>
                     <td>

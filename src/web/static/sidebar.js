@@ -159,6 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
         <div class="sidebar-footer">
             <div id="hardwareDisplay" class="sidebar-info-box">硬體加速：偵測中</div>
+            <div id="aiModelDisplay" class="sidebar-info-box" style="margin-top:4px;">AI 推論：偵測中</div>
             <div id="versionDisplay" class="sidebar-version-text">版本：讀取中</div>
             <div class="sidebar-privacy"><strong>零日誌隱私架構</strong>檔案保留 24 小時後自動銷毀</div>
             <button id="modeToggleBtn" class="sidebar-btn" type="button" title="切換出版社編輯模式與工程師除錯模式">模式：讀取中</button>
@@ -523,6 +524,19 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }).catch(() => {
             hardwareDisplay.textContent = '硬體探測離線';
+        });
+    }
+
+    const aiModelDisplay = document.getElementById('aiModelDisplay');
+    if (aiModelDisplay) {
+        fetch('/api/system_config').then(res => res.json()).then(cfg => {
+            const isOllama = cfg.ollama_available;
+            const modelName = cfg.ollama_model || cfg.default_ai_model || 'qwen3.5:4b';
+            const statusLabel = isOllama ? 'Ollama 就緒' : '離線就緒';
+            aiModelDisplay.innerHTML = `${svg('chip', 12)} AI：${window.toolbox.escape(modelName)} (${statusLabel})`;
+            if (isOllama) aiModelDisplay.classList.add('is-accelerated');
+        }).catch(() => {
+            aiModelDisplay.textContent = 'AI：本地離線隔離';
         });
     }
 
