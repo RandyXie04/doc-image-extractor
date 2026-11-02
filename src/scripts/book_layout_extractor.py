@@ -143,6 +143,11 @@ _STANDALONE_HEADING_LINE_RE = re.compile(
 _TRAILING_HEADING_SPLIT_RE = re.compile(
     r'^(.+[。！？）\)”’])\s*(\d+[\s\u3000]+[\u4e00-\u9fff]{2,15}|\d+\.\d+(?:\.\d+)?[\s\u3000]+[\u4e00-\u9fff]{2,25})$'
 )
+_TERMINAL_PUNCT_RE = re.compile(r'[。！？!?…]+[”’」』）)\]】]*$')
+_TRAILING_MARK_RE = re.compile(r'(?:\[\d+(?:[-–,，]\d+)*\]|[①-⑳]|\^\[\d+\])+$')
+_PARA_START_PREFIX_RE = re.compile(r'^(?:[（(]?[一二三四五六七八九十\d]+[)）、.．]|[①-⑳]|[•●◆■※★\-])')
+_OPEN_PUNCT_RE = re.compile(r'[《“（(\[〈]$')
+
 
 
 def _split_merged_heading_blocks(blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1248,29 +1253,80 @@ def _parse_pdf_layout_flow(
             block_custom_style = _block_docx_style if (_has_font_mapping and not _is_ignored_font and not is_block_caption) else None
 
             # Check indentation to determine whether this block starts a new paragraph
-            is_indented = (bbox[0] - base_x0) >= 12.0
+            is_indented = (bbox[0] - base_x0) >= max(10.0, avg_size * 1.4)
+            curr_has_space_indent = bool(re.match(r'^[\u3000]{1,2}|^\s{2,4}', bb_text))
+            indent_jump = bool((bbox[0] - last_block_x0) >= 5.0)
 
             vertical_gap = (bbox[1] - last_block_y1) if last_block_y1 > 0 else 0.0
             prev_ref_x1 = last_block_last_line_x1 if last_block_last_line_x1 > 0 else last_block_x1
             prev_block_was_short_line = bool(prev_ref_x1 > 0 and prev_ref_x1 < max_x1 - max(avg_size * 2.0, 20.0))
-            is_large_vertical_gap = bool(vertical_gap > avg_size * 1.45)
+            is_large_vertical_gap = bool(vertical_gap > avg_size * 1.5)
 
             if current_para_lines:
                 should_flush = False
+                # 1. 樣式/字體邊界（人工映射 Word 樣式或楷體不同）-> 強制分段
                 if is_block_kaiti != current_para_is_kaiti:
                     should_flush = True
                 elif block_custom_style != current_para_custom_style:
                     should_flush = True
-                # A new paragraph is indicated by an increase in indentation (e.g. from 2 chars to 4 chars)
-                # or a large jump in indent. We use > 5.0 instead of abs() to avoid breaking on hanging indents
-                elif is_indented and (bbox[0] - last_block_x0) >= 5.0:
-                    should_flush = True
-                # ✅ 防黏連 1：垂直段距跳躍（段前距/空行），強制獨立成段
-                elif is_large_vertical_gap:
-                    should_flush = True
-                # ✅ 防黏連 2：前一區塊未滿行（提早換行），代表上一段已結束或是獨立小標，絕不硬接！
-                elif prev_block_was_short_line:
-                    should_flush = True
+                else:
+                    prev_clean = current_para_lines[-1].strip() if current_para_lines else ""
+                    curr_clean = bb_text.strip()
+
+                    # 2. 當前行開頭為條列編號/前綴（BUG-006A 防禦）-> 強制分段
+                    if curr_clean and _PARA_START_PREFIX_RE.match(curr_clean):
+                        should_flush = True
+                    else:
+                        prev_ends_with_open = bool(_OPEN_PUNCT_RE.search(prev_clean))
+                        has_unclosed_cjk_quote = bool(
+                            prev_clean.count('《') > prev_clean.count('》')
+                            or prev_clean.count('“') > prev_clean.count('”')
+                            or prev_clean.count('（') > prev_clean.count('）')
+                            or prev_clean.count('(') > prev_clean.count(')')
+                        )
+                        is_unclosed_continuation = prev_ends_with_open or has_unclosed_cjk_quote
+
+                        # 3. 獨立無編號短小標題判定（BUG-004 防黏連保護）
+                        prev_clean_content = _HEADING_PREFIX_CLEAN_RE.sub('', _CLEAN_FOR_HEADING_RE.sub('', prev_clean))
+                        prev_has_sentence_punct = bool(_SENTENCE_PUNCT_RE.search(prev_clean_content))
+                        prev_is_heading_like = bool(
+                            not is_unclosed_continuation
+                            and len(current_para_lines) == 1
+                            and 2 <= len(prev_clean_content) <= 35
+                            and not prev_has_sentence_punct
+                            and prev_block_was_short_line
+                            and not re.search(r'[的了在和与]$', prev_clean_content)
+                        )
+                        if prev_is_heading_like:
+                            should_flush = True
+                        elif is_unclosed_continuation:
+                            # 句中未閉合書名號、括號或引號（BUG-006B）：強制流式接續
+                            should_flush = False
+                        else:
+                            # 4. 垂直空隙（段距跳躍，適用首行無縮排現代版式）
+                            if is_large_vertical_gap:
+                                should_flush = True
+                            else:
+                                # 5. 終止標點判定（剝離行尾注標後檢查句號、問號、感嘆號等）
+                                prev_no_mark = _TRAILING_MARK_RE.sub('', prev_clean)
+                                prev_has_terminal = bool(_TERMINAL_PUNCT_RE.search(prev_no_mark))
+                                prev_ends_with_colon = bool(re.search(r'[：:]$', prev_no_mark))
+                                is_hanging_indent_citation = bool(
+                                    current_para_lines
+                                    and re.match(r'^\[\d+\]', current_para_lines[0].strip())
+                                    and not re.match(r'^\[\d+\]', curr_clean)
+                                )
+
+                                if prev_has_terminal:
+                                    # 有句末標點且（有縮排、未滿行、或有行距）-> 正常自然段結束
+                                    if is_indented or curr_has_space_indent or prev_block_was_short_line or vertical_gap > avg_size * 0.9:
+                                        should_flush = True
+                                elif prev_ends_with_colon and not is_hanging_indent_citation and (is_indented or curr_has_space_indent or prev_block_was_short_line):
+                                    # 冒號後接縮排或短行引出下文（非文獻懸掛縮排）-> 獨立段落
+                                    should_flush = True
+                                elif not is_hanging_indent_citation and (is_indented or curr_has_space_indent) and indent_jump and prev_block_was_short_line:
+                                    # 6. 無終止標點但有明確首行縮排跳躍且前行未滿行 -> 容錯分段
+                                    should_flush = True
 
                 if should_flush:
                     flush_current_para()

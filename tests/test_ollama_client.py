@@ -142,3 +142,83 @@ def test_ollama_structured_chat():
         assert isinstance(res, dict)
         assert res["font"] == "kaiti"
         assert res["confidence"] == 0.95
+
+
+def test_find_ollama_executable():
+    from src.utils.ollama_client import find_ollama_executable
+    with patch("shutil.which", return_value="C:\\FakePath\\ollama.exe"):
+        assert find_ollama_executable() == "C:\\FakePath\\ollama.exe"
+
+    with patch("shutil.which", return_value=None), \
+         patch("os.path.exists", return_value=True):
+        exe = find_ollama_executable()
+        assert exe is not None
+        assert "ollama.exe" in exe
+
+
+def test_list_and_check_local_models():
+    from src.utils.ollama_client import list_local_models, is_model_installed
+
+    fake_tags_json = json.dumps({
+        "models": [
+            {"name": "qwen2.5vl:7b"},
+            {"name": "qwen3.5:4b"},
+            {"name": "llama3.2:latest"}
+        ]
+    }).encode("utf-8")
+
+    def fake_urlopen(req, timeout=None):
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.read.return_value = fake_tags_json
+        mock_resp.__enter__.return_value = mock_resp
+        return mock_resp
+
+    with patch("urllib.request.urlopen", side_effect=fake_urlopen):
+        models = list_local_models()
+        assert "qwen3.5:4b" in models
+        assert "qwen2.5vl:7b" in models
+        assert is_model_installed("qwen3.5:4b") is True
+        assert is_model_installed("qwen3.5:4b:latest") is True
+        assert is_model_installed("llama3.2") is True
+        assert is_model_installed("non_existent_model") is False
+
+
+def test_ensure_ollama_service_already_running():
+    from src.utils.ollama_client import ensure_ollama_service
+    with patch("src.utils.ollama_client.is_ollama_available", return_value=True):
+        assert ensure_ollama_service() is True
+
+
+def test_zero_silent_fallback_in_propagation():
+    from src.pod_studio import BookBlueprint, PropagationEngine
+
+    blueprint = BookBlueprint(
+        book_name="Test Doc",
+        template_styles_used=["Normal", "Heading 1"],
+    )
+    engine = PropagationEngine(blueprint=blueprint)
+
+    # 1. When Ollama is offline and an Ollama model is requested, must raise RuntimeError, NO silent fallback
+    with patch("src.utils.ollama_client.is_ollama_available", return_value=False):
+        with pytest.raises(RuntimeError) as exc_info:
+            engine.classify_paragraphs_hybrid(
+                paragraphs=[(1, "測試段落文字")],
+                model="qwen3.5:4b",
+                ai_client=MagicMock()  # Even if Gemini ai_client is provided, it must NOT fallback
+            )
+        assert "Ollama 服務未啟動" in str(exc_info.value)
+        assert "拒絕私自降級" in str(exc_info.value)
+
+    # 2. When Ollama is online but model is not installed, must raise RuntimeError
+    with patch("src.utils.ollama_client.is_ollama_available", return_value=True), \
+         patch("src.utils.ollama_client.is_model_installed", return_value=False):
+        with pytest.raises(RuntimeError) as exc_info:
+            engine.classify_paragraphs_hybrid(
+                paragraphs=[(1, "測試段落文字")],
+                model="qwen3.5:4b",
+                ai_client=MagicMock()
+            )
+        assert "尚未於 Ollama 中安裝" in str(exc_info.value)
+        assert "拒絕私自降級" in str(exc_info.value)
+

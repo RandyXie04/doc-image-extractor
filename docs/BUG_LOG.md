@@ -440,3 +440,38 @@ ADR-010（響應式設備適應與流體排版模組規範）：
   - `.grid-2`、`.slider-grid` 加入 `min(100%, ...)` 防止小螢幕溢出，補齊觸控最小點擊高度（42px）。
 - `src/web/static/sidebar.js` & 所有 HTML 頁面：動態注入 `#sidebarBackdrop`、`#mobileNavbar`、漢堡開關事件綁定與全域引入 `viewport_manager.js`。
 - `tests/test_p3_architecture_and_contracts.py`：新增 `test_p3_6_viewport_manager_and_responsive_layout` 驗收測試通過（6/6 PASSED）。
+
+---
+
+## BUG-011 — 選取模型無回應時靜默降級引發 404 與 Ollama 服務/模型未自動引導加載
+
+### Bug Description
+
+在 POD Studio 執行樣式擴散推論（Batch 18/18）時，若選取本機離線模型 `qwen3.5:4b` 但本機 Ollama 服務離線或未下載該模型，系統發生以下異常：
+1. 控制台噴出 `[POD Studio AI] Batch 18/18 warning: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/qwen3.5:4b is not found for API version v1beta...'}}`。
+2. 系統在模型未就緒時私自降級回退至 Gemini 雲端 API，導致將本機模型名稱錯誤傳入 Gemini 端點。
+3. 執行 `start_app.bat` 與 `start_app_dev.bat` 時未自動喚醒本機 `ollama serve`。
+4. 本機未下載 `qwen3.5:4b` 時前端未收到明確彈出通知。
+
+### Status
+
+CLOSED
+
+### Root Cause
+
+1. `src/pod_studio/propagation_engine.py` 舊版在 Ollama 離線或例外時未中斷，直接落入 Gemini API 調用邏輯，並將傳入的本機模型名稱 `qwen3.5:4b` 當作 Gemini 模型名稱請求，導致 Google API 回傳 404 NOT_FOUND。
+2. 啟動腳本 `start_app.bat` 與 `start_app_dev.bat` 僅啟動 Web 服務，缺乏本機 11434 埠檢測與 `ollama serve` 背景守護啟動機制。
+3. `src/web/routers/pod_router.py` 未捕捉推論引擎的 `RuntimeError`，使前端無法獲取結構化錯誤回應。
+
+### Decision Gate
+
+ADR-011（零靜默降級政策與啟動批次 Ollama 自動伺服守護架構）。
+
+### Resolution
+
+- `src/pod_studio/propagation_engine.py`：實施「零靜默降級政策」，於選用本機模型時強制檢驗 Ollama 連線與模型就緒狀態，若未啟動或未安裝則立即拋出 `RuntimeError` 提示使用者手動執行 `ollama pull`，嚴格杜絕私自 Fallback。
+- `src/utils/ollama_client.py`：新增 `find_ollama_executable()`、`ensure_ollama_service()`、`list_local_models()`、`is_model_installed()`。
+- `start_app.bat` & `start_app_dev.bat`：於啟動前檢測 `127.0.0.1:11434`，離線時自動於背景啟動 `ollama serve`（符合 Windows batch CRLF 與 UTF-8 規範）。
+- `src/web/routers/pod_router.py`：攔截例外包裝為 `HTTPException(status_code=400, detail=str(e))`，使前端 `pod_studio.html` 之 `toolbox.errorPanel()` 與 Toast 能立即彈出紅框提示。
+- 透過終端機指令為使用者自動檢測並完成下載 `qwen3.5:4b` 模型。
+- `tests/test_ollama_client.py`：補齊單元測試覆蓋生命週期與零降級攔截，全量相關回歸測試 PASSED。

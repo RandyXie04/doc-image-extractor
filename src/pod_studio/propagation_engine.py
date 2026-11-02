@@ -311,102 +311,132 @@ class PropagationEngine:
                     except Exception:
                         pass
 
-            target_model = model or os.getenv("DEFAULT_AI_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
-            from src.utils.ollama_client import is_ollama_available, ollama_structured_chat, get_default_text_model
+            if model:
+                target_model = model
+            elif ai_client is not None and not isinstance(ai_client, str):
+                target_model = os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
+            else:
+                target_model = os.getenv("DEFAULT_AI_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
 
+            from src.utils.ollama_client import (
+                is_ollama_available,
+                ollama_structured_chat,
+                get_default_text_model,
+                is_model_installed,
+            )
+
+            is_gemini_model = "gemini" in target_model.lower()
             ollama_ready = is_ollama_available()
-            can_run_ai = (ai_client is not None) or ollama_ready
 
-            if can_run_ai:
-                valid_styles = list(self.blueprint.template_styles_used)
-                if "Normal" not in valid_styles:
-                    valid_styles.append("Normal")
-
-                # Prepare style definitions / few-shot cues
-                style_cues = []
-                meta = self.blueprint.metadata or {}
-                style_defs = meta.get("style_definitions", {})
-                for s, samples in style_defs.items():
-                    sample_str = "、".join([f'"{samp[:40]}"' for samp in samples[:3]])
-                    style_cues.append(f"- 【{s}】範例: {sample_str}")
-
-                boundary_idx = meta.get("seed_last_modified_idx", 0)
-                manual_anchor = meta.get("manual_boundary_anchor", "")
-                boundary_ctx = meta.get("boundary_context_text", "")
-                boundary_note = f"人工精修截止邊界：第 {boundary_idx} 段"
-                if manual_anchor:
-                    boundary_note += f"（人工定位錨點：「{manual_anchor}」）"
-                if boundary_ctx:
-                    boundary_note += f"\n截止處最後人工確認內文：「{boundary_ctx}」"
-
-                total_batches = (len(unclassified) + batch_size - 1) // batch_size
-                for b_idx, i in enumerate(range(0, len(unclassified), batch_size), 1):
-                    batch = unclassified[i : i + batch_size]
-                    batch_payload = [{"id": p_idx, "text": p_txt[:90]} for p_idx, p_txt in batch]
-                    print(f"[POD Studio AI] Batch {b_idx}/{total_batches}: Classifying {len(batch)} ambiguous paragraphs via {target_model}...", flush=True)
-
-                    prompt = (
-                        "你是一位專精於中文圖書出版與 POD 數位整稿的專家。\n"
-                        "請根據以下人工精修範本歸納出的自訂樣式定義與範例，為人工截止點之後的後續生稿段落標記最適用的樣式名稱：\n\n"
-                        f"【人工定位確認】\n{boundary_note}\n\n"
-                        f"可用樣式清單：{json.dumps(valid_styles, ensure_ascii=False)}\n"
-                        "樣式特徵與範例：\n"
-                        + "\n".join(style_cues[:8])
-                        + "\n\n"
-                        "待標記後續生稿段落列表：\n"
-                        + json.dumps(batch_payload, ensure_ascii=False, indent=2)
-                        + "\n\n"
-                        "要求：\n"
-                        "1. 若為普通正文敘述或段落，請標記為 'Normal'。\n"
-                        "2. 請僅輸出 JSON 陣列，不要包含任何開場白或解釋：\n"
-                        '[{"id": 188, "style": "Heading 3"}, ...]'
+            # ── 零靜默降級政策檢驗 (Zero Silent Fallback) ──
+            if not is_gemini_model:
+                if not ollama_ready:
+                    raise RuntimeError(
+                        f"已選取本機離線模型 '{target_model}'，但 Ollama 服務未啟動 (http://localhost:11434)。"
+                        f"請確認已啟動 Ollama 服務 (可執行 start_app.bat / start_app_dev.bat 或 ollama serve)，系統拒絕私自降級。"
                     )
+                if not is_model_installed(target_model):
+                    raise RuntimeError(
+                        f"本機離線模型 '{target_model}' 尚未於 Ollama 中安裝。"
+                        f"請於終端機執行 'ollama pull {target_model}' 下載後重試，系統拒絕私自降級。"
+                    )
+            elif not callable(ai_client) and ai_client is None:
+                raise RuntimeError(
+                    f"已選取 Gemini 雲端模型 '{target_model}'，但系統未檢測到有效 GEMINI_API_KEY。"
+                    f"請於環境變數配置金鑰，系統拒絕私自降級。"
+                )
 
-                    for attempt in range(4):
-                        try:
-                            # 優先嘗試本機離線 Ollama（若指定本地模型或未設定 Gemini API Key）
-                            if ollama_ready and (ai_client is None or "gemini" not in target_model.lower()):
-                                schema = {
-                                    "type": "array",
-                                    "items": {
-                                        "type": "object",
-                                        "properties": {
-                                            "id": {"type": "integer"},
-                                            "style": {"type": "string", "enum": valid_styles},
-                                        },
-                                        "required": ["id", "style"],
+            valid_styles = list(self.blueprint.template_styles_used)
+            if "Normal" not in valid_styles:
+                valid_styles.append("Normal")
+
+            # Prepare style definitions / few-shot cues
+            style_cues = []
+            meta = self.blueprint.metadata or {}
+            style_defs = meta.get("style_definitions", {})
+            for s, samples in style_defs.items():
+                sample_str = "、".join([f'"{samp[:40]}"' for samp in samples[:3]])
+                style_cues.append(f"- 【{s}】範例: {sample_str}")
+
+            boundary_idx = meta.get("seed_last_modified_idx", 0)
+            manual_anchor = meta.get("manual_boundary_anchor", "")
+            boundary_ctx = meta.get("boundary_context_text", "")
+            boundary_note = f"人工精修截止邊界：第 {boundary_idx} 段"
+            if manual_anchor:
+                boundary_note += f"（人工定位錨點：「{manual_anchor}」）"
+            if boundary_ctx:
+                boundary_note += f"\n截止處最後人工確認內文：「{boundary_ctx}」"
+
+            total_batches = (len(unclassified) + batch_size - 1) // batch_size
+            for b_idx, i in enumerate(range(0, len(unclassified), batch_size), 1):
+                batch = unclassified[i : i + batch_size]
+                batch_payload = [{"id": p_idx, "text": p_txt[:90]} for p_idx, p_txt in batch]
+                print(f"[POD Studio AI] Batch {b_idx}/{total_batches}: Classifying {len(batch)} ambiguous paragraphs via {target_model}...", flush=True)
+
+                prompt = (
+                    "你是一位專精於中文圖書出版與 POD 數位整稿的專家。\n"
+                    "請根據以下人工精修範本歸納出的自訂樣式定義與範例，為人工截止點之後的後續生稿段落標記最適用的樣式名稱：\n\n"
+                    f"【人工定位確認】\n{boundary_note}\n\n"
+                    f"可用樣式清單：{json.dumps(valid_styles, ensure_ascii=False)}\n"
+                    "樣式特徵與範例：\n"
+                    + "\n".join(style_cues[:8])
+                    + "\n\n"
+                    "待標記後續生稿段落列表：\n"
+                    + json.dumps(batch_payload, ensure_ascii=False, indent=2)
+                    + "\n\n"
+                    "要求：\n"
+                    "1. 若為普通正文敘述或段落，請標記為 'Normal'。\n"
+                    "2. 請僅輸出 JSON 陣列，不要包含任何開場白或解釋：\n"
+                    '[{"id": 188, "style": "Heading 3"}, ...]'
+                )
+
+                batch_success = False
+                last_err = None
+
+                for attempt in range(4):
+                    try:
+                        if not is_gemini_model:
+                            schema = {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "integer"},
+                                        "style": {"type": "string", "enum": valid_styles},
                                     },
-                                }
-                                local_model = target_model if "gemini" not in target_model.lower() else get_default_text_model()
-                                parsed = ollama_structured_chat(
-                                    prompt=prompt,
-                                    schema=schema,
-                                    model=local_model,
-                                    think=False,
-                                    timeout=120.0,
+                                    "required": ["id", "style"],
+                                },
+                            }
+                            parsed = ollama_structured_chat(
+                                prompt=prompt,
+                                schema=schema,
+                                model=target_model,
+                                think=False,
+                                timeout=120.0,
+                            )
+                            if isinstance(parsed, list):
+                                for item in parsed:
+                                    if isinstance(item, dict) and "id" in item and "style" in item:
+                                        p_id = int(item["id"])
+                                        s_name = str(item["style"]).strip()
+                                        if s_name in valid_styles or s_name == "Normal":
+                                            results[p_id] = s_name
+                                print(f"[POD Studio AI] Batch {b_idx}/{total_batches} done: processed {len(parsed)} paragraphs via Ollama ({target_model}).", flush=True)
+                                batch_success = True
+                                break
+                        else:
+                            resp_text = ""
+                            if hasattr(ai_client, "models") and hasattr(ai_client.models, "generate_content"):
+                                resp = ai_client.models.generate_content(
+                                    model=target_model,
+                                    contents=prompt,
                                 )
-                                if isinstance(parsed, list):
-                                    for item in parsed:
-                                        if isinstance(item, dict) and "id" in item and "style" in item:
-                                            p_id = int(item["id"])
-                                            s_name = str(item["style"]).strip()
-                                            if s_name in valid_styles or s_name == "Normal":
-                                                results[p_id] = s_name
-                                    print(f"[POD Studio AI] Batch {b_idx}/{total_batches} done: processed {len(parsed)} paragraphs via Ollama ({local_model}).", flush=True)
-                                    break
-                            elif ai_client is not None:
-                                resp_text = ""
-                                if hasattr(ai_client, "models") and hasattr(ai_client.models, "generate_content"):
-                                    resp = ai_client.models.generate_content(
-                                        model=target_model,
-                                        contents=prompt,
-                                    )
-                                    resp_text = resp.text.strip()
-                                elif hasattr(ai_client, "generate_content"):
-                                    resp = ai_client.generate_content(prompt)
-                                    resp_text = resp.text.strip()
-                                elif callable(ai_client):
-                                    resp_text = str(ai_client(prompt)).strip()
+                                resp_text = resp.text.strip()
+                            elif hasattr(ai_client, "generate_content"):
+                                resp = ai_client.generate_content(prompt)
+                                resp_text = resp.text.strip()
+                            elif callable(ai_client):
+                                resp_text = str(ai_client(prompt)).strip()
 
                             if resp_text:
                                 clean_json = re.sub(r'^```(?:json)?\s*', '', resp_text)
@@ -419,23 +449,31 @@ class PropagationEngine:
                                             s_name = str(item["style"]).strip()
                                             if s_name in valid_styles or s_name == "Normal":
                                                 results[p_id] = s_name
-                                    print(f"[POD Studio AI] Batch {b_idx}/{total_batches} done: processed {len(parsed)} paragraphs.", flush=True)
+                                    print(f"[POD Studio AI] Batch {b_idx}/{total_batches} done: processed {len(parsed)} paragraphs via Gemini ({target_model}).", flush=True)
+                                    batch_success = True
+                                    break
+                    except Exception as e:
+                        last_err = e
+                        err_str = str(e)
+                        if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+                            wait_sec = 16.0
+                            match = re.search(r'retry in ([0-9.]+)', err_str)
+                            if match:
+                                try:
+                                    wait_sec = float(match.group(1)) + 1.0
+                                except Exception:
+                                    pass
+                            print(f"[POD Studio AI] Batch {b_idx}/{total_batches}: 429 rate limit hit. Waiting {wait_sec:.1f}s before retry...", flush=True)
+                            time.sleep(wait_sec)
+                        else:
+                            print(f"[POD Studio AI] Batch {b_idx}/{total_batches} warning: {e}", flush=True)
                             break
-                        except Exception as e:
-                            err_str = str(e)
-                            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                                wait_sec = 16.0
-                                match = re.search(r'retry in ([0-9.]+)', err_str)
-                                if match:
-                                    try:
-                                        wait_sec = float(match.group(1)) + 1.0
-                                    except Exception:
-                                        pass
-                                print(f"[POD Studio AI] Batch {b_idx}/{total_batches}: 429 rate limit hit. Waiting {wait_sec:.1f}s before retry...", flush=True)
-                                time.sleep(wait_sec)
-                            else:
-                                print(f"[POD Studio AI] Batch {b_idx}/{total_batches} warning: {e}", flush=True)
-                                break
+
+                if not batch_success:
+                    raise RuntimeError(
+                        f"模型 '{target_model}' 在執行 Batch {b_idx}/{total_batches} 時無回應或異常：{last_err}。"
+                        f"系統嚴格遵循零靜默降級政策，請檢查模型狀態或連線後重試。"
+                    )
 
         return results
 

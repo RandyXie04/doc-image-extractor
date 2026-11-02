@@ -107,3 +107,32 @@ Accepted
 
 ## Related Bug
 BUG-008
+
+---
+
+# ADR-011 — 零靜默降級政策（Zero Silent Fallback）與啟動批次 Ollama 自動伺服守護架構
+
+## Status
+Accepted
+
+## Context
+在 POD 數位整稿通道中，當使用者選取本機離線模型（如 `qwen3.5:4b`）進行樣式分類時，若本機 Ollama 服務尚未啟動或尚未下載該模型，舊版程式碼會靜默降級嘗試調用雲端 Gemini API，並錯誤地將本機模型名稱傳遞至 Gemini 端點，引發 `404 NOT_FOUND: models/qwen3.5:4b is not found for API version v1beta`。
+此外，使用者在啟動 `start_app.bat` 或 `start_app_dev.bat` 時缺乏自動檢測與啟動 Ollama 服務機制，且本機未下載指定模型時缺乏明確前端錯誤通知。
+
+## Decision
+1. **零靜默降級政策（Zero Silent Fallback）**：
+   - 嚴格禁止跨廠商或跨服務靜默 Fallback。選定本機離線模型時，若 Ollama 未連線或未安裝該模型，立即中斷並拋出明確的 `RuntimeError`，提示使用者服務未啟動或模型未安裝，禁止私自降級調用雲端 API；同理，選取 Gemini 雲端模型時若無金鑰亦立即拒絕。
+2. **啟動批次自動伺服守護（Batch-Level Ollama Auto-Serve）**：
+   - 在 `start_app.bat` 與 `start_app_dev.bat` 掛載時，自動探測 `127.0.0.1:11434`，若未啟動則自動尋找本機 `ollama.exe` 並於背景執行 `ollama serve`。符合 Windows batch 規範（CRLF、`chcp 65001`）。
+3. **前端即時錯誤通知與 HTTP 400 契約收斂**：
+   - 在 `src/web/routers/pod_router.py` 將推論引擎之 `RuntimeError` 捕捉並包裝為 FastAPI `HTTPException(status_code=400, detail=str(e))`，使前端 `pod_studio.html` 之 `toolbox.errorPanel()` 與 Toast 能立即彈出清晰紅框提示，不再靜默無感。
+4. **模型下載與管理解耦**：
+   - 模型下載回歸標準 CLI / 工具手動管理流程，保持後端核心代碼與推論管線純粹，避免在 Python 代碼內嵌入隱式背景線程下載。
+
+## Consequences
+- 徹底消除因模型未安裝或服務離線而產生的 Gemini 404 報錯與非預期雲端扣款。
+- 前端使用者能獲得直接、明確的模型狀態指導，本機環境在無介入下即可自動喚醒 Ollama 服務並啟動下載。
+
+## Related Bug
+BUG-011
+

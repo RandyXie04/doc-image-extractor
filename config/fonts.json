@@ -232,5 +232,40 @@
     "role": null,
     "docx_style": "屬名",
     "mapped_by": "user"
+  },
+  "E-BX (11.5pt)": {
+    "role": "H1",
+    "docx_style": "heading 1",
+    "mapped_by": "user"
+  },
+  "FZKTK--GBK1-0 (8.5pt)": {
+    "role": null,
+    "docx_style": "導言",
+    "mapped_by": "user"
+  },
+  "FZFSK--GBK1-0 (8.0pt)": {
+    "role": null,
+    "docx_style": "屬名",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (9.5pt)": {
+    "role": null,
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZFSK--GBK1-0 (9.0pt)": {
+    "role": "楷體",
+    "docx_style": "楷體2",
+    "mapped_by": "user"
+  },
+  "FZFangSong-Z02 (8.5pt)": {
+    "role": "楷體",
+    "docx_style": "楷體2",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (7.0pt)": {
+    "role": null,
+    "docx_style": "Normal",
+    "mapped_by": "user"
   }
 }

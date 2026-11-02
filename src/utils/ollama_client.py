@@ -9,6 +9,10 @@ import os
 import re
 import json
 import base64
+import shutil
+import threading
+import subprocess
+import time
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -127,6 +131,90 @@ def is_ollama_available(host: Optional[str] = None, timeout: float = 0.8) -> boo
             return resp.status == 200
     except Exception:
         return False
+
+
+def find_ollama_executable() -> Optional[str]:
+    """
+    尋找本機 ollama 執行檔路徑 (支援 PATH、Windows 使用者 AppData 與 Program Files)。
+    """
+    which_bin = shutil.which("ollama")
+    if which_bin:
+        return which_bin
+
+    if os.name == "nt":
+        candidates = [
+            os.path.expandvars(r"%LOCALAPPDATA%\Programs\Ollama\ollama.exe"),
+            os.path.expandvars(r"%ProgramFiles%\Ollama\ollama.exe"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\Ollama\ollama.exe"),
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                return c
+    return None
+
+
+def ensure_ollama_service(host: Optional[str] = None, timeout: float = 4.0) -> bool:
+    """
+    自動探測並守護 Ollama 本機服務：若尚未啟動，自動於後台啟動 'ollama serve'。
+    """
+    if is_ollama_available(host=host, timeout=0.8):
+        return True
+
+    exe = find_ollama_executable()
+    if not exe:
+        print("[Ollama] 找不到 ollama 執行檔，無法自動啟動服務。", flush=True)
+        return False
+
+    try:
+        DETACHED = 0x00000008
+        NO_WINDOW = 0x08000000
+        flags = (DETACHED | NO_WINDOW) if os.name == "nt" else 0
+        subprocess.Popen([exe, "serve"], creationflags=flags)
+        print(f"[Ollama] 已自動在後台啟動 Ollama 服務 ({exe} serve)...", flush=True)
+
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            time.sleep(0.5)
+            if is_ollama_available(host=host, timeout=0.5):
+                print("[Ollama] 本機 Ollama 服務已成功連線就緒！", flush=True)
+                return True
+    except Exception as e:
+        print(f"[Ollama] 自動啟動 Ollama 服務失敗: {e}", flush=True)
+
+    return False
+
+
+def list_local_models(host: Optional[str] = None, timeout: float = 2.0) -> List[str]:
+    """
+    列出本機 Ollama 已經下載就緒的模型清單標籤。
+    """
+    target_host = validate_local_host(host or get_ollama_host())
+    probe_host = target_host.replace("://localhost:", "://127.0.0.1:") if "://localhost:" in target_host else target_host
+    try:
+        req = urllib.request.Request(f"{probe_host}/api/tags", method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
+    except Exception:
+        return []
+
+
+def is_model_installed(model_name: str, host: Optional[str] = None) -> bool:
+    """
+    檢查指定模型是否已在本機 Ollama 中安裝。
+    支援自動比對完整標籤（如 'qwen3.5:4b' 或 'qwen3.5:4b:latest'）。
+    """
+    if not model_name:
+        return False
+    installed = list_local_models(host=host)
+    norm_target = model_name.strip().lower()
+    for m in installed:
+        norm_m = m.strip().lower()
+        if norm_m == norm_target or norm_m == f"{norm_target}:latest" or norm_m.startswith(f"{norm_target}:"):
+            return True
+        if norm_target.endswith(":latest") and norm_m == norm_target[:-7]:
+            return True
+    return False
 
 
 def ollama_chat(
