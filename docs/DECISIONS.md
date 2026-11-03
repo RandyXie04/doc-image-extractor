@@ -136,3 +136,32 @@ Accepted
 ## Related Bug
 BUG-011
 
+---
+
+# ADR-012 — PDF 行重組純運算層隔離、三層分工架構與版面語意解耦
+
+## Status
+Accepted
+
+## Context
+在自動整稿與出版排版管線中，既有 PDF 抽取邏輯面臨雙重痛點：
+1. **短標題併入內文**：少字數標題缺乏版面與語意區隔，被錯誤併入內文，導致 Word 樣式套用失敗且難以使用尋找替換批次修正。
+2. **正文段落破碎截斷**：內文行受限於 PDF 物理排版被當成獨立行，字型微調（如局部粗體、拉丁學名）直接觸發斷段，全形標點換行誤插入空格。
+3. **過度耦合**：既有模組將「物理換行判斷」、「段落邊界判斷」與「標題層級判斷」混為一談，任何啟發式規則調整皆引發連鎖誤判。
+
+## Decision
+1. **三層分離架構（Three-Tier Decoupling）**：
+   - **Tier 1 (Paragraph Reconstruction)**：純運算模組，負責將 PDF 物理行重組為語意段落（`ParagraphRecord`），保留 Span 脈絡、計算字符加權字體特徵、追蹤成對符號堆疊、輸出可追溯邊界證據（`BoundaryEvidence`）與跨頁延續旗標。**嚴禁在此層輸出標題分類語意**（`semantic_role="uncertain"`, `heading_level=None`）。
+   - **Tier 2 (P1 Layout + P2 Semantic Classifier)**：基於 `ParagraphRecord` 的綜合版面幾何（字體差異、行距、縮排、置中）與上下文語意（章節正則、TOC 校驗、LLM 語意複核）進行角色分類。
+   - **Tier 3 (DOCX Style Mapping)**：依據 Semantic Role 映射至 Word 樣式範本。
+2. **單欄閱讀順序確定性契約（Single-Column Contract）**：
+   - Phase 1 明確限定單欄排版輸入，依 `(line.bbox[1], line.bbox[0])` 進行確定性排序，不臆測多欄閱讀流。
+3. **跨頁符號優先級（Delimiter Precedence）**：
+   - 頁尾判斷中，未閉合成對符號（如未收合之引號、書名號、括號）具最高優先級，覆蓋內部之句末標點符號。
+
+## Consequences
+- 段落重組模組具備純運算性質（無磁碟 I/O、無外部依賴），可完全獨立進行單元測試與離線驗證。
+- 為後續 Phase 2 標題版面分類器提供了強型別、字符加權、幾何邊界明確的 `ParagraphRecord` 輸入基礎。
+
+## Related Bug
+BUG-012

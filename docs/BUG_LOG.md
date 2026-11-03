@@ -475,3 +475,37 @@ ADR-011（零靜默降級政策與啟動批次 Ollama 自動伺服守護架構�
 - `src/web/routers/pod_router.py`：攔截例外包裝為 `HTTPException(status_code=400, detail=str(e))`，使前端 `pod_studio.html` 之 `toolbox.errorPanel()` 與 Toast 能立即彈出紅框提示。
 - 透過終端機指令為使用者自動檢測並完成下載 `qwen3.5:4b` 模型。
 - `tests/test_ollama_client.py`：補齊單元測試覆蓋生命週期與零降級攔截，全量相關回歸測試 PASSED。
+
+---
+
+## BUG-012 — PDF 物理行重組與標題語意過度耦合導致短標題併入內文及正文段落被截斷
+
+### Bug Description
+
+1. **短標題被誤判並併入正文**：在自動整稿通道中，少字數的章節標題因缺乏語意/幾何與正文的明確隔離，被誤判為正文首行並與後續內文段落黏連合併，導致下游 Word (.docx) 套用樣式時階層喪失，人工無法使用 Word 內建「尋找與取代」進行階層樣式批次修復。
+2. **正文段落受限於 PDF 物理排版被強制截斷**：內文段落每一行被既有腳本當成獨立段落，或因行內字型微調（如局部粗體、拉丁學名、數字）而錯誤觸發切段；在自動判斷樣式時，內文段落無法跨行合併為語意完整的長段落。
+3. **換行與符號邊界缺陷**：中文全形標點換行錯誤插入 ASCII 空格、英文連字號被破壞性刪除，以及跨頁段落延續缺乏成對符號堆疊追蹤。
+
+### Status
+
+CLOSED
+
+### Root Cause
+
+PDF 物理換行（Physical Line Wraps）、段落邊界重組（Paragraph Boundary Reconstruction）與標題樣式/語意分類（Heading Classification）三者在既有管道中高度耦合。原本的段落切分邏輯過度依賴單行字數閾值（如長度 ≤ 35 字即視為邊界），且在字型或樣式改變時直接截斷段落，缺少純運算的段落重組層與版面幾何/未閉合符號/字符加權統計依據。
+
+### Decision Gate
+
+ADR-012（三層分工架構：PDF 行重組 `Paragraph Reconstruction` → 版面語意篩選 `P1 Layout + P2 Semantic` → Word 樣式映射 `Semantic Role to DOCX Style`）。
+將「物理行重組」與「標題分類」徹底解耦，段落重組模組維持純運算、零磁碟 I/O，不直接輸出標題語意（`semantic_role="uncertain"`）。
+
+### Resolution
+
+- 新增純運算段落重組模組 `src/scripts/paragraph_reconstruction.py`：
+  - 實作字符加權字體統計（`dominant_font`, `dominant_size`, `bold_ratio`），避免局部短 Span 干擾段落主要字體。
+  - 實作幾何包圍盒嚴格聯集（`union_line_bboxes`）。
+  - 實作 CJK 標點無空格接續、連字號保守保留（`join_line_texts`）。
+  - 實作成對括號/引號符號堆疊（`update_delimiter_stack`），於跨行與跨頁時維持未閉合符號優先於內部句末標點的延續判斷。
+  - 輸出完整的邊界證據鏈（`BoundaryEvidence`）與跨頁延續信心度分數（`continuation_confidence`）。
+- 新增單元測試 `tests/test_paragraph_reconstruction.py`（PR-01～PR-15 覆蓋 17 項驗收測試通過）。
+- 通過既有 17 項回歸測試與真實 PDF（Pages 21–25）驗證，於 Commit `f0d9b39` 正式完成 Phase 1 提交。

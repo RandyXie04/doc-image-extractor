@@ -233,11 +233,6 @@
     "docx_style": "屬名",
     "mapped_by": "user"
   },
-  "E-BX (11.5pt)": {
-    "role": "H1",
-    "docx_style": "heading 1",
-    "mapped_by": "user"
-  },
   "FZKTK--GBK1-0 (8.5pt)": {
     "role": null,
     "docx_style": "導言",
@@ -246,11 +241,6 @@
   "FZFSK--GBK1-0 (8.0pt)": {
     "role": null,
     "docx_style": "屬名",
-    "mapped_by": "user"
-  },
-  "FZSSK--GBK1-0 (9.5pt)": {
-    "role": null,
-    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZFSK--GBK1-0 (9.0pt)": {
@@ -266,6 +256,36 @@
   "FZSSK--GBK1-0 (7.0pt)": {
     "role": null,
     "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZHTK--GBK1-0 (13.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZS3K--GBK1-0 (12.0pt)": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZSYK--GBK1-0 (11.0pt)": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZS3K--GBK1-0 (11.0pt)": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZBSK--GBK1-0 (10.5pt)": {
+    "role": "正文",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZXDXK--GBK1-0 (8.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
     "mapped_by": "user"
   }
 }
