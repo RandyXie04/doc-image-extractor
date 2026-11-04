@@ -212,6 +212,9 @@ def ensure_model_ready() -> dict:
     Returns:
         dict: {"status": "ready"|"fallback"|"missing", "path": Path_object_or_None, "engine": "onnx"|"pt"|"none"}
     """
+    if os.environ.get("SKIP_MODEL_DOWNLOAD") == "1":
+        return {"status": "skipped", "path": None, "engine": "none"}
+
     with _model_lock:
         PATHS.models_dir.mkdir(parents=True, exist_ok=True)
     

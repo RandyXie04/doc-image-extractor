@@ -10,7 +10,7 @@
 <body>
     <div class="workbench-container">
         <!-- 頂部工作台標題列 -->
-        <header class="page-head workbench-head" style="margin-bottom: 1rem; padding-bottom: 0.85rem;">
+        <header class="page-head workbench-head" style="margin-bottom: 0.85rem; padding-bottom: 0.75rem;">
             <a href="/" class="back-link">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
                 返回工具箱
@@ -29,35 +29,72 @@
             </div>
         </header>
 
+        <!-- 頂部工作流程導引列 (Workflow Stepper) -->
+        <nav class="workflow-stepper-bar" aria-label="整稿工作流程導引">
+            <ol class="stepper-list" id="workflowStepper">
+                <li class="step-item active" id="stepItem1" data-step="1">
+                    <span class="step-badge">1</span>
+                    <div class="step-text">
+                        <span class="step-title">上傳 PDF</span>
+                        <span class="step-desc" id="step1Desc">待選擇檔案</span>
+                    </div>
+                </li>
+                <li class="step-divider" aria-hidden="true"></li>
+                <li class="step-item" id="stepItem2" data-step="2">
+                    <span class="step-badge">2</span>
+                    <div class="step-text">
+                        <span class="step-title">預覽與版面確認</span>
+                        <span class="step-desc" id="step2Desc">即時視覺化裁切</span>
+                    </div>
+                </li>
+                <li class="step-divider" aria-hidden="true"></li>
+                <li class="step-item" id="stepItem3" data-step="3">
+                    <span class="step-badge">3</span>
+                    <div class="step-text">
+                        <span class="step-title">範本與排版設定</span>
+                        <span class="step-desc" id="step3Desc">標準範本就緒</span>
+                    </div>
+                </li>
+                <li class="step-divider" aria-hidden="true"></li>
+                <li class="step-item" id="stepItem4" data-step="4">
+                    <span class="step-badge">4</span>
+                    <div class="step-text">
+                        <span class="step-title">全自動整稿與下載</span>
+                        <span class="step-desc" id="step4Desc">等待執行</span>
+                    </div>
+                </li>
+            </ol>
+        </nav>
+
         <!-- 雙欄桌面工作台主佈局 -->
         <div class="workbench-layout">
 
             <!-- ══════════════════════════════════════════════════════
                  左欄：文件畫布區 (Document Canvas)
                  ══════════════════════════════════════════════════════ -->
-            <div class="workbench-canvas-pane">
+            <div class="workbench-canvas-pane" id="canvasPane">
                 <!-- 畫布頂部控制列 -->
                 <div class="workbench-canvas-toolbar">
-                    <div class="workbench-canvas-toolbar-left">
+                    <div class="workbench-canvas-toolbar-left" style="display: flex; align-items: center; gap: 8px;">
                         <span class="workbench-canvas-title">
                             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                             版面預覽畫布
                         </span>
-                        <span id="fileBadge" class="f2-badge f2-badge-primary" style="display: none; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
+                        <span id="fileBadge" class="f2-badge f2-badge-primary" style="display: none; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
                     </div>
 
-                    <div class="workbench-canvas-toolbar-right">
-                        <!-- 頁碼切換器 -->
+                    <div class="workbench-canvas-toolbar-right" style="display: flex; align-items: center; gap: 8px;">
+                        <!-- 頁碼切換器 (有檔案時顯示) -->
                         <div class="pager" id="canvasPager" style="display: none;">
                             <button type="button" id="prevPageBtn" class="btn btn-secondary btn-sm" title="上一頁">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
-                                上一頁
+                                上頁
                             </button>
                             <span style="font-size: 0.85rem; font-weight: 500;">
                                 第 <strong id="previewPageDisplay">1</strong> / <span id="totalPagesDisplay">1</span> 頁
                             </span>
                             <button type="button" id="nextPageBtn" class="btn btn-secondary btn-sm" title="下一頁">
-                                下一頁
+                                下頁
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
                             </button>
                         </div>
@@ -66,95 +103,60 @@
 
                 <!-- 畫布主體 -->
                 <div class="workbench-canvas-body" id="canvasBody">
-                    <!-- PDF 上傳區 (未載入檔案時置中展示) -->
-                    <div class="dropzone" id="dropZone" role="button" tabindex="0" aria-label="選擇 PDF 檔案">
-                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true" style="width: 44px; height: 44px; margin-bottom: 0.75rem; color: var(--f2-color-primary, #0F6CBD);">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                        </svg>
-                        <p class="dropzone-title" id="fileNameDisplay" style="font-size: 1rem; font-weight: 600;">點擊選擇，或將 PDF 檔案拖曳到這裡</p>
-                        <p class="dropzone-sub" style="font-size: 0.84rem; color: var(--f2-color-text-secondary, #616161); margin-top: 4px;">支援向量或掃描版 PDF 檔案</p>
-                        <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+                    <!-- 狀態 A: Empty State (未上傳檔案時置中展示) -->
+                    <div id="canvasEmptyState" class="canvas-empty-state">
+                        <div class="dropzone-card" id="dropZone" role="button" tabindex="0" aria-label="點擊或拖曳上傳 PDF 檔案">
+                            <div class="empty-illustration">
+                                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            </div>
+                            <h3 class="empty-title" id="fileNameDisplay">點擊選擇，或將 PDF 檔案拖曳到這裡</h3>
+                            <p class="empty-subtitle">支援向量原生版與掃描版 PDF・自動辨識標題、引文與圖表</p>
+                            <div class="empty-specs">
+                                <span class="spec-pill">✓ 向量原生秒級解析</span>
+                                <span class="spec-pill">✓ 即時視覺化邊界裁切</span>
+                                <span class="spec-pill">✓ 出版社標準 Word 樣式套用</span>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('fileInput').click()" style="margin-top: 4px;">瀏覽本機 PDF 檔案</button>
+                            <input type="file" id="fileInput" name="file" accept=".pdf" style="display: none;">
+                        </div>
                     </div>
 
-                    <!-- 裁切邊界預覽圖容器 (載入檔案後顯示) -->
-                    <div id="previewContainer" style="display: none; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;">
-                        <div class="workbench-preview-wrapper" id="previewFrame">
-                            <img id="previewImage" src="" alt="裁切預覽載入中">
+                    <!-- 狀態 B: 預覽與裁切遮罩 (載入檔案後顯示) -->
+                    <div id="previewContainer" style="display: none; width: 100%; height: 100%; position: relative; align-items: center; justify-content: center;">
+                        <div class="workbench-preview-wrapper" id="previewFrame" style="position: relative;">
+                            <img id="previewImage" src="" alt="裁切預覽載入中" draggable="false">
+                            <!-- 互動式視覺裁切遮罩 -->
+                            <div id="cropOverlayBox" style="position: absolute; pointer-events: none; border: 1.5px dashed var(--f2-color-primary, #0F6CBD); background: rgba(15, 108, 189, 0.08);">
+                            </div>
                         </div>
                     </div>
                 </div>
 
-                <!-- 畫布底部色標圖例 -->
+                <!-- 畫布底部色標圖例與即時裁切摘要 -->
                 <div class="crop-legend" style="padding: 8px 16px; background: var(--f2-color-surface, #ffffff); border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb); display: flex; justify-content: center; gap: 16px; font-size: 0.8rem; flex-wrap: wrap;">
-                    <span><span class="swatch swatch-top"></span>頂部頁眉 (<span id="headerVal" class="val-top">0.10</span>)</span>
-                    <span><span class="swatch swatch-bottom"></span>底部頁尾 (<span id="footerVal" class="val-bottom">0.10</span>)</span>
-                    <span><span class="swatch swatch-side"></span>左側邊距 (<span id="leftVal" class="val-side">0.00</span>)</span>
-                    <span><span class="swatch swatch-side"></span>右側邊距 (<span id="rightVal" class="val-side">0.00</span>)</span>
+                    <span><span class="swatch swatch-top"></span>天頭 (上)：<strong id="headerVal" class="val-top">0.10</strong></span>
+                    <span><span class="swatch swatch-bottom"></span>地腳 (下)：<strong id="footerVal" class="val-bottom">0.10</strong></span>
+                    <span><span class="swatch swatch-side"></span>左側：<strong id="leftVal" class="val-side">0.00</strong></span>
+                    <span><span class="swatch swatch-side"></span>右側：<strong id="rightVal" class="val-side">0.00</strong></span>
                 </div>
             </div>
 
             <!-- ══════════════════════════════════════════════════════
                  右欄：參數檢視台與控制中心 (Inspector Pane)
                  ══════════════════════════════════════════════════════ -->
-            <div class="workbench-inspector-pane">
+            <div class="workbench-inspector-pane" id="workbenchInspectorPane">
                 <form id="uploadForm" style="display: flex; flex-direction: column; gap: 12px; margin: 0;">
 
-                    <!-- 卡片 1: Word 樣式範本設定 -->
-                    <div class="f2-card">
-                        <div class="f2-card-head">
+                    <!-- =========================================================
+                         TIER 1: 基本操作層 (一覽無餘，10 秒內完成啟動配置)
+                         ========================================================= -->
+                    <div class="inspector-section tier-basic">
+                        <div class="f2-card-head" style="margin-bottom: 8px;">
                             <h3 class="f2-card-title">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                                Word 樣式範本
+                                基本整稿設定
                             </h3>
-                            <div>
-                                <input type="file" id="templateInput" accept=".docx" style="display: none;">
-                                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('templateInput').click()">更換範本</button>
-                            </div>
-                        </div>
-                        <div style="font-size: 0.85rem; color: var(--f2-color-text-secondary, #616161); display: flex; align-items: center; justify-content: space-between;">
-                            <span>目前範本：<strong id="currentTemplateName" style="color: var(--f2-color-text-primary, #242424);">載入中…</strong></span>
-                            <span id="templateUploadStatus" class="hint" style="font-size: 0.8rem;"></span>
-                        </div>
-
-                        <!-- 漸進式折疊：自訂標題與樣式對應 -->
-                        <details id="styleMappingDetails" class="disclosure" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb);">
-                            <summary class="hint" style="cursor: pointer; font-size: 0.83rem; font-weight: 500; color: var(--f2-color-primary, #0F6CBD);">
-                                自訂標題與角色樣式對應 (可選)
-                            </summary>
-                            <div id="styleMappingSection" style="margin-top: 8px;">
-                                <div style="display: flex; flex-direction: column; gap: 8px;">
-                                    <div class="field" style="margin-bottom: 0;">
-                                        <label class="field-label" for="h1Style" style="font-size: 0.82rem;">一級標題 (#)</label>
-                                        <select id="h1Style" class="input" style="padding: 4px 8px; font-size: 0.85rem;"><option value="">(預設 Heading 1)</option></select>
-                                    </div>
-                                    <div class="field" style="margin-bottom: 0;">
-                                        <label class="field-label" for="h2Style" style="font-size: 0.82rem;">二級標題 (##)</label>
-                                        <select id="h2Style" class="input" style="padding: 4px 8px; font-size: 0.85rem;"><option value="">(預設 Heading 2)</option></select>
-                                    </div>
-                                    <div class="field" style="margin-bottom: 0;">
-                                        <label class="field-label" for="h3Style" style="font-size: 0.82rem;">三級標題 (###)</label>
-                                        <select id="h3Style" class="input" style="padding: 4px 8px; font-size: 0.85rem;"><option value="">(預設 Heading 3)</option></select>
-                                    </div>
-                                    <div class="field" style="margin-bottom: 0;">
-                                        <label class="field-label" for="imageCaptionStyle" style="font-size: 0.82rem;">圖片標籤</label>
-                                        <select id="imageCaptionStyle" class="input" style="padding: 4px 8px; font-size: 0.85rem;"><option value="">(不套用自訂樣式)</option></select>
-                                    </div>
-                                    <div class="field" style="margin-bottom: 0;">
-                                        <label class="field-label" for="kaitiStyle" style="font-size: 0.82rem;">楷體 / 引言</label>
-                                        <select id="kaitiStyle" class="input" style="padding: 4px 8px; font-size: 0.85rem;"><option value="">(不套用自訂樣式)</option></select>
-                                    </div>
-                                </div>
-                            </div>
-                        </details>
-                    </div>
-
-                    <!-- 卡片 2: 檔案狀態與處理引擎 -->
-                    <div class="f2-card">
-                        <div class="f2-card-head">
-                            <h3 class="f2-card-title">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-                                檔案與引擎設定
-                            </h3>
+                            <span class="f2-badge f2-badge-primary">主要設定</span>
                         </div>
 
                         <!-- 活躍檔案精巧資訊列 (已選擇 PDF 時展示) -->
@@ -163,118 +165,253 @@
                                 <strong id="activeFileNameText" style="color: var(--f2-color-text-primary, #242424);"></strong>
                                 <span id="activeFileSizeText" class="hint" style="margin-left: 4px;"></span>
                             </div>
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('fileInput').click()" style="padding: 2px 8px; font-size: 0.78rem;">更換</button>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('fileInput').click()" style="padding: 2px 8px; font-size: 0.78rem;">更換檔案</button>
                         </div>
 
-                        <div class="field" style="margin-bottom: 8px;">
-                            <label class="field-label" for="engineSelect" style="font-size: 0.85rem;">PDF 處理引擎</label>
-                            <select name="engine" id="engineSelect" class="input" style="font-size: 0.86rem; padding: 6px 8px;">
-                                <option value="auto">自動偵測 (推薦) — 向量原生秒級解析，掃描自動切換</option>
-                                <option value="pymupdf">高速提取 (PyMuPDF) — 原生向量 PDF，記憶體極輕量</option>
-                                <option value="suryaocr">深度識別 (Surya OCR) — 掃描書與圖轉曲 PDF</option>
-                            </select>
-                        </div>
-
-                        <div class="field" style="margin-bottom: 0;">
-                            <label class="check">
-                                <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true" checked>
-                                <span>
-                                    <span class="check-title" style="font-size: 0.85rem;">無腳注純內文模式</span>
-                                    <span class="hint" style="display: block; font-size: 0.78rem;">載入純內文解析腳本，避免正文圓圈數字被誤判為腳注。</span>
-                                </span>
+                        <!-- 1. Word 樣板設定 -->
+                        <div class="field" style="margin-bottom: 10px;">
+                            <label class="field-label" style="font-size: 0.85rem; display: flex; justify-content: space-between; align-items: center;">
+                                <span>目標 Word 排版範本 (.docx)</span>
+                                <input type="file" id="templateInput" name="template" accept=".docx" style="display: none;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('templateInput').click()" style="padding: 2px 8px; font-size: 0.78rem;">更換範本</button>
                             </label>
-                        </div>
-                    </div>
-
-                    <!-- 卡片 3: 版面裁切與頁碼範圍 (滑桿與精確數值雙向連動) -->
-                    <div class="f2-card">
-                        <div class="f2-card-head">
-                            <h3 class="f2-card-title">
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>
-                                版面裁切與範圍
-                            </h3>
-                            <span class="hint" style="font-size: 0.78rem;">比率 (0.00 ~ 0.50)</span>
-                        </div>
-
-                        <!-- 隱藏但保留相容性的舊 Label 元素 (供特定外部腳本相容) -->
-                        <span id="headerValLabel" class="val-top" style="display: none;">0.10</span>
-                        <span id="footerValLabel" class="val-bottom" style="display: none;">0.10</span>
-                        <span id="leftValLabel" class="val-side" style="display: none;">0.00</span>
-                        <span id="rightValLabel" class="val-side" style="display: none;">0.00</span>
-
-                        <!-- 四向滑桿與數值輸入組 -->
-                        <div class="crop-control-grid">
-                            <div class="crop-control-row">
-                                <label for="headerSlider" class="crop-control-label">
-                                    <span class="swatch swatch-top"></span>頂部頁眉
-                                </label>
-                                <input type="range" id="headerSlider" min="0" max="0.5" step="0.01" value="0.10">
-                                <input type="number" id="headerNumInput" class="crop-num-input" min="0" max="0.5" step="0.01" value="0.10" aria-label="頂部裁切數值">
-                            </div>
-
-                            <div class="crop-control-row">
-                                <label for="footerSlider" class="crop-control-label">
-                                    <span class="swatch swatch-bottom"></span>底部頁尾
-                                </label>
-                                <input type="range" id="footerSlider" min="0" max="0.5" step="0.01" value="0.10">
-                                <input type="number" id="footerNumInput" class="crop-num-input" min="0" max="0.5" step="0.01" value="0.10" aria-label="底部裁切數值">
-                            </div>
-
-                            <div class="crop-control-row">
-                                <label for="leftSlider" class="crop-control-label">
-                                    <span class="swatch swatch-side"></span>左側邊距
-                                </label>
-                                <input type="range" id="leftSlider" min="0" max="0.3" step="0.01" value="0.00">
-                                <input type="number" id="leftNumInput" class="crop-num-input" min="0" max="0.3" step="0.01" value="0.00" aria-label="左側邊距數值">
-                            </div>
-
-                            <div class="crop-control-row">
-                                <label for="rightSlider" class="crop-control-label">
-                                    <span class="swatch swatch-side"></span>右側邊距
-                                </label>
-                                <input type="range" id="rightSlider" min="0" max="0.3" step="0.01" value="0.00">
-                                <input type="number" id="rightNumInput" class="crop-num-input" min="0" max="0.3" step="0.01" value="0.00" aria-label="右側邊距數值">
+                            <div style="font-size: 0.82rem; color: var(--f2-color-text-secondary, #616161); display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; background: var(--f2-color-surface-secondary, #f8fafc); border-radius: 4px; border: 1px solid var(--f2-color-border-subtle, #e5e7eb);">
+                                <span>目前：<strong id="currentTemplateName" style="color: var(--f2-color-text-primary, #242424);">預設出版範本</strong></span>
+                                <span id="templateUploadStatus" class="hint" style="font-size: 0.78rem;"></span>
                             </div>
                         </div>
 
-                        <!-- 頁碼範圍設定 -->
-                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb);">
-                            <label class="field-label" style="margin: 0; font-size: 0.85rem;">轉檔頁碼：</label>
-                            <div style="display: flex; align-items: center; gap: 6px;">
-                                <input type="number" id="startPageInput" min="1" placeholder="首頁" class="input input-narrow" style="width: 60px; padding: 4px 6px; font-size: 0.85rem; text-align: center;">
-                                <span class="hint">至</span>
-                                <input type="number" id="endPageInput" min="1" placeholder="末頁" class="input input-narrow" style="width: 60px; padding: 4px 6px; font-size: 0.85rem; text-align: center;">
-                                <span class="hint" style="font-size: 0.78rem;">(留空全本)</span>
+                        <!-- 2. 前置條件提示與主行動按鈕 -->
+                        <div class="primary-action-box" style="margin-top: 4px;">
+                            <div id="preconditionAlert" class="precondition-hint">
+                                <span class="status-dot"></span>
+                                <span id="preconditionText">請先於左側上傳 PDF 檔案以啟用整稿</span>
                             </div>
-                        </div>
-                    </div>
-
-                    <!-- 卡片 4: 執行動作與狀態展示 -->
-                    <div class="f2-card" style="background: var(--f2-color-surface, #ffffff);">
-                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                            <button type="button" class="btn btn-secondary btn-sm" id="analyzeFontsBtn" disabled title="先上傳 PDF，再分析字體並指定各字體的樣式角色" style="flex: 1; min-width: 130px;">
-                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg>
-                                審閱字體樣式
-                            </button>
-                            <button type="submit" class="btn btn-primary" id="submitBtn" disabled style="flex: 2; min-width: 180px;">
+                            <button type="submit" class="btn-primary-lg" id="submitBtn" disabled>
                                 開始全自動整稿
                             </button>
                         </div>
+                    </div>
 
-                        <!-- 即時進度條與狀態 -->
-                        <div id="progressArea" style="display: none; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb);">
-                            <div class="f2-progress-track">
-                                <div id="progressBar" class="f2-progress-fill" style="width: 0%;"></div>
+                    <!-- =========================================================
+                         TIER 2: 進階排版設定層 (預設摺疊，供排版編輯按需微調)
+                         ========================================================= -->
+                    <div class="inspector-accordion" id="tierAdvancedAccordion">
+                        <button type="button" class="accordion-trigger" id="tierAdvancedTrigger" aria-expanded="false" aria-controls="tierAdvancedContent">
+                            <div class="trigger-label">
+                                <span class="trigger-title">進階版面與樣式設定</span>
+                                <span class="trigger-summary" id="advancedSummaryText">裁切邊界 · 頁碼範圍 · 樣式對應</span>
                             </div>
-                            <div class="progress-meta" style="margin-top: 6px; display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--f2-color-text-secondary, #616161);">
-                                <span id="statusMessage">準備啟動轉檔任務…</span>
-                                <span id="percentageText" style="font-weight: 600; color: var(--f2-color-primary, #0F6CBD);">0%</span>
+                            <span class="chevron-icon" aria-hidden="true">▼</span>
+                        </button>
+
+                        <div id="tierAdvancedContent" class="accordion-content" hidden>
+                            <!-- 2A. 頁碼範圍與純內文控制 -->
+                            <fieldset class="sub-panel">
+                                <legend class="sub-panel-title">處理頁碼與腳注</legend>
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+                                    <label class="field-label" style="margin: 0; font-size: 0.82rem;">轉檔頁碼：</label>
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <input type="number" id="startPageInput" name="start_page" min="1" placeholder="首頁" class="input input-narrow" style="width: 58px; padding: 3px 6px; font-size: 0.82rem; text-align: center;">
+                                        <span class="hint">至</span>
+                                        <input type="number" id="endPageInput" name="end_page" min="1" placeholder="末頁" class="input input-narrow" style="width: 58px; padding: 3px 6px; font-size: 0.82rem; text-align: center;">
+                                        <span class="hint" style="font-size: 0.74rem;">(留空全文)</span>
+                                    </div>
+                                </div>
+                                <div id="pageRangeError" class="hint" style="color: var(--f2-color-danger, #d13438); display: none; font-size: 0.75rem; margin-top: 4px;">起始頁不可大於結束頁。</div>
+
+                                <div class="field" style="margin: 8px 0 0 0;">
+                                    <label class="check">
+                                        <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true" checked>
+                                        <span>
+                                            <span class="check-title" style="font-size: 0.82rem;">無腳注純內文模式</span>
+                                            <span class="hint" style="display: block; font-size: 0.74rem;">避免正文圓圈數字被誤判為腳注。</span>
+                                        </span>
+                                    </label>
+                                </div>
+                            </fieldset>
+
+                            <!-- 2B. 版面邊界裁切 (SSOT 數值與滑桿雙向同步) -->
+                            <fieldset class="sub-panel">
+                                <legend class="sub-panel-title">
+                                    <span>版面裁切邊距 (%)</span>
+                                    <button type="button" id="resetCropBtn" class="btn-link-xs">恢復預設</button>
+                                </legend>
+
+                                <!-- 隱藏保留之相容性 Label 元素 -->
+                                <span id="headerValLabel" class="val-top" style="display: none;">0.10</span>
+                                <span id="footerValLabel" class="val-bottom" style="display: none;">0.10</span>
+                                <span id="leftValLabel" class="val-side" style="display: none;">0.00</span>
+                                <span id="rightValLabel" class="val-side" style="display: none;">0.00</span>
+
+                                <div class="crop-control-grid">
+                                    <div class="crop-control-row">
+                                        <label for="headerSlider" class="crop-control-label">
+                                            <span class="swatch swatch-top"></span>頂部天頭
+                                        </label>
+                                        <input type="range" id="headerSlider" min="0" max="0.45" step="0.01" value="0.10" data-dir="top">
+                                        <input type="number" id="headerNumInput" name="header_ratio" class="crop-num-input" min="0" max="0.45" step="0.01" value="0.10" data-dir="top" aria-label="頂部天頭裁切比率">
+                                    </div>
+
+                                    <div class="crop-control-row">
+                                        <label for="footerSlider" class="crop-control-label">
+                                            <span class="swatch swatch-bottom"></span>底部地腳
+                                        </label>
+                                        <input type="range" id="footerSlider" min="0" max="0.45" step="0.01" value="0.10" data-dir="bottom">
+                                        <input type="number" id="footerNumInput" name="footer_ratio" class="crop-num-input" min="0" max="0.45" step="0.01" value="0.10" data-dir="bottom" aria-label="底部地腳裁切比率">
+                                    </div>
+
+                                    <div class="crop-control-row">
+                                        <label for="leftSlider" class="crop-control-label">
+                                            <span class="swatch swatch-side"></span>左側邊距
+                                        </label>
+                                        <input type="range" id="leftSlider" min="0" max="0.30" step="0.01" value="0.00" data-dir="left">
+                                        <input type="number" id="leftNumInput" name="left_ratio" class="crop-num-input" min="0" max="0.30" step="0.01" value="0.00" data-dir="left" aria-label="左側邊距比率">
+                                    </div>
+
+                                    <div class="crop-control-row">
+                                        <label for="rightSlider" class="crop-control-label">
+                                            <span class="swatch swatch-side"></span>右側邊距
+                                        </label>
+                                        <input type="range" id="rightSlider" min="0" max="0.30" step="0.01" value="0.00" data-dir="right">
+                                        <input type="number" id="rightNumInput" name="right_ratio" class="crop-num-input" min="0" max="0.30" step="0.01" value="0.00" data-dir="right" aria-label="右側邊距比率">
+                                    </div>
+                                </div>
+                            </fieldset>
+
+                            <!-- 2C. 表格化 Word 樣式對應器 (保留原始 ID，保證向下相容) -->
+                            <fieldset class="sub-panel" id="styleMappingSection">
+                                <legend class="sub-panel-title">
+                                    <span>Word 樣式角色對應</span>
+                                    <button type="button" id="resetAllStylesBtn" class="btn-link-xs">重設為預設樣式</button>
+                                </legend>
+                                <div class="style-mapper-toolbar">
+                                    <input type="search" id="styleMapperFilter" class="input" style="font-size: 0.78rem; padding: 4px 8px; margin-bottom: 6px;" placeholder="快速搜尋角色或樣式名稱…">
+                                </div>
+                                <div class="style-mapper-table-wrap">
+                                    <table class="style-mapper-table" role="grid">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 38%;">PDF 內容角色</th>
+                                                <th style="width: 44%;">對應 Word 樣式</th>
+                                                <th style="width: 18%; text-align: center;">操作</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="tabularStyleMapperMount">
+                                            <!-- 一級標題 -->
+                                            <tr data-role-label="一級標題">
+                                                <td class="role-cell"><label for="h1Style">一級標題 (#)</label></td>
+                                                <td><select id="h1Style" name="h1_style" class="style-table-select"><option value="">(預設 Heading 1)</option></select></td>
+                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="h1Style">預設</button></td>
+                                            </tr>
+                                            <!-- 二級標題 -->
+                                            <tr data-role-label="二級標題">
+                                                <td class="role-cell"><label for="h2Style">二級標題 (##)</label></td>
+                                                <td><select id="h2Style" name="h2_style" class="style-table-select"><option value="">(預設 Heading 2)</option></select></td>
+                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="h2Style">預設</button></td>
+                                            </tr>
+                                            <!-- 三級標題 -->
+                                            <tr data-role-label="三級標題">
+                                                <td class="role-cell"><label for="h3Style">三級標題 (###)</label></td>
+                                                <td><select id="h3Style" name="h3_style" class="style-table-select"><option value="">(預設 Heading 3)</option></select></td>
+                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="h3Style">預設</button></td>
+                                            </tr>
+                                            <!-- 圖片標籤 -->
+                                            <tr data-role-label="圖片標籤">
+                                                <td class="role-cell"><label for="imageCaptionStyle">圖片標籤</label></td>
+                                                <td><select id="imageCaptionStyle" name="image_caption_style" class="style-table-select"><option value="">(不套用自訂樣式)</option></select></td>
+                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="imageCaptionStyle">預設</button></td>
+                                            </tr>
+                                            <!-- 楷體/引言 -->
+                                            <tr data-role-label="楷體引言">
+                                                <td class="role-cell"><label for="kaitiStyle">楷體 / 引言</label></td>
+                                                <td><select id="kaitiStyle" name="kaiti_style" class="style-table-select"><option value="">(不套用自訂樣式)</option></select></td>
+                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="kaitiStyle">預設</button></td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </fieldset>
+                        </div>
+                    </div>
+
+                    <!-- =========================================================
+                         TIER 3: 工程與底層診斷設定層 (預設摺疊，受工程師模式開關控制)
+                         ========================================================= -->
+                    <div class="inspector-accordion tier-engineer" id="tierEngineerAccordion">
+                        <button type="button" class="accordion-trigger" id="tierEngineerTrigger" aria-expanded="false" aria-controls="tierEngineerContent">
+                            <div class="trigger-label">
+                                <span class="trigger-title">🛠️ 工程與底層診斷設定</span>
+                                <span class="trigger-summary" id="engineerSummaryText">OCR 引擎 · 字體分析</span>
+                            </div>
+                            <span class="chevron-icon" aria-hidden="true">▼</span>
+                        </button>
+
+                        <div id="tierEngineerContent" class="accordion-content" hidden>
+                            <div class="field" style="margin-bottom: 8px;">
+                                <label class="field-label" for="engineSelect" style="font-size: 0.82rem;">PDF 處理引擎</label>
+                                <select name="engine" id="engineSelect" class="input" style="font-size: 0.82rem; padding: 4px 6px;">
+                                    <option value="auto">自動偵測 (推薦) — 向量原生秒級解析，掃描自動切換</option>
+                                    <option value="pymupdf">高速提取 (PyMuPDF) — 原生向量 PDF，記憶體極輕量</option>
+                                    <option value="suryaocr">深度識別 (Surya OCR) — 掃描書與圖轉曲 PDF</option>
+                                </select>
+                            </div>
+
+                            <button type="button" class="btn btn-secondary btn-sm" id="analyzeFontsBtn" disabled title="先上傳 PDF，再分析字體並指定各字體的樣式角色" style="width: 100%; font-size: 0.82rem;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg>
+                                審閱 PDF 字體與編碼角色
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- =========================================================
+                         六階段語意進度管道與結果中心
+                         ========================================================= -->
+                    <div class="pipeline-feedback-card" id="pipelineFeedbackPanel" style="display: none;">
+                        <div class="pipeline-header">
+                            <h3 id="pipelineStatusTitle">準備啟動轉檔任務…</h3>
+                            <span id="pipelinePercentBadge" class="percent-pill">0%</span>
+                        </div>
+
+                        <!-- 進度條 -->
+                        <div class="f2-progress-track" id="progressArea">
+                            <div id="progressBar" class="f2-progress-fill" style="width: 0%;"></div>
+                        </div>
+
+                        <div class="progress-meta" style="margin-top: 6px; display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--f2-color-text-secondary, #616161);">
+                            <span id="statusMessage">任務初始化中…</span>
+                            <span id="percentageText" style="font-weight: 600; color: var(--f2-color-primary, #0F6CBD);">0%</span>
+                        </div>
+
+                        <!-- 6 階段語意進度網格 -->
+                        <ol class="pipeline-stages-grid" id="pipelineStagesList">
+                            <li class="p-stage" id="stage_load" data-stage="load"><span>1. PDF 載入</span></li>
+                            <li class="p-stage" id="stage_font" data-stage="font"><span>2. 字體解析</span></li>
+                            <li class="p-stage" id="stage_layout" data-stage="layout"><span>3. 版面重建</span></li>
+                            <li class="p-stage" id="stage_markdown" data-stage="markdown"><span>4. MD 生成</span></li>
+                            <li class="p-stage" id="stage_docx" data-stage="docx"><span>5. Word 排版</span></li>
+                            <li class="p-stage" id="stage_export" data-stage="export"><span>6. 輸出完成</span></li>
+                        </ol>
+
+                        <!-- 錯誤診斷與復原區域 (僅失敗時顯示) -->
+                        <div id="pipelineErrorBox" class="pipeline-error-box" style="display: none;" role="alert">
+                            <div class="error-title">⚠️ 整稿任務異常中斷</div>
+                            <p id="pipelineErrorReason" class="error-reason"></p>
+                            <p id="pipelineErrorSuggestion" class="error-suggestion">
+                                建議處置：請確認頁碼範圍或於「工程設定」切換 OCR 引擎後重試。
+                            </p>
+                            <div class="error-actions">
+                                <button type="button" id="retrySameParamsBtn" class="btn btn-primary btn-sm">以目前設定重試</button>
+                                <button type="button" id="adjustSettingsBtn" class="btn btn-secondary btn-sm">修改參數</button>
                             </div>
                         </div>
 
-                        <!-- 錯誤/成果回饋區域 -->
-                        <div id="status" role="status" aria-live="polite" style="margin-top: 10px;"></div>
+                        <!-- 完成結果摘要與下載 (完成時顯示) -->
+                        <div id="pipelineResultSummary" class="pipeline-result-summary" style="display: none;"></div>
                     </div>
+
+                    <!-- 舊版狀態節點 (保留相容) -->
+                    <div id="status" role="status" aria-live="polite" style="display: none;"></div>
 
                 </form>
             </div>
@@ -336,36 +473,51 @@
         </div>
     </div>
 
-    <!-- 業務邏輯與交互腳本 -->
+    <!-- ══════════════════════════════════════════════════════
+         前端業務邏輯、狀態機與互動管理器腳本
+         ══════════════════════════════════════════════════════ -->
     <script>
+        // DOM Elements
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const fileNameDisplay = document.getElementById('fileNameDisplay');
         const uploadForm = document.getElementById('uploadForm');
         const submitBtn = document.getElementById('submitBtn');
         const analyzeFontsBtn = document.getElementById('analyzeFontsBtn');
-        const progressArea = document.getElementById('progressArea');
-        const progressBar = document.getElementById('progressBar');
-        const statusMessage = document.getElementById('statusMessage');
-        const percentageText = document.getElementById('percentageText');
-        const statusDiv = document.getElementById('status');
+        const workbenchInspectorPane = document.getElementById('workbenchInspectorPane');
+
+        const canvasEmptyState = document.getElementById('canvasEmptyState');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewImage = document.getElementById('previewImage');
+        const cropOverlayBox = document.getElementById('cropOverlayBox');
+
+        const fileBadge = document.getElementById('fileBadge');
+        const canvasPager = document.getElementById('canvasPager');
+        const activeFileInfo = document.getElementById('activeFileInfo');
+        const activeFileNameText = document.getElementById('activeFileNameText');
+        const activeFileSizeText = document.getElementById('activeFileSizeText');
+
+        const prevPageBtn = document.getElementById('prevPageBtn');
+        const nextPageBtn = document.getElementById('nextPageBtn');
+        const previewPageDisplay = document.getElementById('previewPageDisplay');
+        const totalPagesDisplay = document.getElementById('totalPagesDisplay');
 
         const templateInput = document.getElementById('templateInput');
         const templateUploadStatus = document.getElementById('templateUploadStatus');
         const currentTemplateName = document.getElementById('currentTemplateName');
-        const styleMappingSection = document.getElementById('styleMappingSection');
 
-        const previewContainer = document.getElementById('previewContainer');
-        const previewImage = document.getElementById('previewImage');
+        const preconditionAlert = document.getElementById('preconditionAlert');
+        const preconditionText = document.getElementById('preconditionText');
+
         const headerSlider = document.getElementById('headerSlider');
         const footerSlider = document.getElementById('footerSlider');
         const leftSlider = document.getElementById('leftSlider');
         const rightSlider = document.getElementById('rightSlider');
-
         const headerNumInput = document.getElementById('headerNumInput');
         const footerNumInput = document.getElementById('footerNumInput');
         const leftNumInput = document.getElementById('leftNumInput');
         const rightNumInput = document.getElementById('rightNumInput');
+        const resetCropBtn = document.getElementById('resetCropBtn');
 
         const headerVal = document.getElementById('headerVal');
         const footerVal = document.getElementById('footerVal');
@@ -375,19 +527,29 @@
         const footerValLabel = document.getElementById('footerValLabel');
         const leftValLabel = document.getElementById('leftValLabel');
         const rightValLabel = document.getElementById('rightValLabel');
-        const prevPageBtn = document.getElementById('prevPageBtn');
-        const nextPageBtn = document.getElementById('nextPageBtn');
-        const previewPageDisplay = document.getElementById('previewPageDisplay');
-        const totalPagesDisplay = document.getElementById('totalPagesDisplay');
+
         const startPageInput = document.getElementById('startPageInput');
         const endPageInput = document.getElementById('endPageInput');
+        const pageRangeError = document.getElementById('pageRangeError');
+        const noFootnoteToggle = document.getElementById('noFootnoteToggle');
+        const engineSelect = document.getElementById('engineSelect');
 
-        const fileBadge = document.getElementById('fileBadge');
-        const canvasPager = document.getElementById('canvasPager');
-        const activeFileInfo = document.getElementById('activeFileInfo');
-        const activeFileNameText = document.getElementById('activeFileNameText');
-        const activeFileSizeText = document.getElementById('activeFileSizeText');
+        // Progress & Pipeline
+        const pipelineFeedbackPanel = document.getElementById('pipelineFeedbackPanel');
+        const pipelineStatusTitle = document.getElementById('pipelineStatusTitle');
+        const pipelinePercentBadge = document.getElementById('pipelinePercentBadge');
+        const progressArea = document.getElementById('progressArea');
+        const progressBar = document.getElementById('progressBar');
+        const statusMessage = document.getElementById('statusMessage');
+        const percentageText = document.getElementById('percentageText');
+        const pipelineErrorBox = document.getElementById('pipelineErrorBox');
+        const pipelineErrorReason = document.getElementById('pipelineErrorReason');
+        const retrySameParamsBtn = document.getElementById('retrySameParamsBtn');
+        const adjustSettingsBtn = document.getElementById('adjustSettingsBtn');
+        const pipelineResultSummary = document.getElementById('pipelineResultSummary');
+        const statusDiv = document.getElementById('status');
 
+        // State Variables
         let currentFile = null;
         let currentFileId = null;
         let currentFileOrigName = "";
@@ -395,12 +557,231 @@
         let totalPdfPages = 1;
         let debounceTimer = null;
         let activeStem = null;
+        let availableTemplateStyles = [];
+        let currentStageIdx = 0;
+
+        // ══════════════════════════════════════════════════════
+        // 1. Workflow Stepper 管理器
+        // ══════════════════════════════════════════════════════
+        function updateWorkflowStepper(step) {
+            const steps = [
+                { id: 'stepItem1', descId: 'step1Desc' },
+                { id: 'stepItem2', descId: 'step2Desc' },
+                { id: 'stepItem3', descId: 'step3Desc' },
+                { id: 'stepItem4', descId: 'step4Desc' }
+            ];
+
+            steps.forEach((s, idx) => {
+                const el = document.getElementById(s.id);
+                if (!el) return;
+                const stepNum = idx + 1;
+                el.classList.remove('active', 'completed');
+                if (stepNum < step) {
+                    el.classList.add('completed');
+                } else if (stepNum === step) {
+                    el.classList.add('active');
+                }
+            });
+
+            if (currentFileId) {
+                document.getElementById('step1Desc').textContent = currentFile ? currentFile.name : '已就緒';
+                document.getElementById('step2Desc').textContent = `第 ${currentPreviewPage} / ${totalPdfPages} 頁`;
+            } else {
+                document.getElementById('step1Desc').textContent = '待選擇檔案';
+                document.getElementById('step2Desc').textContent = '即時視覺化裁切';
+            }
+        }
+
+        // ══════════════════════════════════════════════════════
+        // 2. Accordions 漸進式揭露控制器
+        // ══════════════════════════════════════════════════════
+        function setupAccordion(triggerId, contentId, containerId) {
+            const trigger = document.getElementById(triggerId);
+            const content = document.getElementById(contentId);
+            const container = document.getElementById(containerId);
+            if (!trigger || !content || !container) return;
+
+            // 確保初始狀態與 HTML hidden 屬性同步
+            const isInitiallyHidden = content.hasAttribute('hidden');
+            content.style.display = isInitiallyHidden ? 'none' : 'flex';
+
+            trigger.addEventListener('click', (e) => {
+                e.preventDefault();
+                const isExpanded = trigger.getAttribute('aria-expanded') === 'true';
+                const nextState = !isExpanded;
+                trigger.setAttribute('aria-expanded', String(nextState));
+                container.classList.toggle('is-expanded', nextState);
+                if (nextState) {
+                    content.removeAttribute('hidden');
+                    content.style.display = 'flex';
+                } else {
+                    content.setAttribute('hidden', '');
+                    content.style.display = 'none';
+                }
+            });
+        }
+        setupAccordion('tierAdvancedTrigger', 'tierAdvancedContent', 'tierAdvancedAccordion');
+        setupAccordion('tierEngineerTrigger', 'tierEngineerContent', 'tierEngineerAccordion');
+
+        // 本機開發者預設開啟工程師模式檢查
+        function checkDevEngineerModePreset() {
+            const isDevPreset = localStorage.getItem('developer_engineer_mode') === 'true';
+            if (isDevPreset) {
+                const engTrigger = document.getElementById('tierEngineerTrigger');
+                const engContent = document.getElementById('tierEngineerContent');
+                const engContainer = document.getElementById('tierEngineerAccordion');
+                if (engTrigger && engContent && engContainer) {
+                    engTrigger.setAttribute('aria-expanded', 'true');
+                    engContainer.classList.add('is-expanded');
+                    engContent.removeAttribute('hidden');
+                    engContent.style.display = 'flex';
+                }
+            }
+        }
+        window.addEventListener('DOMContentLoaded', checkDevEngineerModePreset);
+
+        // ══════════════════════════════════════════════════════
+        // 3. SSOT 裁切管理器 (CropStateManager)
+        // 幾何邊界硬約束: top + bottom <= 0.85, left + right <= 0.85
+        // ══════════════════════════════════════════════════════
+        class CropStateManager {
+            constructor() {
+                this.MAX_SINGLE_EDGE = 0.45;
+                this.MAX_OPPOSITE_SUM = 0.85;
+                this.isUpdating = false;
+
+                this.initEvents();
+            }
+
+            sanitize(cropValues, changedDir = null) {
+                let top = Math.min(Math.max(parseFloat(cropValues.top) || 0, 0), this.MAX_SINGLE_EDGE);
+                let bottom = Math.min(Math.max(parseFloat(cropValues.bottom) || 0, 0), this.MAX_SINGLE_EDGE);
+                let left = Math.min(Math.max(parseFloat(cropValues.left) || 0, 0), 0.30);
+                let right = Math.min(Math.max(parseFloat(cropValues.right) || 0, 0), 0.30);
+
+                if (top + bottom > this.MAX_OPPOSITE_SUM) {
+                    if (changedDir === 'top') top = this.MAX_OPPOSITE_SUM - bottom;
+                    else bottom = this.MAX_OPPOSITE_SUM - top;
+                }
+                if (left + right > this.MAX_OPPOSITE_SUM) {
+                    if (changedDir === 'left') left = this.MAX_OPPOSITE_SUM - right;
+                    else right = this.MAX_OPPOSITE_SUM - left;
+                }
+
+                return {
+                    top: Math.round(top * 100) / 100,
+                    bottom: Math.round(bottom * 100) / 100,
+                    left: Math.round(left * 100) / 100,
+                    right: Math.round(right * 100) / 100
+                };
+            }
+
+            setCrop(values, source = 'script', changedDir = null) {
+                if (this.isUpdating) return;
+                this.isUpdating = true;
+                try {
+                    const clean = this.sanitize(values, changedDir);
+
+                    // 同步滑桿
+                    if (headerSlider && source !== 'headerSlider') headerSlider.value = clean.top;
+                    if (footerSlider && source !== 'footerSlider') footerSlider.value = clean.bottom;
+                    if (leftSlider && source !== 'leftSlider') leftSlider.value = clean.left;
+                    if (rightSlider && source !== 'rightSlider') rightSlider.value = clean.right;
+
+                    // 同步數值輸入框
+                    if (headerNumInput && source !== 'headerNumInput') headerNumInput.value = clean.top.toFixed(2);
+                    if (footerNumInput && source !== 'footerNumInput') footerNumInput.value = clean.bottom.toFixed(2);
+                    if (leftNumInput && source !== 'leftNumInput') leftNumInput.value = clean.left.toFixed(2);
+                    if (rightNumInput && source !== 'rightNumInput') rightNumInput.value = clean.right.toFixed(2);
+
+                    // 同步圖例標籤
+                    if (headerVal) headerVal.textContent = clean.top.toFixed(2);
+                    if (footerVal) footerVal.textContent = clean.bottom.toFixed(2);
+                    if (leftVal) leftVal.textContent = clean.left.toFixed(2);
+                    if (rightVal) rightVal.textContent = clean.right.toFixed(2);
+
+                    // 同步相容標籤
+                    if (headerValLabel) headerValLabel.textContent = clean.top.toFixed(2);
+                    if (footerValLabel) footerValLabel.textContent = clean.bottom.toFixed(2);
+                    if (leftValLabel) leftValLabel.textContent = clean.left.toFixed(2);
+                    if (rightValLabel) rightValLabel.textContent = clean.right.toFixed(2);
+
+                    // 同步畫布視覺裁切遮罩位置
+                    if (cropOverlayBox) {
+                        cropOverlayBox.style.top = (clean.top * 100) + '%';
+                        cropOverlayBox.style.bottom = (clean.bottom * 100) + '%';
+                        cropOverlayBox.style.left = (clean.left * 100) + '%';
+                        cropOverlayBox.style.right = (clean.right * 100) + '%';
+                    }
+
+                    this.debouncedPreviewRender(clean);
+                } finally {
+                    this.isUpdating = false;
+                }
+            }
+
+            debouncedPreviewRender(clean) {
+                if (!currentFileId) return;
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    previewImage.src = `/api/render_preview/${currentFileId}?page=${currentPreviewPage}&header=${clean.top}&footer=${clean.bottom}&left=${clean.left}&right=${clean.right}&_t=${Date.now()}`;
+                }, 300);
+            }
+
+            initEvents() {
+                const onSliderChange = (e, dir) => {
+                    this.setCrop({
+                        top: headerSlider.value,
+                        bottom: footerSlider.value,
+                        left: leftSlider.value,
+                        right: rightSlider.value
+                    }, e.target.id, dir);
+                };
+
+                headerSlider.oninput = (e) => onSliderChange(e, 'top');
+                footerSlider.oninput = (e) => onSliderChange(e, 'bottom');
+                leftSlider.oninput = (e) => onSliderChange(e, 'left');
+                rightSlider.oninput = (e) => onSliderChange(e, 'right');
+
+                const onNumChange = (e, dir) => {
+                    this.setCrop({
+                        top: headerNumInput.value,
+                        bottom: footerNumInput.value,
+                        left: leftNumInput.value,
+                        right: rightNumInput.value
+                    }, e.target.id, dir);
+                };
+
+                headerNumInput.onchange = (e) => onNumChange(e, 'top');
+                footerNumInput.onchange = (e) => onNumChange(e, 'bottom');
+                leftNumInput.onchange = (e) => onNumChange(e, 'left');
+                rightNumInput.onchange = (e) => onNumChange(e, 'right');
+
+                if (resetCropBtn) {
+                    resetCropBtn.onclick = () => {
+                        this.setCrop({ top: 0.10, bottom: 0.10, left: 0.00, right: 0.00 }, 'reset');
+                    };
+                }
+            }
+        }
+        const cropManager = new CropStateManager();
+
+        // ══════════════════════════════════════════════════════
+        // 4. 表格化 Word 樣式對應器 (TabularStyleMapper)
+        // ══════════════════════════════════════════════════════
+        const STYLE_ROLE_DEFAULTS = {
+            h1Style: '(預設 Heading 1)',
+            h2Style: '(預設 Heading 2)',
+            h3Style: '(預設 Heading 3)',
+            imageCaptionStyle: '(不套用自訂樣式)',
+            kaitiStyle: '(不套用自訂樣式)'
+        };
 
         async function loadCurrentTemplate() {
             try {
                 const res = await fetch('/api/get_current_template');
                 const data = await res.json();
-                currentTemplateName.textContent = data.name || '預設範本';
+                currentTemplateName.textContent = data.name || '預設出版範本';
                 fetchTemplateStyles();
             } catch (err) {
                 currentTemplateName.textContent = '無法取得範本資訊';
@@ -412,33 +793,67 @@
                 const res = await fetch('/api/get_template_styles');
                 const data = await res.json();
                 if (data.status === 'success' && data.styles && data.styles.length > 0) {
-                    const h1 = document.getElementById('h1Style');
-                    const h2 = document.getElementById('h2Style');
-                    const h3 = document.getElementById('h3Style');
-                    const imgCaption = document.getElementById('imageCaptionStyle');
-                    const kaiti = document.getElementById('kaitiStyle');
-
-                    h1.innerHTML = '<option value="">(預設 Heading 1)</option>';
-                    h2.innerHTML = '<option value="">(預設 Heading 2)</option>';
-                    h3.innerHTML = '<option value="">(預設 Heading 3)</option>';
-                    imgCaption.innerHTML = '<option value="">(不套用自訂樣式)</option>';
-                    kaiti.innerHTML = '<option value="">(不套用自訂樣式)</option>';
-
-                    data.styles.forEach(s => {
-                        const opt = `<option value="${toolbox.escape(s)}">${toolbox.escape(s)}</option>`;
-                        h1.innerHTML += opt;
-                        h2.innerHTML += opt;
-                        h3.innerHTML += opt;
-                        imgCaption.innerHTML += opt;
-                        kaiti.innerHTML += opt;
-                    });
-                    styleMappingSection.style.display = 'block';
+                    availableTemplateStyles = data.styles;
+                    populateStyleSelects(availableTemplateStyles);
                 }
             } catch (err) {
                 console.error("無法取得樣式", err);
             }
         }
-        window.addEventListener('DOMContentLoaded', loadCurrentTemplate);
+
+        function populateStyleSelects(styles) {
+            const roleKeys = ['h1Style', 'h2Style', 'h3Style', 'imageCaptionStyle', 'kaitiStyle'];
+            roleKeys.forEach(id => {
+                const selectEl = document.getElementById(id);
+                if (!selectEl) return;
+                const defaultLabel = STYLE_ROLE_DEFAULTS[id];
+                const currentVal = selectEl.value;
+                let html = `<option value="">${defaultLabel}</option>`;
+                styles.forEach(s => {
+                    const isSelected = s === currentVal ? 'selected' : '';
+                    html += `<option value="${toolbox.escape(s)}" ${isSelected}>${toolbox.escape(s)}</option>`;
+                });
+                selectEl.innerHTML = html;
+            });
+        }
+
+        // 樣式快速搜尋過濾
+        const styleFilterInput = document.getElementById('styleMapperFilter');
+        if (styleFilterInput) {
+            styleFilterInput.addEventListener('input', (e) => {
+                const q = e.target.value.trim().toLowerCase();
+                document.querySelectorAll('#tabularStyleMapperMount tr').forEach(row => {
+                    const label = row.dataset.roleLabel || '';
+                    const select = row.querySelector('select');
+                    const selectedVal = select ? select.value.toLowerCase() : '';
+                    const isMatch = !q || label.includes(q) || selectedVal.includes(q);
+                    row.style.display = isMatch ? '' : 'none';
+                });
+            });
+        }
+
+        // 單列重設與全部重設按鈕
+        document.querySelectorAll('.btn-reset-row').forEach(btn => {
+            btn.onclick = () => {
+                const targetId = btn.dataset.target;
+                const selectEl = document.getElementById(targetId);
+                if (selectEl) {
+                    selectEl.value = '';
+                    toolbox.notify(`已重設 ${targetId} 為預設樣式`, 'info', 2000);
+                }
+            };
+        });
+
+        const resetAllStylesBtn = document.getElementById('resetAllStylesBtn');
+        if (resetAllStylesBtn) {
+            resetAllStylesBtn.onclick = () => {
+                ['h1Style', 'h2Style', 'h3Style', 'imageCaptionStyle', 'kaitiStyle'].forEach(id => {
+                    const sel = document.getElementById(id);
+                    if (sel) sel.value = '';
+                });
+                toolbox.notify('已重設所有標題與角色為預設樣式', 'info', 2500);
+            };
+        }
 
         templateInput.onchange = async (e) => {
             if (e.target.files.length === 0) return;
@@ -468,13 +883,16 @@
             templateInput.value = '';
         };
 
+        // ══════════════════════════════════════════════════════
+        // 5. 檔案上傳與非線性工作流狀態管理
+        // ══════════════════════════════════════════════════════
         dropZone.onclick = () => fileInput.click();
         dropZone.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } };
-        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
-        dropZone.ondragleave = () => dropZone.classList.remove('dragover');
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('drag-over');
         dropZone.ondrop = (e) => {
             e.preventDefault();
-            dropZone.classList.remove('dragover');
+            dropZone.classList.remove('drag-over');
             if (e.dataTransfer.files.length > 0) handleFile(e.dataTransfer.files[0]);
         };
         fileInput.onchange = (e) => {
@@ -490,14 +908,16 @@
                 fileInput.value = '';
                 return;
             }
+
             currentFile = file;
             currentFileOrigName = file.name.replace(/\.[^/.]+$/, "");
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
 
-            fileNameDisplay.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong><small>上傳中 (${sizeMB} MB)…</small></span>`;
+            fileNameDisplay.textContent = `${file.name} (${sizeMB} MB) 上傳解析中…`;
             submitBtn.disabled = true;
             analyzeFontsBtn.disabled = true;
-            statusDiv.innerHTML = '';
+            preconditionAlert.className = 'precondition-hint';
+            preconditionText.textContent = '正在上傳與解析 PDF 檔案…';
 
             const formData = new FormData();
             formData.append('file', file);
@@ -510,100 +930,71 @@
                 currentFileId = data.file_id;
                 totalPdfPages = data.total_pages || 1;
                 currentPreviewPage = 1;
+
+                // 重設非線性頁碼邊界，避免舊狀態溢位 (FSM Invariant)
                 totalPagesDisplay.textContent = totalPdfPages;
                 previewPageDisplay.textContent = currentPreviewPage;
+                if (startPageInput) startPageInput.value = '1';
+                if (endPageInput) endPageInput.value = String(totalPdfPages);
+                pageRangeError.style.display = 'none';
 
-                fileNameDisplay.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong><small>${sizeMB} MB</small></span>`;
-                
-                // 畫布切換為預覽模式
-                dropZone.style.display = 'none';
+                // 畫布切換至預覽模式
+                canvasEmptyState.style.display = 'none';
                 previewContainer.style.display = 'flex';
                 canvasPager.style.display = 'flex';
                 fileBadge.style.display = 'inline-flex';
                 fileBadge.textContent = file.name;
-                
-                // 右側檢視台顯示檔案資訊
+
+                // 檢視器更新檔案提示
                 if (activeFileInfo) {
                     activeFileInfo.style.display = 'flex';
                     activeFileNameText.textContent = file.name;
                     activeFileSizeText.textContent = `(${sizeMB} MB，共 ${totalPdfPages} 頁)`;
                 }
 
-                updatePreview();
+                // 更新裁切與 Stepper
+                cropManager.setCrop({
+                    top: headerSlider.value,
+                    bottom: footerSlider.value,
+                    left: leftSlider.value,
+                    right: rightSlider.value
+                }, 'fileReady');
 
+                updateWorkflowStepper(2);
+
+                // 解除前置條件限制
+                preconditionAlert.className = 'precondition-hint ready';
+                preconditionText.textContent = `檔案就緒 (${totalPdfPages} 頁)・隨時可開始整稿`;
                 submitBtn.disabled = false;
                 analyzeFontsBtn.disabled = false;
                 submitBtn.textContent = '開始全自動整稿';
             } catch (err) {
-                dropZone.style.display = 'block';
+                canvasEmptyState.style.display = 'flex';
                 previewContainer.style.display = 'none';
                 canvasPager.style.display = 'none';
                 fileBadge.style.display = 'none';
                 if (activeFileInfo) activeFileInfo.style.display = 'none';
 
                 fileNameDisplay.textContent = '點擊選擇，或將 PDF 檔案拖曳到這裡';
-                statusDiv.innerHTML = toolbox.errorPanel('上傳預覽失敗', err.message, 'fileInput.click()');
+                preconditionAlert.className = 'precondition-hint';
+                preconditionText.textContent = '上傳失敗：' + err.message;
                 submitBtn.disabled = true;
                 analyzeFontsBtn.disabled = true;
+                toolbox.notify('PDF 載入失敗: ' + err.message, 'error');
             }
         }
-
-        function updatePreview() {
-            if (!currentFileId) return;
-            const h = headerSlider.value;
-            const f = footerSlider.value;
-            const l = leftSlider.value;
-            const r = rightSlider.value;
-
-            // 同步圖例與隱藏標籤
-            headerVal.textContent = h;
-            headerValLabel.textContent = h;
-            footerVal.textContent = f;
-            footerValLabel.textContent = f;
-            leftVal.textContent = l;
-            leftValLabel.textContent = l;
-            rightVal.textContent = r;
-            rightValLabel.textContent = r;
-
-            // 同步數值輸入框
-            if (headerNumInput && document.activeElement !== headerNumInput) headerNumInput.value = h;
-            if (footerNumInput && document.activeElement !== footerNumInput) footerNumInput.value = f;
-            if (leftNumInput && document.activeElement !== leftNumInput) leftNumInput.value = l;
-            if (rightNumInput && document.activeElement !== rightNumInput) rightNumInput.value = r;
-
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(() => {
-                previewImage.src = `/api/render_preview/${currentFileId}?page=${currentPreviewPage}&header=${h}&footer=${f}&left=${l}&right=${r}&_t=${Date.now()}`;
-            }, 300);
-        }
-
-        // 滑桿連動更新
-        headerSlider.oninput = updatePreview;
-        footerSlider.oninput = updatePreview;
-        leftSlider.oninput = updatePreview;
-        rightSlider.oninput = updatePreview;
-
-        // 數值輸入框連動滑桿
-        function bindNumInputToSlider(numInput, slider, maxVal) {
-            if (!numInput || !slider) return;
-            numInput.oninput = () => {
-                let val = parseFloat(numInput.value);
-                if (isNaN(val)) val = 0;
-                val = Math.max(0, Math.min(maxVal, val));
-                slider.value = val.toFixed(2);
-                updatePreview();
-            };
-        }
-        bindNumInputToSlider(headerNumInput, headerSlider, 0.5);
-        bindNumInputToSlider(footerNumInput, footerSlider, 0.5);
-        bindNumInputToSlider(leftNumInput, leftSlider, 0.3);
-        bindNumInputToSlider(rightNumInput, rightSlider, 0.3);
 
         prevPageBtn.onclick = () => {
             if (currentPreviewPage > 1) {
                 currentPreviewPage--;
                 previewPageDisplay.textContent = currentPreviewPage;
-                updatePreview();
+                updateWorkflowStepper(2);
+                cropManager.debouncedPreviewRender({
+                    top: parseFloat(headerSlider.value),
+                    bottom: parseFloat(footerSlider.value),
+                    left: parseFloat(leftSlider.value),
+                    right: parseFloat(rightSlider.value)
+                });
             }
         };
 
@@ -611,24 +1002,119 @@
             if (currentPreviewPage < totalPdfPages) {
                 currentPreviewPage++;
                 previewPageDisplay.textContent = currentPreviewPage;
-                updatePreview();
+                updateWorkflowStepper(2);
+                cropManager.debouncedPreviewRender({
+                    top: parseFloat(headerSlider.value),
+                    bottom: parseFloat(footerSlider.value),
+                    left: parseFloat(leftSlider.value),
+                    right: parseFloat(rightSlider.value)
+                });
             }
         };
 
+        // 頁碼輸入防呆校驗
+        function validatePageRange() {
+            const start = parseInt(startPageInput.value, 10) || 1;
+            const end = parseInt(endPageInput.value, 10) || totalPdfPages;
+            if (start > end) {
+                pageRangeError.style.display = 'block';
+                pageRangeError.textContent = `起始頁碼 (${start}) 不可大於結束頁碼 (${end})`;
+                return false;
+            }
+            pageRangeError.style.display = 'none';
+            return true;
+        }
+        startPageInput.onchange = validatePageRange;
+        endPageInput.onchange = validatePageRange;
+
+        // ══════════════════════════════════════════════════════
+        // 6. 六階段語意進度管道 (PipelineProgressAdapter)
+        // 映射: load(1) -> font(2) -> layout(3) -> markdown(4) -> docx(5) -> export(6)
+        // 任務進行時將右側檢視器設為唯讀
+        // ══════════════════════════════════════════════════════
+        const STAGE_KEYS = ['load', 'font', 'layout', 'markdown', 'docx', 'export'];
+
+        function resolveStageIdx(payload, prevIdx) {
+            const { stage_id, progress, message = '' } = payload;
+            const map = { load: 1, font: 2, layout: 3, markdown: 4, docx: 5, export: 6 };
+            let detected = prevIdx || 1;
+
+            if (stage_id && map[stage_id]) {
+                detected = map[stage_id];
+            } else if (/完成|輸出|done|complete|download/i.test(message) || (progress && progress >= 96)) {
+                detected = 6;
+            } else if (/word|docx|樣式|template|排版/i.test(message) || (progress && progress >= 76)) {
+                detected = 5;
+            } else if (/markdown|md|標題|語意/i.test(message) || (progress && progress >= 56)) {
+                detected = 4;
+            } else if (/版面|結構|layout|ocr|surya/i.test(message) || (progress && progress >= 31)) {
+                detected = 3;
+            } else if (/字體|編碼|font|cmap/i.test(message) || (progress && progress >= 16)) {
+                detected = 2;
+            }
+
+            // 單調遞增不變量
+            return Math.max(prevIdx, detected);
+        }
+
+        function updatePipelineUI(stageIndex, percent, msg) {
+            currentStageIdx = stageIndex;
+            STAGE_KEYS.forEach((key, idx) => {
+                const el = document.getElementById(`stage_${key}`);
+                if (!el) return;
+                const num = idx + 1;
+                el.classList.remove('active', 'completed', 'error');
+                if (num < stageIndex) {
+                    el.classList.add('completed');
+                } else if (num === stageIndex) {
+                    el.classList.add('active');
+                }
+            });
+
+            if (percent !== undefined) {
+                const p = Math.max(0, Math.min(100, Math.round(percent)));
+                progressBar.style.width = p + '%';
+                percentageText.textContent = p + '%';
+                pipelinePercentBadge.textContent = p + '%';
+            }
+            if (msg) {
+                statusMessage.textContent = msg;
+                pipelineStatusTitle.textContent = msg;
+            }
+        }
+
+        function setInspectorReadonly(isReadonly) {
+            if (isReadonly) {
+                workbenchInspectorPane.classList.add('is-processing');
+                uploadForm.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
+            } else {
+                workbenchInspectorPane.classList.remove('is-processing');
+                uploadForm.querySelectorAll('input, select, button').forEach(el => el.disabled = false);
+            }
+        }
+
+        // ══════════════════════════════════════════════════════
+        // 7. 表單提交與 SSE / 輪詢整稿執行
+        // ══════════════════════════════════════════════════════
         uploadForm.onsubmit = async (e) => {
             e.preventDefault();
             if (!currentFile && !currentFileId) {
                 toolbox.notify('請先上傳 PDF 檔案', 'warning');
                 return;
             }
+            if (!validatePageRange()) {
+                toolbox.notify('請修正頁碼範圍後再行整稿', 'warning');
+                return;
+            }
 
-            submitBtn.disabled = true;
-            analyzeFontsBtn.disabled = true;
-            statusDiv.innerHTML = '';
-            progressArea.style.display = 'block';
-            progressBar.style.width = '0%';
-            percentageText.textContent = '0%';
-            statusMessage.textContent = '正在啟動背景整稿任務…';
+            // 進入唯讀處理狀態
+            setInspectorReadonly(true);
+            updateWorkflowStepper(4);
+
+            pipelineFeedbackPanel.style.display = 'block';
+            pipelineErrorBox.style.display = 'none';
+            pipelineResultSummary.style.display = 'none';
+            updatePipelineUI(1, 5, '正在啟動背景整稿任務…');
 
             const formData = new FormData();
             if (currentFileId) {
@@ -653,14 +1139,14 @@
                 }));
             }
 
-            formData.append('engine', document.getElementById('engineSelect')?.value || 'auto');
+            formData.append('engine', engineSelect?.value || 'auto');
             formData.append('header_ratio', headerSlider.value);
             formData.append('footer_ratio', footerSlider.value);
             formData.append('left_ratio', leftSlider.value);
             formData.append('right_ratio', rightSlider.value);
             formData.append('start_page', startPageInput?.value || 0);
             formData.append('end_page', endPageInput?.value || 0);
-            formData.append('no_footnote', document.getElementById('noFootnoteToggle')?.checked || false);
+            formData.append('no_footnote', noFootnoteToggle?.checked || false);
 
             try {
                 const response = await fetch('/api/upload_and_run_ocr', { method: 'POST', body: formData });
@@ -693,19 +1179,13 @@
                     if (isFinished) return;
                     const prog = window.OcrContracts ? window.OcrContracts.assertOcrProgressContract(progRaw) : progRaw;
 
-                    if (prog.progress !== undefined) {
-                        const pct = Math.max(0, Math.min(100, Math.round(prog.progress)));
-                        progressBar.style.width = pct + '%';
-                        percentageText.textContent = pct + '%';
-                    }
-                    if (prog.message) {
-                        statusMessage.textContent = prog.message;
-                    }
+                    const nextStage = resolveStageIdx(prog, currentStageIdx);
+                    updatePipelineUI(nextStage, prog.progress, prog.message);
 
                     if (prog.status === 'failed') {
                         isFinished = true;
                         cleanupListeners();
-                        onFailure(prog.message || prog.error || '後端轉檔發生錯誤');
+                        onFailure(prog.message || prog.error || '後端整稿發生未知錯誤');
                     } else if (prog.status === 'completed') {
                         isFinished = true;
                         cleanupListeners();
@@ -738,9 +1218,7 @@
                             } catch (err) {}
                         };
                         evtSource.onerror = () => {
-                            if (!isFinished && !pollInterval) {
-                                startPolling();
-                            }
+                            if (!isFinished && !pollInterval) startPolling();
                         };
                     } catch (err) {
                         startPolling();
@@ -755,19 +1233,39 @@
         };
 
         function onFailure(errMsg) {
-            submitBtn.disabled = false;
-            analyzeFontsBtn.disabled = false;
-            progressArea.style.display = 'none';
-            statusDiv.innerHTML = toolbox.errorPanel('整稿失敗', errMsg, 'uploadForm.dispatchEvent(new Event("submit"))');
+            setInspectorReadonly(false);
+            submitBtn.textContent = '重新執行整稿';
+
+            const activeStageEl = document.getElementById(`stage_${STAGE_KEYS[currentStageIdx - 1] || 'load'}`);
+            if (activeStageEl) activeStageEl.classList.add('error');
+
+            pipelineErrorBox.style.display = 'block';
+            pipelineErrorReason.textContent = '異常原因：' + errMsg;
+            pipelineStatusTitle.textContent = '整稿任務中斷';
+            toolbox.notify('整稿失敗：' + errMsg, 'error');
         }
 
+        retrySameParamsBtn.onclick = () => {
+            uploadForm.dispatchEvent(new Event('submit'));
+        };
+
+        adjustSettingsBtn.onclick = () => {
+            const advTrigger = document.getElementById('tierAdvancedTrigger');
+            const advContent = document.getElementById('tierAdvancedContent');
+            const advContainer = document.getElementById('tierAdvancedAccordion');
+            if (advTrigger && advContent && advContainer) {
+                advTrigger.setAttribute('aria-expanded', 'true');
+                advContainer.classList.add('is-expanded');
+                advContent.removeAttribute('hidden');
+                advContent.style.display = 'flex';
+                advContainer.scrollIntoView({ behavior: 'smooth' });
+            }
+        };
+
         function onComplete(stem) {
-            progressBar.style.width = '100%';
-            percentageText.textContent = '100%';
-            statusMessage.textContent = '整稿完成';
-            submitBtn.disabled = false;
-            analyzeFontsBtn.disabled = false;
-            submitBtn.textContent = '重新執行整稿';
+            setInspectorReadonly(false);
+            updatePipelineUI(6, 100, '全自動整稿已完成');
+            submitBtn.textContent = '再次重新整稿';
 
             const docxName = `${stem}.docx`;
             const mdName = `${stem}.md`;
@@ -776,10 +1274,11 @@
             const docxUrl = `/api/download_ocr_result/${stem}/docx`;
             const mdUrl = `/api/download_ocr_result/${stem}/md`;
 
-            statusDiv.innerHTML = `
-                <div class="result" id="resultCard" style="background: var(--f2-color-surface, #fff); border: 1px solid var(--f2-color-border-subtle, #e5e7eb); border-radius: 8px; box-shadow: var(--shadow-resting);">
+            pipelineResultSummary.style.display = 'block';
+            pipelineResultSummary.innerHTML = `
+                <div class="result" id="resultCard" style="background: var(--f2-color-surface, #fff); border: 1px solid var(--f2-color-border-subtle, #e5e7eb); border-radius: 8px;">
                     <div class="result-head is-ok" style="background: var(--f2-color-primary-tint, #ebf3fc); color: var(--f2-color-primary, #0f6cbd); padding: 10px 14px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center;">
-                        <span style="font-weight: 600;">全自動整稿完成</span>
+                        <span style="font-weight: 600;">全自動整稿成果清單</span>
                         <button type="button" class="btn btn-secondary btn-sm" id="openOutlineModalBtn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                             微調大綱階層 (Outline Editor)
@@ -789,32 +1288,31 @@
                         <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--f2-color-border-subtle, #e5e7eb);">
                             <div>
                                 <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary, #242424);">${toolbox.escape(docxName)}</span>
-                                <span class="file-desc" style="display: block; font-size: 0.8rem; color: var(--f2-color-text-secondary, #616161);">已套用 Word 樣式範本之排版文件</span>
+                                <span class="file-desc" style="display: block; font-size: 0.8rem; color: var(--f2-color-text-secondary, #616161);">套用 Word 樣式範本之完稿排版文件</span>
                             </div>
-                            <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON}另存 Word</button>
+                            <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON || ''}另存 Word</button>
                         </li>
                         <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
                             <div>
                                 <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary, #242424);">${toolbox.escape(mdName)}</span>
                                 <span class="file-desc" style="display: block; font-size: 0.8rem; color: var(--f2-color-text-secondary, #616161);">標準結構化 Markdown 文件</span>
                             </div>
-                            <button type="button" class="btn btn-secondary btn-sm" id="saveMdBtn">${toolbox.DOWNLOAD_ICON}另存 Markdown</button>
+                            <button type="button" class="btn btn-secondary btn-sm" id="saveMdBtn">${toolbox.DOWNLOAD_ICON || ''}另存 Markdown</button>
                         </li>
                     </ul>
                     <div style="margin: 10px 14px; padding: 10px 12px; background: var(--f2-color-surface-secondary, #f8fafc); border: 1.5px solid var(--f2-color-primary, #0F6CBD); border-radius: 6px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
-                            <strong style="color: var(--f2-color-primary, #0F6CBD); display: block; font-size: 0.92rem;">下一步：銜接 POD 整稿（樣式擴散與品質審計）</strong>
-                            <span class="hint" style="margin: 0; display: block; font-size: 0.8rem;">一鍵將此初稿與 PDF 載入 POD 工作區，免手動重複上傳。</span>
+                            <strong style="color: var(--f2-color-primary, #0F6CBD); display: block; font-size: 0.92rem;">銜接 POD 整稿工作區（人工預審與樣式擴散）</strong>
+                            <span class="hint" style="margin: 0; display: block; font-size: 0.8rem;">直接攜帶此 DOCX 與 PDF 至 POD 工作區。</span>
                         </div>
-                        <button type="button" class="btn btn-primary btn-sm" id="handoffPodBtn" style="white-space: nowrap;">
-                            接續進行 POD 整稿 &rarr;
-                        </button>
+                        <button type="button" class="btn btn-primary btn-sm" id="handoffPodBtn">接續 POD 整稿 &rarr;</button>
                     </div>
-                    <div class="result-note" style="padding: 10px 14px; background: var(--f2-color-surface-secondary, #f8fafc); border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb); border-radius: 0 0 8px 8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; font-size: 0.82rem; color: var(--f2-color-text-secondary, #616161);">
-                        <span>檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀，請及時另存。</span>
-                        <button type="button" class="btn btn-secondary btn-sm" id="openFolderBtn">在檔案總管中顯示成果</button>
+                    <div style="padding: 10px 14px; background: var(--f2-color-surface-secondary, #f8fafc); border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb); border-radius: 0 0 8px 8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; font-size: 0.82rem; color: var(--f2-color-text-secondary, #616161);">
+                        <span>檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀</span>
+                        <button type="button" class="btn btn-secondary btn-sm" id="openFolderBtn">在檔案總管中開啟</button>
                     </div>
-                </div>`;
+                </div>
+            `;
 
             document.getElementById('saveDocxBtn').onclick = (ev) => toolbox.nativeSave({
                 sourcePath: docxSource,
@@ -841,29 +1339,26 @@
             if (handoffBtn) {
                 handoffBtn.onclick = async () => {
                     handoffBtn.disabled = true;
-                    handoffBtn.textContent = '正在建立 POD 工作區...';
+                    handoffBtn.textContent = '正在建立 POD 工作區…';
                     try {
                         const fd = new FormData();
                         fd.append('filename_stem', stem);
-                        const resp = await fetch('/api/pod/handoff_from_ocr', {
-                            method: 'POST',
-                            body: fd
-                        });
+                        const resp = await fetch('/api/pod/handoff_from_ocr', { method: 'POST', body: fd });
                         const resData = await resp.json();
                         if (!resp.ok) throw new Error(resData.detail || '建立 POD 工作區失敗');
                         window.location.href = `/pod_studio.html?session_id=${encodeURIComponent(resData.session_id)}&stem=${encodeURIComponent(stem)}&from_ocr=1`;
                     } catch (err) {
-                        alert('銜接 POD 整稿失敗: ' + err.message);
+                        toolbox.notify('銜接 POD 整稿失敗: ' + err.message, 'error');
                         handoffBtn.disabled = false;
-                        handoffBtn.textContent = '接續進行 POD 整稿 →';
+                        handoffBtn.textContent = '接續 POD 整稿 →';
                     }
                 };
             }
         }
 
-        // ════════════════════════════════════════════════════════
-        // 大綱微調 Modal 邏輯
-        // ════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════
+        // 8. 大綱微調 (Outline Editor) Modal 邏輯
+        // ══════════════════════════════════════════════════════
         const outlineModalOverlay = document.getElementById('outlineModalOverlay');
         const outlineList = document.getElementById('outlineList');
         const outlineSaveStatus = document.getElementById('outlineSaveStatus');
@@ -974,9 +1469,9 @@
             if (e.target === outlineModalOverlay) outlineModalOverlay.classList.remove('open');
         };
 
-        // ════════════════════════════════════════════════════════
-        // 字體分析 Modal 邏輯
-        // ════════════════════════════════════════════════════════
+        // ══════════════════════════════════════════════════════
+        // 9. 字體分析 Modal 邏輯
+        // ══════════════════════════════════════════════════════
         const fontModalOverlay = document.getElementById('fontModalOverlay');
         const fontTableBody = document.getElementById('fontTableBody');
         const fontModalConfirmBtn = document.getElementById('fontModalConfirmBtn');
@@ -1134,6 +1629,12 @@
                 fontModalConfirmBtn.disabled = false;
             }
         };
+
+        // 頁面載入初始化
+        window.addEventListener('DOMContentLoaded', () => {
+            loadCurrentTemplate();
+            updateWorkflowStepper(1);
+        });
     </script>
     <script src="/static/js/viewport_manager.js"></script>
     <script type="module" src="/static/js/ocr_contracts.js"></script>

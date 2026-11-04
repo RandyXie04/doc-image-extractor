@@ -662,18 +662,15 @@ body {
 
 .sidebar-doc-link .doc-name {
     font-size: 0.82rem;
-    font-weight: 600;
+    font-weight: 500;
+    flex: 1;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
 .sidebar-doc-link .doc-desc {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
+    display: none !important;
 }
 
 /* Document Viewer Modal */

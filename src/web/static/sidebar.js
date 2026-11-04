@@ -266,12 +266,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         <!-- 2.5 Troubleshooting & Support -->
                         <div class="ia-subgroup" role="group" aria-labelledby="sgDocSupportTitle">
                             <div class="ia-subgroup-title" id="sgDocSupportTitle">疑難排解與支援 (Troubleshooting & FAQ)</div>
-                            <button type="button" class="sidebar-doc-link" id="openDocCenterQuickBtn">
+                            <button type="button" class="sidebar-doc-link" id="openDocCenterQuickBtn" title="開啟完整文件檢視中心">
                                 <span class="doc-icon">${svg('list', 14)}</span>
-                                <span class="doc-text">
-                                    <span class="doc-name">開啟完整文件檢視中心</span>
-                                    <span class="doc-desc">瀏覽功能總覽、排版規範與常見問題</span>
-                                </span>
+                                <span class="doc-name">開啟完整文件檢視中心</span>
                             </button>
                             <button id="globalReportBtn" class="sidebar-btn ia-control-btn" type="button" style="display:none;" title="僅供工程師除錯使用">
                                 <span class="ia-btn-inline-icon">${svg('github', 14)}</span>
@@ -517,7 +514,8 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderDoc(data) {
         docViewerTitle.textContent = data.title || '技術與操作文件中心';
         docViewerSubtitle.textContent = data.category || '說明文件';
-        docViewerArticle.innerHTML = data.html || `<pre style="white-space:pre-wrap;">${window.toolbox.escape(data.markdown || '')}</pre>`;
+        const descBanner = data.description ? `<div class="doc-modal-desc-banner" style="margin-bottom:1.25rem; padding:0.75rem 1rem; background:var(--f2-color-surface-secondary, #f8fafc); border-left:3px solid var(--f2-color-primary, #0F6CBD); border-radius:4px; font-size:0.88rem; color:var(--f2-color-text-secondary, #616161);">${window.toolbox.escape(data.description)}</div>` : '';
+        docViewerArticle.innerHTML = descBanner + (data.html || `<pre style="white-space:pre-wrap;">${window.toolbox.escape(data.markdown || '')}</pre>`);
         docViewerArticle.scrollTop = 0;
     }
 
@@ -561,12 +559,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const docListEl = document.getElementById('sidebarDocList');
             if (docListEl) {
                 const dropdownHtml = docs.map(d => `
-                    <button type="button" class="sidebar-doc-link" data-doc-id="${window.toolbox.escape(d.id)}">
+                    <button type="button" class="sidebar-doc-link" data-doc-id="${window.toolbox.escape(d.id)}" title="${window.toolbox.escape(d.title)}">
                         <span class="doc-icon">${svg(d.icon || 'fileText', 14)}</span>
-                        <span class="doc-text">
-                            <span class="doc-name">${window.toolbox.escape(d.title)}</span>
-                            <span class="doc-desc">${window.toolbox.escape(d.description)}</span>
-                        </span>
+                        <span class="doc-name">${window.toolbox.escape(d.title)}</span>
                     </button>
                 `).join('');
 
@@ -838,18 +833,28 @@ document.addEventListener('DOMContentLoaded', () => {
         loadAndRenderDocCatalogue(mode);
     }
 
+    const isDevPreset = localStorage.getItem('developer_engineer_mode') === 'true';
     fetch('/api/app_mode').then(r => r.json()).then(d => {
-        if (d && d.mode) updateModeBtnUI(d.mode);
-        else loadAndRenderDocCatalogue('editor');
+        const mode = d && d.mode ? d.mode : (isDevPreset ? 'dev' : 'editor');
+        if (isDevPreset && d && d.mode !== 'dev') {
+            fetch('/api/set_app_mode', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode: 'dev' })
+            }).then(() => updateModeBtnUI('dev')).catch(() => updateModeBtnUI(mode));
+        } else {
+            updateModeBtnUI(mode);
+        }
     }).catch((err) => {
         console.debug('[AppMode] Fetch skipped:', err);
-        if (modeToggleBtn) modeToggleBtn.textContent = '模式：未知';
-        loadAndRenderDocCatalogue('editor');
+        if (modeToggleBtn) modeToggleBtn.textContent = isDevPreset ? '模式：工程師除錯模式' : '模式：未知';
+        loadAndRenderDocCatalogue(isDevPreset ? 'dev' : 'editor');
     });
 
     if (modeToggleBtn) {
         modeToggleBtn.onclick = async () => {
             const targetMode = modeToggleBtn.dataset.mode === 'dev' ? 'editor' : 'dev';
+            localStorage.setItem('developer_engineer_mode', targetMode === 'dev' ? 'true' : 'false');
             try {
                 const res = await fetch('/api/set_app_mode', {
                     method: 'POST',
