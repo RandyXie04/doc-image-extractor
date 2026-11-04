@@ -223,11 +223,6 @@
     "docx_style": null,
     "mapped_by": "user"
   },
-  "FZFSK--GBK1-0 (11.5pt)": {
-    "role": "忽略",
-    "docx_style": null,
-    "mapped_by": "user"
-  },
   "FZKTK--GBK1-0 (11.5pt)": {
     "role": null,
     "docx_style": "屬名",
@@ -254,8 +249,8 @@
     "mapped_by": "user"
   },
   "FZSSK--GBK1-0 (7.0pt)": {
-    "role": null,
-    "docx_style": "Normal",
+    "role": "正文",
+    "docx_style": null,
     "mapped_by": "user"
   },
   "FZHTK--GBK1-0 (13.5pt)": {
@@ -286,6 +281,46 @@
   "FZXDXK--GBK1-0 (8.0pt)": {
     "role": "忽略",
     "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZFSK--GBK1-0 (9.5pt)": {
+    "role": "正文",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZKTK--GBK1-0 (8.0pt)": {
+    "role": null,
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (9.5pt)": {
+    "role": null,
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "E-BX (9.0pt)": {
+    "role": "正文",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "E-BZ (8.0pt)": {
+    "role": null,
+    "docx_style": "屬名",
+    "mapped_by": "user"
+  },
+  "FZJuZXFK--GBK1-0 (11.5pt)": {
+    "role": null,
+    "docx_style": "置中標",
+    "mapped_by": "user"
+  },
+  "E-BZ (9.5pt)": {
+    "role": null,
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "E-BX (9.5pt)": {
+    "role": null,
+    "docx_style": "Normal",
     "mapped_by": "user"
   }
 }
