@@ -8,188 +8,289 @@
     <link rel="stylesheet" href="/static/toolbox.css">
 </head>
 <body>
-    <div class="container">
-        <header class="page-head">
+    <div class="workbench-container">
+        <!-- 頂部工作台標題列 -->
+        <header class="page-head workbench-head" style="margin-bottom: 1rem; padding-bottom: 0.85rem;">
             <a href="/" class="back-link">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
                 返回工具箱
             </a>
-            <div>
-                <h1>全自動整稿</h1>
-                <p class="page-lead">智慧解析圖書版面、過濾頁眉頁尾與雜訊，自動生成結構化 Word (.docx) 與 Markdown (.md) 文件。</p>
+            <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <h1 style="font-size: 1.45rem; font-weight: 700; color: var(--f2-color-text-primary, #242424);">全自動整稿工作台</h1>
+                    <p class="page-lead" style="font-size: 0.88rem; color: var(--f2-color-text-secondary, #616161); margin-top: 2px;">
+                        專業圖書版面解析與樣式對應工作站，自動生成結構化 Word (.docx) 與 Markdown (.md) 文件。
+                    </p>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="f2-badge f2-badge-primary">Fluent 2 Workspace</span>
+                    <span class="hint" style="font-size: 0.8rem;">零日誌安全防護</span>
+                </div>
             </div>
         </header>
 
-        <!-- 樣式範本設定 -->
-        <div class="panel">
-            <div class="panel-row" style="margin-bottom: 0.5rem;">
-                <div>
-                    <h3 class="panel-title">Word 樣式範本</h3>
-                    <p class="hint" style="margin: 0;">目前使用範本：<strong id="currentTemplateName">載入中…</strong></p>
-                </div>
-                <div>
-                    <input type="file" id="templateInput" accept=".docx" style="display: none;">
-                    <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('templateInput').click()">上傳自訂 .docx 範本</button>
-                    <span id="templateUploadStatus" class="hint" style="margin-left: 8px;"></span>
-                </div>
-            </div>
+        <!-- 雙欄桌面工作台主佈局 -->
+        <div class="workbench-layout">
 
-            <div id="styleMappingSection" style="margin-top: 0.75rem; display: none; border-top: 1px solid var(--border); padding-top: 0.75rem;">
-                <p class="hint" style="margin-bottom: 0.5rem; font-weight: 600;">自訂階層樣式對應 (可選)</p>
-                <div class="grid-2">
-                    <div class="field">
-                        <label class="field-label" for="h1Style">一級標題 (#)</label>
-                        <select id="h1Style" class="input"><option value="">(預設 Heading 1)</option></select>
-                    </div>
-                    <div class="field">
-                        <label class="field-label" for="h2Style">二級標題 (##)</label>
-                        <select id="h2Style" class="input"><option value="">(預設 Heading 2)</option></select>
-                    </div>
-                    <div class="field">
-                        <label class="field-label" for="h3Style">三級標題 (###)</label>
-                        <select id="h3Style" class="input"><option value="">(預設 Heading 3)</option></select>
-                    </div>
-                    <div class="field">
-                        <label class="field-label" for="imageCaptionStyle">圖片標籤</label>
-                        <select id="imageCaptionStyle" class="input"><option value="">(不套用自訂樣式)</option></select>
-                    </div>
-                    <div class="field">
-                        <label class="field-label" for="kaitiStyle">楷體 / 引言</label>
-                        <select id="kaitiStyle" class="input"><option value="">(不套用自訂樣式)</option></select>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <form id="uploadForm">
-            <!-- 執行選項群組 -->
-            <div class="panel">
-                <div class="field">
-                    <label class="field-label" for="engineSelect">PDF 處理引擎</label>
-                    <select name="engine" id="engineSelect" class="input">
-                        <option value="auto">自動偵測 (推薦) — 原生向量 PDF 秒級解析，掃描版切換深度辨識</option>
-                        <option value="pymupdf">高速提取 (PyMuPDF) — 適用原生向量 PDF，秒級解析且記憶體輕量</option>
-                        <option value="suryaocr">深度識別 (Surya OCR) — 適用掃描書與圖片轉曲 PDF，支援中文 OCR</option>
-                    </select>
-                    <p class="hint" style="margin-top: 0.35rem; font-size: 0.8rem; color: var(--text-muted);">
-                        <strong>引擎選用指引</strong>：數位向量 PDF 優先選用 PyMuPDF（保留原始字元無錯字風險，且完全符合商用授權）；紙本掃描件或轉曲內容則使用 Surya OCR（深度版面分析，僅供非商用/學術研究）。
-                    </p>
-                </div>
-                <div class="field" style="margin-bottom: 0;">
-                    <label class="check">
-                        <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true" checked>
-                        <span>
-                            <span class="check-title">無腳注模式 (純內文，無任何腳注標記)</span>
-                            <span class="hint" style="display: block;">開啟後，載入純內文解析腳本，避免正文中的圓圈數字被誤判為腳注參照。</span>
+            <!-- ══════════════════════════════════════════════════════
+                 左欄：文件畫布區 (Document Canvas)
+                 ══════════════════════════════════════════════════════ -->
+            <div class="workbench-canvas-pane">
+                <!-- 畫布頂部控制列 -->
+                <div class="workbench-canvas-toolbar">
+                    <div class="workbench-canvas-toolbar-left">
+                        <span class="workbench-canvas-title">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                            版面預覽畫布
                         </span>
-                    </label>
-                </div>
-            </div>
-
-            <!-- PDF 上傳區 -->
-            <div class="dropzone" id="dropZone" role="button" tabindex="0" aria-label="選擇 PDF 檔案">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-                </svg>
-                <p class="dropzone-title" id="fileNameDisplay">點擊選擇，或將 PDF 檔案拖曳到這裡</p>
-                <p class="dropzone-sub">支援向量或掃描版 PDF</p>
-                <input type="file" id="fileInput" accept=".pdf" style="display: none;">
-            </div>
-
-            <!-- 裁切邊界預覽圖與四向滑桿 -->
-            <div id="previewContainer" class="panel" style="display: none;">
-                <div class="panel-row" style="margin-bottom: 0.75rem;">
-                    <div>
-                        <h3 class="panel-title">版面邊界預覽與範圍</h3>
-                        <p class="hint" style="margin: 0;">設定裁切線過濾頁眉、頁尾與側邊注記；亦可指定轉檔頁碼區間。</p>
+                        <span id="fileBadge" class="f2-badge f2-badge-primary" style="display: none; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;"></span>
                     </div>
-                    <div class="pager">
-                        <button type="button" id="prevPageBtn" class="btn btn-secondary btn-sm">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
-                            上一頁
-                        </button>
-                        <span>第 <strong id="previewPageDisplay">1</strong> / <span id="totalPagesDisplay">1</span> 頁</span>
-                        <button type="button" id="nextPageBtn" class="btn btn-secondary btn-sm">
-                            下一頁
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
-                        </button>
+
+                    <div class="workbench-canvas-toolbar-right">
+                        <!-- 頁碼切換器 -->
+                        <div class="pager" id="canvasPager" style="display: none;">
+                            <button type="button" id="prevPageBtn" class="btn btn-secondary btn-sm" title="上一頁">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+                                上一頁
+                            </button>
+                            <span style="font-size: 0.85rem; font-weight: 500;">
+                                第 <strong id="previewPageDisplay">1</strong> / <span id="totalPagesDisplay">1</span> 頁
+                            </span>
+                            <button type="button" id="nextPageBtn" class="btn btn-secondary btn-sm" title="下一頁">
+                                下一頁
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <div class="crop-legend">
+                <!-- 畫布主體 -->
+                <div class="workbench-canvas-body" id="canvasBody">
+                    <!-- PDF 上傳區 (未載入檔案時置中展示) -->
+                    <div class="dropzone" id="dropZone" role="button" tabindex="0" aria-label="選擇 PDF 檔案">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true" style="width: 44px; height: 44px; margin-bottom: 0.75rem; color: var(--f2-color-primary, #0F6CBD);">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                        </svg>
+                        <p class="dropzone-title" id="fileNameDisplay" style="font-size: 1rem; font-weight: 600;">點擊選擇，或將 PDF 檔案拖曳到這裡</p>
+                        <p class="dropzone-sub" style="font-size: 0.84rem; color: var(--f2-color-text-secondary, #616161); margin-top: 4px;">支援向量或掃描版 PDF 檔案</p>
+                        <input type="file" id="fileInput" accept=".pdf" style="display: none;">
+                    </div>
+
+                    <!-- 裁切邊界預覽圖容器 (載入檔案後顯示) -->
+                    <div id="previewContainer" style="display: none; width: 100%; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center;">
+                        <div class="workbench-preview-wrapper" id="previewFrame">
+                            <img id="previewImage" src="" alt="裁切預覽載入中">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 畫布底部色標圖例 -->
+                <div class="crop-legend" style="padding: 8px 16px; background: var(--f2-color-surface, #ffffff); border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb); display: flex; justify-content: center; gap: 16px; font-size: 0.8rem; flex-wrap: wrap;">
                     <span><span class="swatch swatch-top"></span>頂部頁眉 (<span id="headerVal" class="val-top">0.10</span>)</span>
                     <span><span class="swatch swatch-bottom"></span>底部頁尾 (<span id="footerVal" class="val-bottom">0.10</span>)</span>
                     <span><span class="swatch swatch-side"></span>左側邊距 (<span id="leftVal" class="val-side">0.00</span>)</span>
                     <span><span class="swatch swatch-side"></span>右側邊距 (<span id="rightVal" class="val-side">0.00</span>)</span>
                 </div>
-
-                <div class="slider-grid">
-                    <div class="slider-item">
-                        <label for="headerSlider">頂部裁切 <span id="headerValLabel" class="val-top">0.10</span></label>
-                        <input type="range" id="headerSlider" min="0" max="0.5" step="0.01" value="0.10">
-                    </div>
-                    <div class="slider-item">
-                        <label for="footerSlider">底部裁切 <span id="footerValLabel" class="val-bottom">0.10</span></label>
-                        <input type="range" id="footerSlider" min="0" max="0.5" step="0.01" value="0.10">
-                    </div>
-                    <div class="slider-item">
-                        <label for="leftSlider">左側邊距 <span id="leftValLabel" class="val-side">0.00</span></label>
-                        <input type="range" id="leftSlider" min="0" max="0.3" step="0.01" value="0.00">
-                    </div>
-                    <div class="slider-item">
-                        <label for="rightSlider">右側邊距 <span id="rightValLabel" class="val-side">0.00</span></label>
-                        <input type="range" id="rightSlider" min="0" max="0.3" step="0.01" value="0.00">
-                    </div>
-                </div>
-
-                <div class="panel-row" style="margin-top: 1rem; align-items: center;">
-                    <div style="display: flex; align-items: center; gap: 8px;">
-                        <label class="field-label" style="margin: 0;">轉檔頁碼：</label>
-                        <input type="number" id="startPageInput" min="1" placeholder="首頁" class="input input-narrow">
-                        <span class="hint">至</span>
-                        <input type="number" id="endPageInput" min="1" placeholder="末頁" class="input input-narrow">
-                        <span class="hint">(留空代表全本)</span>
-                    </div>
-                </div>
-
-                <div class="preview-frame">
-                    <img id="previewImage" src="" alt="裁切預覽載入中">
-                </div>
             </div>
 
-            <!-- 操作按鈕列 -->
-            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <button type="button" class="btn btn-secondary" id="analyzeFontsBtn" disabled title="先上傳 PDF，再分析字體並指定各字體的樣式角色">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg>
-                    審閱字體樣式
-                </button>
-                <button type="submit" class="btn btn-primary" id="submitBtn" disabled style="flex: 1; min-width: 220px;">開始全自動整稿</button>
-            </div>
-        </form>
+            <!-- ══════════════════════════════════════════════════════
+                 右欄：參數檢視台與控制中心 (Inspector Pane)
+                 ══════════════════════════════════════════════════════ -->
+            <div class="workbench-inspector-pane">
+                <form id="uploadForm" style="display: flex; flex-direction: column; gap: 12px; margin: 0;">
 
-        <!-- 進度與成果區 -->
-        <div id="progressArea" style="display: none; margin-top: 1.25rem;">
-            <div class="progress">
-                <span id="progressBar"></span>
+                    <!-- 卡片 1: Word 樣式範本設定 -->
+                    <div class="f2-card">
+                        <div class="f2-card-head">
+                            <h3 class="f2-card-title">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                Word 樣式範本
+                            </h3>
+                            <div>
+                                <input type="file" id="templateInput" accept=".docx" style="display: none;">
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('templateInput').click()">更換範本</button>
+                            </div>
+                        </div>
+                        <div style="font-size: 0.85rem; color: var(--f2-color-text-secondary, #616161); display: flex; align-items: center; justify-content: space-between;">
+                            <span>目前範本：<strong id="currentTemplateName" style="color: var(--f2-color-text-primary, #242424);">載入中…</strong></span>
+                            <span id="templateUploadStatus" class="hint" style="font-size: 0.8rem;"></span>
+                        </div>
+
+                        <!-- 漸進式折疊：自訂標題與樣式對應 -->
+                        <details id="styleMappingDetails" class="disclosure" style="margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb);">
+                            <summary class="hint" style="cursor: pointer; font-size: 0.83rem; font-weight: 500; color: var(--f2-color-primary, #0F6CBD);">
+                                自訂標題與角色樣式對應 (可選)
+                            </summary>
+                            <div id="styleMappingSection" style="margin-top: 8px;">
+                                <div style="display: flex; flex-direction: column; gap: 8px;">
+                                    <div class="field" style="margin-bottom: 0;">
+                                        <label class="field-label" for="h1Style" style="font-size: 0.82rem;">一級標題 (#)</label>
+                                        <select id="h1Style" class="input" style="padding: 4px 8px; font-size: 0.85rem;"><option value="">(預設 Heading 1)</option></select>
+                                    </div>
+                                    <div class="field" style="margin-bottom: 0;">
+                                        <label class="field-label" for="h2Style" style="font-size: 0.82rem;">二級標題 (##)</label>
+                                        <select id="h2Style" class="input" style="padding: 4px 8px; font-size: 0.85rem;"><option value="">(預設 Heading 2)</option></select>
+                                    </div>
+                                    <div class="field" style="margin-bottom: 0;">
+                                        <label class="field-label" for="h3Style" style="font-size: 0.82rem;">三級標題 (###)</label>
+                                        <select id="h3Style" class="input" style="padding: 4px 8px; font-size: 0.85rem;"><option value="">(預設 Heading 3)</option></select>
+                                    </div>
+                                    <div class="field" style="margin-bottom: 0;">
+                                        <label class="field-label" for="imageCaptionStyle" style="font-size: 0.82rem;">圖片標籤</label>
+                                        <select id="imageCaptionStyle" class="input" style="padding: 4px 8px; font-size: 0.85rem;"><option value="">(不套用自訂樣式)</option></select>
+                                    </div>
+                                    <div class="field" style="margin-bottom: 0;">
+                                        <label class="field-label" for="kaitiStyle" style="font-size: 0.82rem;">楷體 / 引言</label>
+                                        <select id="kaitiStyle" class="input" style="padding: 4px 8px; font-size: 0.85rem;"><option value="">(不套用自訂樣式)</option></select>
+                                    </div>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+
+                    <!-- 卡片 2: 檔案狀態與處理引擎 -->
+                    <div class="f2-card">
+                        <div class="f2-card-head">
+                            <h3 class="f2-card-title">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                                檔案與引擎設定
+                            </h3>
+                        </div>
+
+                        <!-- 活躍檔案精巧資訊列 (已選擇 PDF 時展示) -->
+                        <div id="activeFileInfo" style="display: none; margin-bottom: 10px; padding: 6px 10px; background: var(--f2-color-surface-secondary, #f8fafc); border: 1px solid var(--f2-color-border-subtle, #e5e7eb); border-radius: 4px; align-items: center; justify-content: space-between;">
+                            <div style="font-size: 0.83rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                <strong id="activeFileNameText" style="color: var(--f2-color-text-primary, #242424);"></strong>
+                                <span id="activeFileSizeText" class="hint" style="margin-left: 4px;"></span>
+                            </div>
+                            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('fileInput').click()" style="padding: 2px 8px; font-size: 0.78rem;">更換</button>
+                        </div>
+
+                        <div class="field" style="margin-bottom: 8px;">
+                            <label class="field-label" for="engineSelect" style="font-size: 0.85rem;">PDF 處理引擎</label>
+                            <select name="engine" id="engineSelect" class="input" style="font-size: 0.86rem; padding: 6px 8px;">
+                                <option value="auto">自動偵測 (推薦) — 向量原生秒級解析，掃描自動切換</option>
+                                <option value="pymupdf">高速提取 (PyMuPDF) — 原生向量 PDF，記憶體極輕量</option>
+                                <option value="suryaocr">深度識別 (Surya OCR) — 掃描書與圖轉曲 PDF</option>
+                            </select>
+                        </div>
+
+                        <div class="field" style="margin-bottom: 0;">
+                            <label class="check">
+                                <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true" checked>
+                                <span>
+                                    <span class="check-title" style="font-size: 0.85rem;">無腳注純內文模式</span>
+                                    <span class="hint" style="display: block; font-size: 0.78rem;">載入純內文解析腳本，避免正文圓圈數字被誤判為腳注。</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 卡片 3: 版面裁切與頁碼範圍 (滑桿與精確數值雙向連動) -->
+                    <div class="f2-card">
+                        <div class="f2-card-head">
+                            <h3 class="f2-card-title">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2v14a2 2 0 0 0 2 2h14"/><path d="M18 22V8a2 2 0 0 0-2-2H2"/></svg>
+                                版面裁切與範圍
+                            </h3>
+                            <span class="hint" style="font-size: 0.78rem;">比率 (0.00 ~ 0.50)</span>
+                        </div>
+
+                        <!-- 隱藏但保留相容性的舊 Label 元素 (供特定外部腳本相容) -->
+                        <span id="headerValLabel" class="val-top" style="display: none;">0.10</span>
+                        <span id="footerValLabel" class="val-bottom" style="display: none;">0.10</span>
+                        <span id="leftValLabel" class="val-side" style="display: none;">0.00</span>
+                        <span id="rightValLabel" class="val-side" style="display: none;">0.00</span>
+
+                        <!-- 四向滑桿與數值輸入組 -->
+                        <div class="crop-control-grid">
+                            <div class="crop-control-row">
+                                <label for="headerSlider" class="crop-control-label">
+                                    <span class="swatch swatch-top"></span>頂部頁眉
+                                </label>
+                                <input type="range" id="headerSlider" min="0" max="0.5" step="0.01" value="0.10">
+                                <input type="number" id="headerNumInput" class="crop-num-input" min="0" max="0.5" step="0.01" value="0.10" aria-label="頂部裁切數值">
+                            </div>
+
+                            <div class="crop-control-row">
+                                <label for="footerSlider" class="crop-control-label">
+                                    <span class="swatch swatch-bottom"></span>底部頁尾
+                                </label>
+                                <input type="range" id="footerSlider" min="0" max="0.5" step="0.01" value="0.10">
+                                <input type="number" id="footerNumInput" class="crop-num-input" min="0" max="0.5" step="0.01" value="0.10" aria-label="底部裁切數值">
+                            </div>
+
+                            <div class="crop-control-row">
+                                <label for="leftSlider" class="crop-control-label">
+                                    <span class="swatch swatch-side"></span>左側邊距
+                                </label>
+                                <input type="range" id="leftSlider" min="0" max="0.3" step="0.01" value="0.00">
+                                <input type="number" id="leftNumInput" class="crop-num-input" min="0" max="0.3" step="0.01" value="0.00" aria-label="左側邊距數值">
+                            </div>
+
+                            <div class="crop-control-row">
+                                <label for="rightSlider" class="crop-control-label">
+                                    <span class="swatch swatch-side"></span>右側邊距
+                                </label>
+                                <input type="range" id="rightSlider" min="0" max="0.3" step="0.01" value="0.00">
+                                <input type="number" id="rightNumInput" class="crop-num-input" min="0" max="0.3" step="0.01" value="0.00" aria-label="右側邊距數值">
+                            </div>
+                        </div>
+
+                        <!-- 頁碼範圍設定 -->
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb);">
+                            <label class="field-label" style="margin: 0; font-size: 0.85rem;">轉檔頁碼：</label>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <input type="number" id="startPageInput" min="1" placeholder="首頁" class="input input-narrow" style="width: 60px; padding: 4px 6px; font-size: 0.85rem; text-align: center;">
+                                <span class="hint">至</span>
+                                <input type="number" id="endPageInput" min="1" placeholder="末頁" class="input input-narrow" style="width: 60px; padding: 4px 6px; font-size: 0.85rem; text-align: center;">
+                                <span class="hint" style="font-size: 0.78rem;">(留空全本)</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 卡片 4: 執行動作與狀態展示 -->
+                    <div class="f2-card" style="background: var(--f2-color-surface, #ffffff);">
+                        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                            <button type="button" class="btn btn-secondary btn-sm" id="analyzeFontsBtn" disabled title="先上傳 PDF，再分析字體並指定各字體的樣式角色" style="flex: 1; min-width: 130px;">
+                                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg>
+                                審閱字體樣式
+                            </button>
+                            <button type="submit" class="btn btn-primary" id="submitBtn" disabled style="flex: 2; min-width: 180px;">
+                                開始全自動整稿
+                            </button>
+                        </div>
+
+                        <!-- 即時進度條與狀態 -->
+                        <div id="progressArea" style="display: none; margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb);">
+                            <div class="f2-progress-track">
+                                <div id="progressBar" class="f2-progress-fill" style="width: 0%;"></div>
+                            </div>
+                            <div class="progress-meta" style="margin-top: 6px; display: flex; justify-content: space-between; font-size: 0.82rem; color: var(--f2-color-text-secondary, #616161);">
+                                <span id="statusMessage">準備啟動轉檔任務…</span>
+                                <span id="percentageText" style="font-weight: 600; color: var(--f2-color-primary, #0F6CBD);">0%</span>
+                            </div>
+                        </div>
+
+                        <!-- 錯誤/成果回饋區域 -->
+                        <div id="status" role="status" aria-live="polite" style="margin-top: 10px;"></div>
+                    </div>
+
+                </form>
             </div>
-            <div class="progress-meta">
-                <span id="statusMessage">準備啟動轉檔任務…</span>
-                <span id="percentageText">0%</span>
-            </div>
+
         </div>
 
-        <div id="status" role="status" aria-live="polite"></div>
-
         <!-- ══════════════════════════════════════════════════════
-             字體 → 樣式 審閱 Modal
+             字體 → 樣式 審閱 Modal (Fluent 2 DataGrid)
              ══════════════════════════════════════════════════════ -->
         <div class="modal-overlay" id="fontModalOverlay" role="dialog" aria-modal="true" aria-labelledby="fontModalTitle">
-            <div class="modal">
-                <h2 id="fontModalTitle">字體樣式對應審閱</h2>
-                <p class="hint" style="margin: 0 0 0.75rem 0;">
+            <div class="modal" style="max-width: 760px; width: 92%;">
+                <h2 id="fontModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary, #242424);">字體樣式對應審閱</h2>
+                <p class="hint" style="margin: 0 0 0.75rem 0; font-size: 0.85rem;">
                     以下為本 PDF 中偵測到的字體。請為每種字體指定對應的 Word 樣式角色；確認後儲存至 fonts.json，下次整稿時將自動套用。
                 </p>
-                <div class="modal-body">
+                <div class="modal-body" style="max-height: 58vh; overflow-y: auto;">
                     <table class="data-table" id="fontTable">
                         <thead>
                             <tr>
@@ -206,7 +307,7 @@
                         </tbody>
                     </table>
                 </div>
-                <div class="modal-foot">
+                <div class="modal-foot" style="margin-top: 1rem;">
                     <span class="modal-status" id="fontMappingSaveStatus"></span>
                     <button type="button" class="btn btn-secondary btn-sm" id="fontModalCancelBtn">取消</button>
                     <button type="button" class="btn btn-primary btn-sm" id="fontModalConfirmBtn">確認套用</button>
@@ -215,18 +316,18 @@
         </div>
 
         <!-- ══════════════════════════════════════════════════════
-             大綱微調 (Outline Editor) Modal
+             大綱微調 (Outline Editor) Modal (Fluent 2 TreeList)
              ══════════════════════════════════════════════════════ -->
         <div class="modal-overlay" id="outlineModalOverlay" role="dialog" aria-modal="true" aria-labelledby="outlineModalTitle">
-            <div class="modal">
-                <h2 id="outlineModalTitle">大綱階層微調 (Outline Editor)</h2>
-                <p class="hint" style="margin: 0 0 0.75rem 0;">
+            <div class="modal" style="max-width: 720px; width: 90%;">
+                <h2 id="outlineModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary, #242424);">大綱階層微調 (Outline Editor)</h2>
+                <p class="hint" style="margin: 0 0 0.75rem 0; font-size: 0.85rem;">
                     系統擷取出之章節標題如下。您可手動調整其層級 (H1/H2/H3) 或降為一般內文；完成後儲存即可重新產生 Word 文件。
                 </p>
-                <div class="modal-body" id="outlineList" style="max-height: 55vh;">
+                <div class="modal-body" id="outlineList" style="max-height: 55vh; overflow-y: auto;">
                     載入中…
                 </div>
-                <div class="modal-foot">
+                <div class="modal-foot" style="margin-top: 1rem;">
                     <span class="modal-status" id="outlineSaveStatus"></span>
                     <button type="button" class="btn btn-secondary btn-sm" id="outlineModalCancelBtn">關閉</button>
                     <button type="button" class="btn btn-primary btn-sm" id="saveOutlineBtn">儲存並重新產生 Word</button>
@@ -235,6 +336,7 @@
         </div>
     </div>
 
+    <!-- 業務邏輯與交互腳本 -->
     <script>
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
@@ -259,6 +361,12 @@
         const footerSlider = document.getElementById('footerSlider');
         const leftSlider = document.getElementById('leftSlider');
         const rightSlider = document.getElementById('rightSlider');
+
+        const headerNumInput = document.getElementById('headerNumInput');
+        const footerNumInput = document.getElementById('footerNumInput');
+        const leftNumInput = document.getElementById('leftNumInput');
+        const rightNumInput = document.getElementById('rightNumInput');
+
         const headerVal = document.getElementById('headerVal');
         const footerVal = document.getElementById('footerVal');
         const leftVal = document.getElementById('leftVal');
@@ -273,6 +381,12 @@
         const totalPagesDisplay = document.getElementById('totalPagesDisplay');
         const startPageInput = document.getElementById('startPageInput');
         const endPageInput = document.getElementById('endPageInput');
+
+        const fileBadge = document.getElementById('fileBadge');
+        const canvasPager = document.getElementById('canvasPager');
+        const activeFileInfo = document.getElementById('activeFileInfo');
+        const activeFileNameText = document.getElementById('activeFileNameText');
+        const activeFileSizeText = document.getElementById('activeFileSizeText');
 
         let currentFile = null;
         let currentFileId = null;
@@ -400,13 +514,33 @@
                 previewPageDisplay.textContent = currentPreviewPage;
 
                 fileNameDisplay.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong><small>${sizeMB} MB</small></span>`;
-                previewContainer.style.display = 'block';
+                
+                // 畫布切換為預覽模式
+                dropZone.style.display = 'none';
+                previewContainer.style.display = 'flex';
+                canvasPager.style.display = 'flex';
+                fileBadge.style.display = 'inline-flex';
+                fileBadge.textContent = file.name;
+                
+                // 右側檢視台顯示檔案資訊
+                if (activeFileInfo) {
+                    activeFileInfo.style.display = 'flex';
+                    activeFileNameText.textContent = file.name;
+                    activeFileSizeText.textContent = `(${sizeMB} MB，共 ${totalPdfPages} 頁)`;
+                }
+
                 updatePreview();
 
                 submitBtn.disabled = false;
                 analyzeFontsBtn.disabled = false;
                 submitBtn.textContent = '開始全自動整稿';
             } catch (err) {
+                dropZone.style.display = 'block';
+                previewContainer.style.display = 'none';
+                canvasPager.style.display = 'none';
+                fileBadge.style.display = 'none';
+                if (activeFileInfo) activeFileInfo.style.display = 'none';
+
                 fileNameDisplay.textContent = '點擊選擇，或將 PDF 檔案拖曳到這裡';
                 statusDiv.innerHTML = toolbox.errorPanel('上傳預覽失敗', err.message, 'fileInput.click()');
                 submitBtn.disabled = true;
@@ -421,6 +555,7 @@
             const l = leftSlider.value;
             const r = rightSlider.value;
 
+            // 同步圖例與隱藏標籤
             headerVal.textContent = h;
             headerValLabel.textContent = h;
             footerVal.textContent = f;
@@ -430,16 +565,39 @@
             rightVal.textContent = r;
             rightValLabel.textContent = r;
 
+            // 同步數值輸入框
+            if (headerNumInput && document.activeElement !== headerNumInput) headerNumInput.value = h;
+            if (footerNumInput && document.activeElement !== footerNumInput) footerNumInput.value = f;
+            if (leftNumInput && document.activeElement !== leftNumInput) leftNumInput.value = l;
+            if (rightNumInput && document.activeElement !== rightNumInput) rightNumInput.value = r;
+
             clearTimeout(debounceTimer);
             debounceTimer = setTimeout(() => {
                 previewImage.src = `/api/render_preview/${currentFileId}?page=${currentPreviewPage}&header=${h}&footer=${f}&left=${l}&right=${r}&_t=${Date.now()}`;
             }, 300);
         }
 
+        // 滑桿連動更新
         headerSlider.oninput = updatePreview;
         footerSlider.oninput = updatePreview;
         leftSlider.oninput = updatePreview;
         rightSlider.oninput = updatePreview;
+
+        // 數值輸入框連動滑桿
+        function bindNumInputToSlider(numInput, slider, maxVal) {
+            if (!numInput || !slider) return;
+            numInput.oninput = () => {
+                let val = parseFloat(numInput.value);
+                if (isNaN(val)) val = 0;
+                val = Math.max(0, Math.min(maxVal, val));
+                slider.value = val.toFixed(2);
+                updatePreview();
+            };
+        }
+        bindNumInputToSlider(headerNumInput, headerSlider, 0.5);
+        bindNumInputToSlider(footerNumInput, footerSlider, 0.5);
+        bindNumInputToSlider(leftNumInput, leftSlider, 0.3);
+        bindNumInputToSlider(rightNumInput, rightSlider, 0.3);
 
         prevPageBtn.onclick = () => {
             if (currentPreviewPage > 1) {
@@ -619,40 +777,40 @@
             const mdUrl = `/api/download_ocr_result/${stem}/md`;
 
             statusDiv.innerHTML = `
-                <div class="result" id="resultCard">
-                    <div class="result-head is-ok">
-                        <span>全自動整稿完成</span>
+                <div class="result" id="resultCard" style="background: var(--f2-color-surface, #fff); border: 1px solid var(--f2-color-border-subtle, #e5e7eb); border-radius: 8px; box-shadow: var(--shadow-resting);">
+                    <div class="result-head is-ok" style="background: var(--f2-color-primary-tint, #ebf3fc); color: var(--f2-color-primary, #0f6cbd); padding: 10px 14px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 600;">全自動整稿完成</span>
                         <button type="button" class="btn btn-secondary btn-sm" id="openOutlineModalBtn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
                             微調大綱階層 (Outline Editor)
                         </button>
                     </div>
-                    <ul class="result-files">
-                        <li>
+                    <ul class="result-files" style="padding: 10px 14px; margin: 0; list-style: none;">
+                        <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--f2-color-border-subtle, #e5e7eb);">
                             <div>
-                                <span class="file-name">${toolbox.escape(docxName)}</span>
-                                <span class="file-desc">已套用 Word 樣式範本之排版文件</span>
+                                <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary, #242424);">${toolbox.escape(docxName)}</span>
+                                <span class="file-desc" style="display: block; font-size: 0.8rem; color: var(--f2-color-text-secondary, #616161);">已套用 Word 樣式範本之排版文件</span>
                             </div>
                             <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON}另存 Word</button>
                         </li>
-                        <li>
+                        <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
                             <div>
-                                <span class="file-name">${toolbox.escape(mdName)}</span>
-                                <span class="file-desc">標準結構化 Markdown 文件</span>
+                                <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary, #242424);">${toolbox.escape(mdName)}</span>
+                                <span class="file-desc" style="display: block; font-size: 0.8rem; color: var(--f2-color-text-secondary, #616161);">標準結構化 Markdown 文件</span>
                             </div>
                             <button type="button" class="btn btn-secondary btn-sm" id="saveMdBtn">${toolbox.DOWNLOAD_ICON}另存 Markdown</button>
                         </li>
                     </ul>
-                    <div style="margin-top: 0.85rem; padding: 0.85rem 1rem; background: var(--bg-surface-2, #f8fafc); border: 1.5px solid var(--accent, #ea580c); border-radius: 8px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div style="margin: 10px 14px; padding: 10px 12px; background: var(--f2-color-surface-secondary, #f8fafc); border: 1.5px solid var(--f2-color-primary, #0F6CBD); border-radius: 6px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
-                            <strong style="color: var(--accent, #ea580c); display: block; font-size: 0.95rem;">下一步：銜接 POD 整稿（樣式擴散與品質審計）</strong>
-                            <span class="hint" style="margin: 0; display: block; font-size: 0.82rem;">一鍵將此初稿與 PDF 載入 POD 工作區，免手動重複上傳。</span>
+                            <strong style="color: var(--f2-color-primary, #0F6CBD); display: block; font-size: 0.92rem;">下一步：銜接 POD 整稿（樣式擴散與品質審計）</strong>
+                            <span class="hint" style="margin: 0; display: block; font-size: 0.8rem;">一鍵將此初稿與 PDF 載入 POD 工作區，免手動重複上傳。</span>
                         </div>
                         <button type="button" class="btn btn-primary btn-sm" id="handoffPodBtn" style="white-space: nowrap;">
                             接續進行 POD 整稿 &rarr;
                         </button>
                     </div>
-                    <div class="result-note" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                    <div class="result-note" style="padding: 10px 14px; background: var(--f2-color-surface-secondary, #f8fafc); border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb); border-radius: 0 0 8px 8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; font-size: 0.82rem; color: var(--f2-color-text-secondary, #616161);">
                         <span>檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀，請及時另存。</span>
                         <button type="button" class="btn btn-secondary btn-sm" id="openFolderBtn">在檔案總管中顯示成果</button>
                     </div>

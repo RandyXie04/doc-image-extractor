@@ -726,3 +726,248 @@ details.disclosure summary {
     }
 }
 
+/* ══════════════════════════════════════════════════════════
+   Microsoft Fluent 2 Workbench Layout & Components
+   ══════════════════════════════════════════════════════════ */
+
+.workbench-container {
+    max-width: 1480px;
+    margin: 0 auto;
+    padding: 0 0.5rem;
+}
+
+.workbench-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 440px;
+    gap: 20px;
+    align-items: start;
+    margin-top: 1rem;
+}
+
+/* Left Column: Document Canvas */
+.workbench-canvas-pane {
+    background: var(--f2-color-surface);
+    border: 1px solid var(--f2-color-border-subtle);
+    border-radius: var(--f2-radius-lg);
+    box-shadow: var(--shadow-resting);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.workbench-canvas-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--f2-color-surface-secondary);
+    border-bottom: 1px solid var(--f2-color-border-subtle);
+    font-size: 0.88rem;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.workbench-canvas-toolbar-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.workbench-canvas-title {
+    font-weight: 600;
+    color: var(--f2-color-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.workbench-canvas-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.workbench-canvas-body {
+    position: relative;
+    background: #EAEFF5;
+    padding: 1.5rem;
+    min-height: 520px;
+    max-height: calc(100vh - 210px);
+    overflow: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.workbench-canvas-body .dropzone {
+    width: 100%;
+    max-width: 480px;
+    background: var(--f2-color-surface);
+    border: 2px dashed var(--f2-color-border);
+    border-radius: var(--f2-radius-md);
+    box-shadow: var(--shadow-resting);
+}
+
+.workbench-canvas-body .dropzone:hover,
+.workbench-canvas-body .dropzone.dragover {
+    border-color: var(--f2-color-primary);
+    background: var(--f2-color-primary-tint);
+}
+
+.workbench-preview-wrapper {
+    position: relative;
+    max-width: 100%;
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    border-radius: var(--f2-radius-sm);
+    overflow: hidden;
+    background: #fff;
+}
+
+.workbench-preview-wrapper img {
+    display: block;
+    max-width: 100%;
+    max-height: calc(100vh - 260px);
+    height: auto;
+    object-fit: contain;
+}
+
+/* Right Column: Inspector Controls */
+.workbench-inspector-pane {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.f2-card {
+    background: var(--f2-color-surface);
+    border: 1px solid var(--f2-color-border-subtle);
+    border-radius: var(--f2-radius-md);
+    box-shadow: var(--shadow-resting);
+    padding: 14px 16px;
+}
+
+.f2-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+
+.f2-card-title {
+    margin: 0;
+    font-size: 0.94rem;
+    font-weight: 600;
+    color: var(--f2-color-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.f2-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    background: var(--f2-color-surface-tertiary);
+    color: var(--f2-color-text-secondary);
+}
+
+.f2-badge-primary {
+    background: var(--f2-color-primary-tint);
+    color: var(--f2-color-primary);
+}
+
+.f2-badge-success {
+    background: #DFF6DD;
+    color: var(--f2-color-success);
+}
+
+/* Crop Controls with Number Inputs */
+.crop-control-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.crop-control-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 68px;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+}
+
+.crop-control-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+    color: var(--f2-color-text-primary);
+}
+
+.crop-num-input {
+    width: 68px;
+    padding: 4px 6px;
+    border: 1px solid var(--f2-color-border);
+    border-radius: var(--f2-radius-sm);
+    font-size: 0.85rem;
+    font-family: var(--font-mono);
+    text-align: right;
+    background: var(--f2-color-surface);
+    color: var(--f2-color-text-primary);
+    transition: border-color 0.15s ease;
+}
+
+.crop-num-input:focus {
+    border-color: var(--f2-color-primary);
+    outline: none;
+    box-shadow: 0 0 0 1px var(--f2-color-primary);
+}
+
+/* Fluent 2 Progress Bar */
+.f2-progress-track {
+    height: 4px;
+    background: var(--f2-color-primary-tint);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+    width: 100%;
+}
+
+.f2-progress-fill {
+    height: 100%;
+    background: var(--f2-color-primary);
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Responsive Workbench Breakdown */
+@media (max-width: 1024px) {
+    .workbench-layout {
+        grid-template-columns: 1fr;
+    }
+    .workbench-canvas-body {
+        max-height: 480px;
+    }
+}
+
+@media (max-width: 640px) {
+    .workbench-container {
+        padding: 0;
+    }
+    .workbench-canvas-toolbar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .crop-control-row {
+        grid-template-columns: 70px 1fr 58px;
+        gap: 6px;
+    }
+}
+
+

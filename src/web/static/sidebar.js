@@ -1,3 +1,4 @@
+// @ts-nocheck
 // Shared client config, notifications and the sidebar shell for every toolbox page.
 window.APP_CONFIG = {
     maxUploadSizeMB: 200,
@@ -5,13 +6,27 @@ window.APP_CONFIG = {
     fileRetentionHours: 24
 };
 
+function syncQuotaDisplayUI() {
+    const upEl = document.getElementById('cfgMaxUploadVal');
+    const tplEl = document.getElementById('cfgMaxTemplateVal');
+    const retEl = document.getElementById('cfgRetentionVal');
+    const privRetEl = document.getElementById('privacyRetentionHours');
+    if (upEl) upEl.textContent = `${window.APP_CONFIG.maxUploadSizeMB} MB`;
+    if (tplEl) tplEl.textContent = `${window.APP_CONFIG.maxTemplateSizeMB} MB`;
+    if (retEl) retEl.textContent = `${window.APP_CONFIG.fileRetentionHours} 小時`;
+    if (privRetEl) privRetEl.textContent = `${window.APP_CONFIG.fileRetentionHours}`;
+}
+
 fetch('/api/system_config').then(r => r.json()).then(cfg => {
     if (cfg && cfg.max_upload_size_mb) {
         window.APP_CONFIG.maxUploadSizeMB = cfg.max_upload_size_mb;
         window.APP_CONFIG.maxTemplateSizeMB = cfg.max_template_size_mb;
         window.APP_CONFIG.fileRetentionHours = cfg.file_retention_hours;
+        syncQuotaDisplayUI();
     }
-}).catch(() => {});
+}).catch((err) => {
+    console.debug('[SystemConfig] Using default quota:', err);
+});
 
 // Non-blocking replacement for window.alert; kind is "info" | "success" | "warning" | "error".
 window.toolbox = {
@@ -35,7 +50,7 @@ window.toolbox = {
     }
 };
 
-window.checkUploadFileSize = function(file, customMaxMB) {
+window.checkUploadFileSize = function (file, customMaxMB) {
     if (!file) return true;
     const maxMB = customMaxMB || window.APP_CONFIG.maxUploadSizeMB;
     if (file.size > maxMB * 1024 * 1024) {
@@ -46,7 +61,7 @@ window.checkUploadFileSize = function(file, customMaxMB) {
     return true;
 };
 
-window.addEventListener('error', function(e) {
+window.addEventListener('error', function (e) {
     window.toolbox.notify('頁面發生未預期的錯誤：' + e.message, 'error', 8000);
 });
 
@@ -77,18 +92,17 @@ function svg(name, size = 16) {
     return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICON[name] || ''}</svg>`;
 }
 
-// 主流程項目
+// 主工作流項目（收攏至 Settings > 一般與工作流設定）
 const MAIN_NAV_ITEMS = [
     { href: '/static/ocr_pipeline.html', key: 'ocr_pipeline', icon: 'doc', label: '全自動整稿' },
     { href: '/static/pod_studio.html', key: 'pod_studio', icon: 'pod', label: 'POD 整稿' }
 ];
 
-// 輔助工具清單（未來新增模組與單一功能皆往此處擴充填入）
+// 輔助識別工具清單（收攏至 Settings > OCR 與識別工具設定）
 const AUXILIARY_NAV_ITEMS = [
     { href: '/static/formula.html', key: 'formula', icon: 'formula', label: '公式提取' },
     { href: '/static/extract_images.html', key: 'extract_images', icon: 'image', label: '圖片提取' },
     { href: '/static/founder_repair.html', key: 'founder_repair', icon: 'wrench', label: '方正修復' }
-    // …（未來輔助工具皆往此處填）
 ];
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -101,71 +115,188 @@ document.addEventListener('DOMContentLoaded', () => {
     if (document.getElementById('sidebar')) return;
 
     const currentPath = window.location.pathname;
-
     const isMainActive = (key) => currentPath.includes(key);
+    const hasAnyMainActive = MAIN_NAV_ITEMS.some(item => isMainActive(item.key));
     const isAuxActive = AUXILIARY_NAV_ITEMS.some(item => currentPath.includes(item.key));
+    const hasActiveRouteInSettings = hasAnyMainActive || isAuxActive;
 
-    // 輔助工具收折狀態：若當前頁面為子項目則強制展開；其餘情況遵循使用者偏好（預設展開）
+    // 1. Settings 主分類展開狀態（預設展開，或當前路由為工具頁時自動展開）
+    const savedSettingsCatState = localStorage.getItem('sidebar_cat_settings_expanded');
+    const isSettingsCatExpanded = hasActiveRouteInSettings || savedSettingsCatState !== 'false';
+
+    // 2. Documentation 主分類展開狀態（遵循漸進式揭露，預設收折，記憶使用者偏好）
+    const savedDocsCatState = localStorage.getItem('sidebar_cat_docs_expanded');
+    const isDocsCatExpanded = savedDocsCatState === 'true';
+
+    // 3. OCR 與輔助識別工具子群組收折狀態
     const savedAuxState = localStorage.getItem('sidebar_aux_expanded');
     const isAuxExpanded = isAuxActive || savedAuxState !== 'false';
 
     const mainNavHtml = MAIN_NAV_ITEMS.map(item => `
-            <a href="${item.href}" class="nav-link ${isMainActive(item.key) ? 'active' : ''}"${isMainActive(item.key) ? ' aria-current="page"' : ''}>
-                <span class="nav-icon">${svg(item.icon)}</span>
-                <span class="nav-label">${item.label}</span>
-            </a>`).join('');
+        <a href="${item.href}" class="nav-link ${isMainActive(item.key) ? 'active' : ''}"${isMainActive(item.key) ? ' aria-current="page"' : ''}>
+            <span class="nav-icon">${svg(item.icon, 15)}</span>
+            <span class="nav-label">${item.label}</span>
+        </a>`).join('');
 
     const auxChildrenHtml = AUXILIARY_NAV_ITEMS.map(item => `
-            <a href="${item.href}" class="nav-sub-link ${currentPath.includes(item.key) ? 'active' : ''}"${currentPath.includes(item.key) ? ' aria-current="page"' : ''}>
-                <span class="nav-sub-icon">${svg(item.icon, 14)}</span>
-                <span class="nav-sub-label">${item.label}</span>
-            </a>`).join('');
+        <a href="${item.href}" class="nav-sub-link ${currentPath.includes(item.key) ? 'active' : ''}"${currentPath.includes(item.key) ? ' aria-current="page"' : ''}>
+            <span class="nav-sub-icon">${svg(item.icon, 14)}</span>
+            <span class="nav-sub-label">${item.label}</span>
+        </a>`).join('');
 
     const auxGroupHtml = `
-            <div class="nav-group ${isAuxExpanded ? 'is-expanded' : 'is-collapsed'}" id="auxNavGroup">
-                <button type="button" class="nav-group-header ${isAuxActive ? 'has-active-child' : ''}" id="auxNavToggle" aria-expanded="${isAuxExpanded ? 'true' : 'false'}" aria-controls="auxNavChildren" title="切換展開/收折輔助工具">
-                    <span class="nav-group-header-left">
-                        <span class="nav-arrow-indicator">${svg('chevronRight', 14)}</span>
-                        <span class="nav-group-title">輔助工具</span>
-                    </span>
-                    <span class="nav-group-count">${AUXILIARY_NAV_ITEMS.length}</span>
-                </button>
-                <div class="nav-group-children" id="auxNavChildren" style="${isAuxExpanded ? '' : 'display:none;'}">
-                    ${auxChildrenHtml}
-                </div>
-            </div>`;
-
-    const sidebarHtml = `
-    <div id="sidebar">
-        <a href="/" class="brand">${svg('book', 20)}轉檔工具箱</a>
-        <nav aria-label="工具選單">
-            ${mainNavHtml}
-            ${auxGroupHtml}
-        </nav>
-        <div class="sidebar-settings-block">
-            <button type="button" class="sidebar-settings-trigger" id="sidebarSettingsBtn" aria-expanded="false" aria-controls="sidebarSettingsDropdown" title="開啟設定與技術文件">
-                <span class="settings-trigger-left">
-                    <span class="nav-icon" style="margin-right:0;">${svg('settings', 16)}</span>
-                    <span class="settings-label">設定與文件</span>
+        <div class="nav-group ${isAuxExpanded ? 'is-expanded' : 'is-collapsed'}" id="auxNavGroup">
+            <button type="button" class="nav-group-header ${isAuxActive ? 'has-active-child' : ''}" id="auxNavToggle" aria-expanded="${isAuxExpanded ? 'true' : 'false'}" aria-controls="auxNavChildren" title="切換展開/收折輔助工具">
+                <span class="nav-group-header-left">
+                    <span class="nav-arrow-indicator">${svg('chevronRight', 13)}</span>
+                    <span class="nav-group-title">輔助工具</span>
                 </span>
-                <span class="settings-chevron">${svg('chevronRight', 14)}</span>
+                <span class="nav-group-count">${AUXILIARY_NAV_ITEMS.length}</span>
             </button>
-            <div class="sidebar-settings-dropdown" id="sidebarSettingsDropdown" style="display:none;">
-                <div class="settings-dropdown-section-title">手冊與文件</div>
-                <div class="settings-doc-list" id="sidebarDocList">
-                    <div style="padding:0.5rem; color:var(--text-muted); font-size:0.82rem;">載入文件中...</div>
-                </div>
+            <div class="nav-group-children" id="auxNavChildren" style="${isAuxExpanded ? '' : 'display:none;'}">
+                ${auxChildrenHtml}
             </div>
-        </div>
-        <div class="sidebar-footer">
-            <div id="hardwareDisplay" class="sidebar-info-box">硬體加速：偵測中</div>
-            <div id="aiModelDisplay" class="sidebar-info-box" style="margin-top:4px;">AI 推論：偵測中</div>
-            <div id="versionDisplay" class="sidebar-version-text">版本：讀取中</div>
-            <div class="sidebar-privacy"><strong>零日誌隱私架構</strong>檔案保留 24 小時後自動銷毀</div>
-            <button id="modeToggleBtn" class="sidebar-btn" type="button" title="切換出版社編輯模式與工程師除錯模式">模式：讀取中</button>
-            <button id="globalReportBtn" class="sidebar-btn" type="button" style="display:none;" title="僅供工程師除錯使用">${svg('github', 14)}在 GitHub 回報問題</button>
-        </div>
-    </div>
+        </div>`;
+
+    // 嚴格僅包含兩大頂層主分類：1. Settings（設定）與 2. Documentation（文件）
+    const sidebarHtml = `
+    <aside id="sidebar" aria-label="側邊欄導覽與系統控制">
+        <a href="/" class="brand">${svg('book', 20)}<span>轉檔工具箱</span></a>
+
+        <nav class="sidebar-ia-container" aria-label="主分類選單">
+            <!-- ==================== PRIMARY CATEGORY 1: SETTINGS (設定) ==================== -->
+            <section class="ia-category ${isSettingsCatExpanded ? 'is-expanded' : 'is-collapsed'}" id="iaCategorySettings">
+                <button type="button"
+                        class="ia-category-header ${hasActiveRouteInSettings ? 'has-active-child' : ''}"
+                        id="catSettingsToggle"
+                        aria-expanded="${isSettingsCatExpanded ? 'true' : 'false'}"
+                        aria-controls="catSettingsPanel">
+                    <span class="ia-category-header-left">
+                        <span class="ia-category-icon">${svg('settings', 16)}</span>
+                        <span class="ia-category-title-wrap">
+                            <span class="ia-category-title">Settings</span>
+                            <span class="ia-category-subtitle">設定</span>
+                        </span>
+                    </span>
+                    <span class="ia-category-chevron">${svg('chevronRight', 14)}</span>
+                </button>
+
+                <div class="ia-category-panel" id="catSettingsPanel" role="region" aria-labelledby="catSettingsToggle" ${isSettingsCatExpanded ? '' : 'hidden'}>
+                    <div class="ia-category-panel-inner">
+                        <!-- 1.1 General Settings -->
+                        <div class="ia-subgroup" role="group" aria-labelledby="sgGeneralTitle">
+                            <div class="ia-subgroup-title" id="sgGeneralTitle">一般與工作流設定 (General)</div>
+                            <div class="ia-nav-list">
+                                ${mainNavHtml}
+                            </div>
+                            <button id="themeToggleBtn" class="ia-action-btn" type="button">
+                                <span class="ia-action-btn-left">
+                                    <span class="ia-action-icon" id="themeToggleIcon">${svg('moon', 15)}</span>
+                                    <span id="themeToggleLabel">外觀主題：淺色模式</span>
+                                </span>
+                                <span class="ia-badge" id="themeToggleBadge">Light</span>
+                            </button>
+                        </div>
+
+                        <!-- 1.2 OCR & Recognition Settings -->
+                        <div class="ia-subgroup" role="group" aria-labelledby="sgOcrTitle">
+                            <div class="ia-subgroup-title" id="sgOcrTitle">OCR 與識別設定 (Recognition)</div>
+                            ${auxGroupHtml}
+                        </div>
+
+                        <!-- 1.3 Document Conversion Settings & 1.4 Output & Export Settings -->
+                        <div class="ia-subgroup" role="group" aria-labelledby="sgOutputTitle">
+                            <div class="ia-subgroup-title" id="sgOutputTitle">轉檔與輸出配額 (Conversion & Output)</div>
+                            <div class="ia-kv-list" aria-label="轉檔與輸出配額參數">
+                                <div class="ia-kv-row">
+                                    <span class="ia-kv-label">單次上傳上限</span>
+                                    <span class="ia-kv-val" id="cfgMaxUploadVal">${window.APP_CONFIG.maxUploadSizeMB} MB</span>
+                                </div>
+                                <div class="ia-kv-row">
+                                    <span class="ia-kv-label">樣板檔案上限</span>
+                                    <span class="ia-kv-val" id="cfgMaxTemplateVal">${window.APP_CONFIG.maxTemplateSizeMB} MB</span>
+                                </div>
+                                <div class="ia-kv-row">
+                                    <span class="ia-kv-label">暫存自動清理</span>
+                                    <span class="ia-kv-val" id="cfgRetentionVal">${window.APP_CONFIG.fileRetentionHours} 小時</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 1.5 Advanced Settings -->
+                        <div class="ia-subgroup" role="group" aria-labelledby="sgAdvancedTitle">
+                            <div class="ia-subgroup-title" id="sgAdvancedTitle">進階與系統維護 (Advanced)</div>
+                            <button id="modeToggleBtn" class="sidebar-btn ia-control-btn" type="button" title="切換出版社編輯模式與工程師除錯模式">模式：讀取中</button>
+                            <button id="checkUpdateBtn" class="sidebar-btn ia-control-btn" type="button" title="檢查是否有新版程式可供更新">
+                                <span class="ia-btn-inline-icon">${svg('refresh', 13)}</span>
+                                <span>檢查版本更新</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==================== PRIMARY CATEGORY 2: DOCUMENTATION (文件) ==================== -->
+            <section class="ia-category ${isDocsCatExpanded ? 'is-expanded' : 'is-collapsed'}" id="iaCategoryDocs">
+                <button type="button"
+                        class="ia-category-header"
+                        id="catDocsToggle"
+                        aria-expanded="${isDocsCatExpanded ? 'true' : 'false'}"
+                        aria-controls="catDocsPanel">
+                    <span class="ia-category-header-left">
+                        <span class="ia-category-icon">${svg('book', 16)}</span>
+                        <span class="ia-category-title-wrap">
+                            <span class="ia-category-title">Documentation</span>
+                            <span class="ia-category-subtitle">文件</span>
+                        </span>
+                    </span>
+                    <span class="ia-category-chevron">${svg('chevronRight', 14)}</span>
+                </button>
+
+                <div class="ia-category-panel" id="catDocsPanel" role="region" aria-labelledby="catDocsToggle" ${isDocsCatExpanded ? '' : 'hidden'}>
+                    <div class="ia-category-panel-inner">
+                        <!-- 2.1 ~ 2.4 Manuals, Formatting Specs & Guides -->
+                        <div class="ia-subgroup" role="group" aria-labelledby="sgDocManualsTitle">
+                            <div class="ia-subgroup-title" id="sgDocManualsTitle">操作指南與技術規格 (Guides & Specs)</div>
+                            <div class="settings-doc-list" id="sidebarDocList">
+                                <div class="ia-loading-hint">載入文件中...</div>
+                            </div>
+                        </div>
+
+                        <!-- 2.5 Troubleshooting & Support -->
+                        <div class="ia-subgroup" role="group" aria-labelledby="sgDocSupportTitle">
+                            <div class="ia-subgroup-title" id="sgDocSupportTitle">疑難排解與支援 (Troubleshooting & FAQ)</div>
+                            <button type="button" class="sidebar-doc-link" id="openDocCenterQuickBtn">
+                                <span class="doc-icon">${svg('list', 14)}</span>
+                                <span class="doc-text">
+                                    <span class="doc-name">開啟完整文件檢視中心</span>
+                                    <span class="doc-desc">瀏覽功能總覽、排版規範與常見問題</span>
+                                </span>
+                            </button>
+                            <button id="globalReportBtn" class="sidebar-btn ia-control-btn" type="button" style="display:none;" title="僅供工程師除錯使用">
+                                <span class="ia-btn-inline-icon">${svg('github', 14)}</span>
+                                <span>在 GitHub 回報問題</span>
+                            </button>
+                        </div>
+
+                        <!-- 2.6 System Environment, Version & Privacy Specs -->
+                        <div class="ia-subgroup" role="group" aria-labelledby="sgDocEnvTitle">
+                            <div class="ia-subgroup-title" id="sgDocEnvTitle">系統環境與隱私規範 (System & Privacy)</div>
+                            <div class="ia-env-card">
+                                <div id="hardwareDisplay" class="sidebar-info-box">硬體加速：偵測中</div>
+                                <div id="aiModelDisplay" class="sidebar-info-box">AI 推論：偵測中</div>
+                                <div id="versionDisplay" class="sidebar-version-text">版本：讀取中</div>
+                                <div class="sidebar-privacy">
+                                    <strong>零日誌隱私架構</strong>
+                                    <span>檔案保留 <span id="privacyRetentionHours">${window.APP_CONFIG.fileRetentionHours}</span> 小時後自動銷毀</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </nav>
+    </aside>
 
     <div id="docViewerModal" class="modal-overlay doc-viewer-modal" role="dialog" aria-modal="true" aria-labelledby="docViewerTitle">
         <div class="modal doc-modal-content">
@@ -247,6 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
         document.head.appendChild(vp);
     }
 
+    // 行動端側邊欄展開/收折控制
     const toggleBtn = document.getElementById('sidebarToggleBtn');
     if (toggleBtn) {
         toggleBtn.onclick = () => {
@@ -280,7 +412,54 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // 輔助工具折疊切換
+    // 通用兩大主分類 (Settings / Documentation) 展開與收折控制
+    function setupPrimaryCategoryToggle(toggleId, panelId, containerId, storageKey) {
+        const btn = document.getElementById(toggleId);
+        const panel = document.getElementById(panelId);
+        const container = document.getElementById(containerId);
+        if (!btn || !panel || !container) return;
+
+        btn.addEventListener('click', () => {
+            const isExpanded = btn.getAttribute('aria-expanded') === 'true';
+            const nextState = !isExpanded;
+            btn.setAttribute('aria-expanded', nextState ? 'true' : 'false');
+            container.classList.toggle('is-expanded', nextState);
+            container.classList.toggle('is-collapsed', !nextState);
+            if (nextState) {
+                panel.removeAttribute('hidden');
+            } else {
+                panel.setAttribute('hidden', '');
+            }
+            localStorage.setItem(storageKey, nextState ? 'true' : 'false');
+        });
+    }
+
+    setupPrimaryCategoryToggle('catSettingsToggle', 'catSettingsPanel', 'iaCategorySettings', 'sidebar_cat_settings_expanded');
+    setupPrimaryCategoryToggle('catDocsToggle', 'catDocsPanel', 'iaCategoryDocs', 'sidebar_cat_docs_expanded');
+
+    // 支援兩大主分類標題按鈕之間的上下方向鍵無障礙導覽
+    const categoryHeaders = Array.from(document.querySelectorAll('.ia-category-header'));
+    categoryHeaders.forEach((headerBtn, idx) => {
+        headerBtn.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                const next = categoryHeaders[(idx + 1) % categoryHeaders.length];
+                if (next) next.focus();
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                const prev = categoryHeaders[(idx - 1 + categoryHeaders.length) % categoryHeaders.length];
+                if (prev) prev.focus();
+            } else if (e.key === 'Home') {
+                e.preventDefault();
+                if (categoryHeaders[0]) categoryHeaders[0].focus();
+            } else if (e.key === 'End') {
+                e.preventDefault();
+                if (categoryHeaders[categoryHeaders.length - 1]) categoryHeaders[categoryHeaders.length - 1].focus();
+            }
+        });
+    });
+
+    // Settings > 1.2 OCR 與識別工具子群組折疊切換
     const auxNavToggle = document.getElementById('auxNavToggle');
     const auxNavGroup = document.getElementById('auxNavGroup');
     const auxNavChildren = document.getElementById('auxNavChildren');
@@ -296,18 +475,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
-    // 側邊欄底部設定區塊展開切換
-    const settingsBtn = document.getElementById('sidebarSettingsBtn');
-    const settingsDropdown = document.getElementById('sidebarSettingsDropdown');
-    if (settingsBtn && settingsDropdown) {
-        settingsBtn.onclick = () => {
-            const isOpen = settingsDropdown.style.display !== 'none';
-            settingsDropdown.style.display = isOpen ? 'none' : 'block';
-            settingsBtn.classList.toggle('open', !isOpen);
-            settingsBtn.setAttribute('aria-expanded', !isOpen ? 'true' : 'false');
-        };
-    }
-
     // 技術與操作文件檢視中心 (Doc Viewer Modal)
     const docModal = document.getElementById('docViewerModal');
     const closeDocViewerBtn = document.getElementById('closeDocViewerBtn');
@@ -315,6 +482,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const docViewerSubtitle = document.getElementById('docViewerSubtitle');
     const docViewerArticle = document.getElementById('docViewerArticle');
     const docCache = {};
+    let availableDocs = [];
 
     async function loadAndShowDoc(docId) {
         if (!docId) return;
@@ -355,6 +523,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.toolbox.openDocViewer = loadAndShowDoc;
 
+    const openDocCenterQuickBtn = document.getElementById('openDocCenterQuickBtn');
+    if (openDocCenterQuickBtn) {
+        openDocCenterQuickBtn.onclick = () => {
+            const defaultDocId = (availableDocs[0] && availableDocs[0].id) || 'workflow';
+            loadAndShowDoc(defaultDocId);
+            const vp = /** @type {any} */ (window).viewportManager;
+            if (vp && typeof vp.isMobile === 'function' && (vp.isMobile() || vp.isTablet())) {
+                vp.closeSidebar();
+            }
+        };
+    }
+
     async function loadAndRenderDocCatalogue(currentMode) {
         try {
             const url = currentMode ? `/api/docs?mode=${encodeURIComponent(currentMode)}` : '/api/docs';
@@ -363,7 +543,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (res.ok) {
                 docs = await res.json();
             } else {
-                // 後端未重啟或離線時之靜態防禦清單
                 docs = [
                     { id: 'workflow', title: '全流程操作指南', category: '操作手冊', icon: 'book', description: '全自動整稿 & POD' },
                     { id: 'about', title: '系統授權與內網部署', category: '操作手冊', icon: 'shield', description: '開源授權與私有化規範' }
@@ -376,12 +555,13 @@ document.addEventListener('DOMContentLoaded', () => {
                     );
                 }
             }
+            availableDocs = docs;
 
-            // 1. Render in sidebar settings dropdown
+            // 1. Render inside Documentation category (#sidebarDocList)
             const docListEl = document.getElementById('sidebarDocList');
             if (docListEl) {
-                let dropdownHtml = docs.map(d => `
-                    <button type="button" class="sidebar-doc-link" data-doc-id="${d.id}">
+                const dropdownHtml = docs.map(d => `
+                    <button type="button" class="sidebar-doc-link" data-doc-id="${window.toolbox.escape(d.id)}">
                         <span class="doc-icon">${svg(d.icon || 'fileText', 14)}</span>
                         <span class="doc-text">
                             <span class="doc-name">${window.toolbox.escape(d.title)}</span>
@@ -389,18 +569,6 @@ document.addEventListener('DOMContentLoaded', () => {
                         </span>
                     </button>
                 `).join('');
-
-                if (currentMode === 'dev') {
-                    dropdownHtml += `
-                        <button type="button" class="sidebar-doc-link" id="devQuickReportBtn" style="border-top:1px dashed var(--border-color); margin-top:4px; padding-top:8px;">
-                            <span class="doc-icon">${svg('github', 14)}</span>
-                            <span class="doc-text">
-                                <span class="doc-name">在 GitHub 回報問題</span>
-                                <span class="doc-desc">工程師除錯與 Issue 回報</span>
-                            </span>
-                        </button>
-                    `;
-                }
 
                 docListEl.innerHTML = dropdownHtml;
 
@@ -416,17 +584,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     };
                 });
-
-                const devQuickBtn = document.getElementById('devQuickReportBtn');
-                if (devQuickBtn) {
-                    devQuickBtn.onclick = () => {
-                        const rBtn = document.getElementById('globalReportBtn');
-                        if (rBtn) rBtn.click();
-                    };
-                }
             }
 
-            // 2. Render in Doc Viewer Modal sidebar
+            // 2. Render inside Doc Viewer Modal sidebar
             const modalSidebarEl = document.getElementById('docModalSidebar');
             if (modalSidebarEl) {
                 const categories = {};
@@ -436,12 +596,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     categories[cat].push(d);
                 });
 
-                let sidebarHtml = '';
+                let modalNavHtml = '';
                 for (const [catName, catDocs] of Object.entries(categories)) {
-                    sidebarHtml += `<div class="doc-nav-heading">${window.toolbox.escape(catName)}</div>`;
+                    modalNavHtml += `<div class="doc-nav-heading">${window.toolbox.escape(catName)}</div>`;
                     catDocs.forEach(d => {
-                        sidebarHtml += `
-                            <button type="button" class="doc-tab-btn" data-doc-id="${d.id}">
+                        modalNavHtml += `
+                            <button type="button" class="doc-tab-btn" data-doc-id="${window.toolbox.escape(d.id)}">
                                 <span class="doc-tab-icon">${svg(d.icon || 'fileText', 14)}</span>
                                 <span>${window.toolbox.escape(d.title)}</span>
                             </button>
@@ -449,7 +609,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     });
                 }
 
-                modalSidebarEl.innerHTML = sidebarHtml;
+                modalSidebarEl.innerHTML = modalNavHtml;
 
                 modalSidebarEl.querySelectorAll('.doc-tab-btn').forEach(btn => {
                     btn.onclick = () => {
@@ -507,7 +667,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (versionDisplay) {
         fetch('/api/version').then(res => res.json()).then(data => {
             versionDisplay.textContent = `App v${data.app_version} · Model v${data.model_version}`;
-        }).catch(() => {
+        }).catch((err) => {
+            console.debug('[Version] Fetch error:', err);
             versionDisplay.textContent = '無法讀取版本資訊';
         });
     }
@@ -522,7 +683,8 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 hardwareDisplay.innerHTML = `${svg('chip', 12)} CPU 相容模式`;
             }
-        }).catch(() => {
+        }).catch((err) => {
+            console.debug('[Hardware] Fetch error:', err);
             hardwareDisplay.textContent = '硬體探測離線';
         });
     }
@@ -535,7 +697,8 @@ document.addEventListener('DOMContentLoaded', () => {
             const statusLabel = isOllama ? 'Ollama 就緒' : '離線就緒';
             aiModelDisplay.innerHTML = `${svg('chip', 12)} AI：${window.toolbox.escape(modelName)} (${statusLabel})`;
             if (isOllama) aiModelDisplay.classList.add('is-accelerated');
-        }).catch(() => {
+        }).catch((err) => {
+            console.debug('[AIModel] Fetch error:', err);
             aiModelDisplay.textContent = 'AI：本地離線隔離';
         });
     }
@@ -570,7 +733,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 } else {
                     window.toolbox.notify(data.msg || '目前已是最新版本。', data.status === 'error' ? 'warning' : 'success');
                 }
-            } catch (e) {
+            } catch (err) {
+                console.debug('[CheckUpdate] Failed:', err);
                 window.toolbox.notify('檢查更新失敗，請確認網路連線後再試。', 'error');
             } finally {
                 checkUpdateBtn.disabled = false;
@@ -599,7 +763,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     applyUpdateBtn.disabled = false;
                     if (closeUpdateBtn) closeUpdateBtn.disabled = false;
                 }
-            } catch (e) {
+            } catch (err) {
+                console.debug('[ApplyUpdate] Failed:', err);
                 if (updateMsg) updateMsg.textContent = '網路錯誤，請稍後再試。';
                 applyUpdateBtn.disabled = false;
                 if (closeUpdateBtn) closeUpdateBtn.disabled = false;
@@ -607,6 +772,7 @@ document.addEventListener('DOMContentLoaded', () => {
         };
     }
 
+    // Settings > 1.5 Advanced Settings: 模式切換與工程師 Telemetry HUD
     const modeToggleBtn = document.getElementById('modeToggleBtn');
     const MODE_LABEL = { editor: '出版社編輯模式', dev: '工程師除錯模式' };
     let telemetryTimer = null;
@@ -616,7 +782,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!hud) {
             hud = document.createElement('div');
             hud.id = 'devTelemetryHUD';
-            hud.style.cssText = 'margin: 6px 12px; padding: 8px 10px; background: rgba(0,0,0,0.04); border: 1px solid var(--border, #cbd5e1); border-radius: 6px; font-size: 0.75rem; font-family: monospace; line-height: 1.4;';
+            hud.className = 'sidebar-telemetry-hud';
             if (modeToggleBtn && modeToggleBtn.parentElement) {
                 modeToggleBtn.parentElement.insertBefore(hud, modeToggleBtn.nextSibling);
             }
@@ -625,15 +791,15 @@ document.addEventListener('DOMContentLoaded', () => {
             ? `${data.reserved_vram_mb} MB / ${(data.total_vram_gb * 1024).toFixed(0)} MB (${data.vram_usage_percent}%)`
             : 'CPU 模式';
         const lockStatus = data.gpu_locked
-            ? '<span style="color:#ea580c; font-weight:bold;">運算中</span>'
-            : '<span style="color:#16a34a;">閒置</span>';
+            ? '<span class="telemetry-status-busy">運算中</span>'
+            : '<span class="telemetry-status-idle">閒置</span>';
 
         hud.innerHTML = `
-            <div style="font-weight:600; margin-bottom:3px; color:var(--text, #334155); display:flex; justify-content:space-between;">
-                <span>${data.gpu_name}</span>
-                <span>${data.target_accelerator}</span>
+            <div class="telemetry-hud-head">
+                <span>${window.toolbox.escape(data.gpu_name)}</span>
+                <span>${window.toolbox.escape(data.target_accelerator)}</span>
             </div>
-            <div>VRAM: ${vramText}</div>
+            <div>VRAM: ${window.toolbox.escape(vramText)}</div>
             <div>佇列狀態: ${lockStatus}</div>
         `;
     }
@@ -645,15 +811,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 const data = await res.json();
                 renderDevTelemetry(data);
             }
-        } catch (e) {}
+        } catch (err) {
+            console.debug('[Telemetry] Poll skipped:', err);
+        }
     }
 
     function updateModeBtnUI(mode) {
+        if (!modeToggleBtn) return;
         modeToggleBtn.dataset.mode = mode;
         modeToggleBtn.textContent = `模式：${MODE_LABEL[mode] || mode}`;
         modeToggleBtn.classList.toggle('is-active', mode === 'dev');
         if (globalReportBtn) {
-            globalReportBtn.style.display = (mode === 'dev') ? 'block' : 'none';
+            globalReportBtn.style.display = (mode === 'dev') ? 'flex' : 'none';
         }
         const hud = document.getElementById('devTelemetryHUD');
         if (mode === 'dev') {
@@ -668,57 +837,68 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         loadAndRenderDocCatalogue(mode);
     }
+
     fetch('/api/app_mode').then(r => r.json()).then(d => {
         if (d && d.mode) updateModeBtnUI(d.mode);
         else loadAndRenderDocCatalogue('editor');
-    }).catch(() => {
-        modeToggleBtn.textContent = '模式：未知';
+    }).catch((err) => {
+        console.debug('[AppMode] Fetch skipped:', err);
+        if (modeToggleBtn) modeToggleBtn.textContent = '模式：未知';
         loadAndRenderDocCatalogue('editor');
     });
 
-    modeToggleBtn.onclick = async () => {
-        const targetMode = modeToggleBtn.dataset.mode === 'dev' ? 'editor' : 'dev';
-        try {
-            const res = await fetch('/api/set_app_mode', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ mode: targetMode })
-            });
-            const d = await res.json();
-            if (d.status === 'success') {
-                window.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: d.mode } }));
-                const msg = d.mode === 'dev'
-                    ? '已切換為工程師除錯模式：顯示處理日誌與內部目錄。'
-                    : '已切換為出版社編輯模式：隱藏處理日誌與內部目錄。';
-                sessionStorage.setItem('tb-toast', msg);
-                window.location.reload();
+    if (modeToggleBtn) {
+        modeToggleBtn.onclick = async () => {
+            const targetMode = modeToggleBtn.dataset.mode === 'dev' ? 'editor' : 'dev';
+            try {
+                const res = await fetch('/api/set_app_mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: targetMode })
+                });
+                const d = await res.json();
+                if (d.status === 'success') {
+                    window.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: d.mode } }));
+                    const msg = d.mode === 'dev'
+                        ? '已切換為工程師除錯模式：顯示處理日誌與內部目錄。'
+                        : '已切換為出版社編輯模式：隱藏處理日誌與內部目錄。';
+                    sessionStorage.setItem('tb-toast', msg);
+                    window.location.reload();
+                }
+            } catch (err) {
+                window.toolbox.notify('模式切換失敗：' + err.message, 'error');
             }
-        } catch (e) {
-            window.toolbox.notify('模式切換失敗：' + e.message, 'error');
-        }
-    };
+        };
+    }
 
+    // Settings > 1.1 General Settings: 深淺色主題切換（整合於側邊欄 Settings 內）
     const savedTheme = localStorage.getItem('app-theme') || 'light';
     document.documentElement.setAttribute('data-theme', savedTheme);
 
-    const themeToggleBtn = document.createElement('button');
-    themeToggleBtn.id = 'themeToggleBtn';
-    themeToggleBtn.type = 'button';
+    const themeToggleBtn = document.getElementById('themeToggleBtn');
+    const themeToggleIcon = document.getElementById('themeToggleIcon');
+    const themeToggleLabel = document.getElementById('themeToggleLabel');
+    const themeToggleBadge = document.getElementById('themeToggleBadge');
 
     function updateThemeToggleUI(theme) {
-        const toDark = theme !== 'dark';
-        themeToggleBtn.innerHTML = svg(toDark ? 'moon' : 'sun', 18);
-        themeToggleBtn.title = toDark ? '切換為深色模式' : '切換為淺色模式';
-        themeToggleBtn.setAttribute('aria-label', themeToggleBtn.title);
+        if (!themeToggleBtn) return;
+        const isDark = theme === 'dark';
+        if (themeToggleIcon) themeToggleIcon.innerHTML = svg(isDark ? 'sun' : 'moon', 15);
+        if (themeToggleLabel) themeToggleLabel.textContent = isDark ? '外觀主題：深色模式' : '外觀主題：淺色模式';
+        if (themeToggleBadge) themeToggleBadge.textContent = isDark ? 'Dark' : 'Light';
+        const actionTitle = isDark ? '切換為淺色模式' : '切換為深色模式';
+        themeToggleBtn.title = actionTitle;
+        themeToggleBtn.setAttribute('aria-label', actionTitle);
+        themeToggleBtn.setAttribute('aria-pressed', isDark ? 'true' : 'false');
     }
     updateThemeToggleUI(savedTheme);
 
-    themeToggleBtn.onclick = () => {
-        const newTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
-        document.documentElement.setAttribute('data-theme', newTheme);
-        localStorage.setItem('app-theme', newTheme);
-        updateThemeToggleUI(newTheme);
-    };
-
-    document.getElementById('main-content').appendChild(themeToggleBtn);
+    if (themeToggleBtn) {
+        themeToggleBtn.onclick = () => {
+            const newTheme = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('app-theme', newTheme);
+            updateThemeToggleUI(newTheme);
+        };
+    }
 });

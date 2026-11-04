@@ -52,26 +52,32 @@ class TestSidebarAndDocs(unittest.TestCase):
         self.assertIn("auxNavToggle", js_content)
         self.assertIn("auxNavChildren", js_content)
 
-        # 3. Bottom Settings & Documentation section
-        self.assertIn("sidebar-settings-block", js_content)
-        self.assertIn("sidebarSettingsBtn", js_content)
-        self.assertIn("sidebarSettingsDropdown", js_content)
+        # 3. Two Primary Categories: Settings & Documentation
+        self.assertIn("iaCategorySettings", js_content)
+        self.assertIn("catSettingsToggle", js_content)
+        self.assertIn("catSettingsPanel", js_content)
+        self.assertIn("iaCategoryDocs", js_content)
+        self.assertIn("catDocsToggle", js_content)
+        self.assertIn("catDocsPanel", js_content)
+        self.assertIn("sidebarDocList", js_content)
         self.assertIn("docViewerModal", js_content)
         self.assertIn("openDocViewer", js_content)
         self.assertIn("loadAndRenderDocCatalogue", js_content)
 
     def test_sidebar_css_rules(self):
-        """Verify sidebar.css includes styles for nav-group, sub-links, settings block, and doc viewer modal."""
+        """Verify sidebar.css includes styles for two-category IA, nav-group, sub-links, and doc viewer modal."""
         css_content = self.sidebar_css_path.read_text(encoding="utf-8")
 
+        self.assertIn(".ia-category", css_content)
+        self.assertIn(".ia-category-header", css_content)
+        self.assertIn(".ia-category-panel", css_content)
+        self.assertIn(".ia-subgroup", css_content)
         self.assertIn(".nav-group", css_content)
         self.assertIn(".nav-group-header", css_content)
         self.assertIn(".nav-arrow-indicator", css_content)
         self.assertIn(".nav-group-children", css_content)
         self.assertIn(".nav-sub-link", css_content)
-        self.assertIn(".sidebar-settings-block", css_content)
-        self.assertIn(".sidebar-settings-trigger", css_content)
-        self.assertIn(".sidebar-settings-dropdown", css_content)
+        self.assertIn(".sidebar-doc-link", css_content)
         self.assertIn(".doc-modal-content", css_content)
         self.assertIn(".doc-modal-sidebar", css_content)
         self.assertIn(".doc-modal-article", css_content)
