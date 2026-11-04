@@ -28,6 +28,12 @@ os.environ["RECOGNITION_BATCH_SIZE"] = str(_rec_batch)
 os.environ["DETECTOR_BATCH_SIZE"] = str(_det_batch)
 
 from config import PATHS
+from src.scripts.gemma_layout_assistant import (
+    DEFAULT_GEMMA_MODEL,
+    gemma_available,
+    review_uncertain_boundaries,
+    review_uncertain_layout,
+)
 
 try:
     from src.scripts.ocr_rare_char_corrector import postprocess_ocr_markdown
@@ -163,8 +169,43 @@ def _merge_wrapping_paragraphs(para_blocks: list, page_w: float = 1000.0, line_h
         return para_blocks
 
     terminal_chars = {'。', '！', '？', '；', '…', ':', '：'}
+    boundary_candidates = []
+    for idx in range(1, len(para_blocks)):
+        prev, curr = para_blocks[idx - 1], para_blocks[idx]
+        if prev.get("original_label", "").lower() not in ("text", "paragraph", "section-header"):
+            continue
+        if curr.get("original_label", "").lower() not in ("text", "paragraph"):
+            continue
+        prev_text = prev.get("surya_text", "").strip()
+        curr_text = curr.get("surya_text", "").strip()
+        if not prev_text or not curr_text or _is_heading_like(prev_text, prev, page_w) or _is_heading_like(curr_text, curr, page_w):
+            continue
+        prev_box = prev.get("bbox", [0, 0, 0, 0])
+        curr_box = curr.get("bbox", [0, 0, 0, 0])
+        gap = curr_box[1] - prev_box[3]
+        previous_tail = prev_text[-1]
+        indentation_change = abs(curr_box[0] - prev_box[0]) >= 10.0
+        punctuation_conflict = previous_tail in {"，", ",", "：", ":", "；", ";", "…"}
+        near_gap_threshold = gap >= line_height_thresh * 0.7
+        if 0 <= gap <= line_height_thresh and (indentation_change or punctuation_conflict or near_gap_threshold):
+            boundary_candidates.append({
+                "next_line_id": f"ocr-line-{idx}",
+                "previous_text": prev_text[:300],
+                "next_text": curr_text[:300],
+                "vertical_gap": round(gap, 2),
+                "page_width": round(page_w, 2),
+                "existing_merge": prev_text[-1] not in terminal_chars or prev_text[-1] in ('《', '“', '（', '(', '[', '〈'),
+            })
+    try:
+        ai_boundary_overrides = review_uncertain_boundaries(boundary_candidates[:12])
+    except Exception:
+        ai_boundary_overrides = {}
+    ai_status = ai_boundary_overrides.pop("_status", None)
+    if ai_status and ai_status.get("status") != "ready" and para_blocks:
+        para_blocks[0]["layout_ai_boundary_status"] = ai_status
+
     merged = []
-    for blk in para_blocks:
+    for block_idx, blk in enumerate(para_blocks):
         if not merged:
             merged.append(blk)
             continue
@@ -190,7 +231,25 @@ def _merge_wrapping_paragraphs(para_blocks: list, page_w: float = 1000.0, line_h
             curr_bbox = blk.get("bbox", [0, 0, 0, 0])
             y_gap = curr_bbox[1] - prev_bbox[3]
 
-            if ends_mid_sentence and 0 <= y_gap <= line_height_thresh:
+            should_merge = ends_mid_sentence and 0 <= y_gap <= line_height_thresh
+            override = ai_boundary_overrides.get(f"ocr-line-{block_idx}")
+            if override is not None:
+                should_break = override.get("should_break") if isinstance(override, dict) else override
+                if type(should_break) is bool:
+                    should_merge = not should_break and 0 <= y_gap <= line_height_thresh
+                    boundary_record = {
+                        "source": "gemma",
+                        "confidence": override.get("confidence") if isinstance(override, dict) else None,
+                        "decision": "merge" if should_merge else "break",
+                        "previous_text": prev_txt[:120],
+                        "next_text": curr_txt[:120],
+                    }
+                    if should_merge:
+                        prev.setdefault("layout_ai_boundaries", []).append(boundary_record)
+                    else:
+                        blk["layout_ai_boundary"] = boundary_record
+
+            if should_merge:
                 prev["surya_text"] = prev_txt + curr_txt
                 prev["bbox"] = [
                     min(prev_bbox[0], curr_bbox[0]),
@@ -507,6 +566,7 @@ def process_page_footnotes(
     rendered_initial = render_blocks([item for item in indexed_blocks if not item["is_candidate_fn"]])
 
     # Apply Heading Detection to upgrade headings based on geometry & regex
+    ai_candidate_items = []
     try:
         from src.founder_tools.core.heading_detector import HeadingDetector
         for item in rendered_initial:
@@ -523,8 +583,78 @@ def process_page_footnotes(
                     item["md"] = f"{prefix} {clean_text} {{custom-style=\"{custom_style}\"}}"
                 else:
                     item["md"] = f"{prefix} {clean_text}"
+            elif blk.get("type") != "Table":
+                candidate_text = (item.get("md") or "").strip()
+                if (
+                    2 <= len(candidate_text) <= 55
+                    and not re.search(r'[。！？；.]$', candidate_text)
+                    and not candidate_text.startswith(("|", "!["))
+                ):
+                    bbox = blk.get("bbox", [0, 0, 0, 0])
+                    spans = [span for line in blk.get("lines", []) for span in line.get("spans", [])]
+                    sizes = [float(span.get("size", 0.0) or 0.0) for span in spans]
+                    ai_candidate_items.append({
+                        "paragraph_id": f"ocr-{page_num}-{item['orig_idx']}",
+                        "text": candidate_text,
+                        "font_size": round(sum(sizes) / len(sizes), 2) if sizes else None,
+                        "is_bold": any(bool(span.get("bold") or (span.get("flags", 0) & 16)) for span in spans),
+                        "is_centered": abs(((bbox[0] + bbox[2]) / 2.0) - 300.0) < 60.0,
+                    })
     except ImportError:
         pass
+
+    if ai_candidate_items:
+        ai_by_id = {item["paragraph_id"]: item for item in review_uncertain_layout(ai_candidate_items[:12])}
+        for item in rendered_initial:
+            review = ai_by_id.get(f"ocr-{page_num}-{item['orig_idx']}")
+            if not review:
+                continue
+            if review.get("ai_status") == "model_unavailable":
+                continue
+            if review.get("source") != "gemma":
+                if review.get("ai_status"):
+                    audit_records.append({
+                        "page": page_num,
+                        "type": "AI_LAYOUT_STATUS",
+                        "id": review.get("paragraph_id"),
+                        "status": review.get("ai_status"),
+                        "model": DEFAULT_GEMMA_MODEL,
+                    })
+                continue
+            block = item["block"]
+            if review.get("role") == "heading" and review.get("level") in (1, 2, 3):
+                level = review["level"]
+                clean_text = (item.get("md") or "").lstrip("#").strip()
+                custom_style = style_mapping.get(f"h{level}")
+                item["md"] = f"{'#' * level} {clean_text} {{custom-style=\"{custom_style}\"}}" if custom_style else f"{'#' * level} {clean_text}"
+            elif review.get("role") == "quote" and style_mapping.get("kaiti"):
+                item["md"] = f'::: {{custom-style="{style_mapping["kaiti"]}"}}\n{item["md"]}\n:::'
+            item["layout_ai"] = {
+                "source": "gemma",
+                "role": review.get("role"),
+                "level": review.get("level"),
+                "confidence": review.get("confidence"),
+                "reason": review.get("reason", ""),
+            }
+            audit_records.append({
+                "page": page_num,
+                "type": "AI_LAYOUT",
+                "source": "gemma",
+                "id": review.get("paragraph_id"),
+                "role": review.get("role"),
+                "level": review.get("level"),
+                "confidence": review.get("confidence"),
+                "reason": review.get("reason", ""),
+            })
+
+    body_style = style_mapping.get("body")
+    if body_style:
+        for item in rendered_initial:
+            text = (item.get("md") or "").strip()
+            block_label = item["block"].get("original_label", "").lower()
+            if text and not text.startswith(("#", "|", "![", ":::", "[^")) and block_label not in ("caption", "figure", "image", "table"):
+                item["md"] = f'::: {{custom-style="{body_style}"}}\n{text}\n:::'
+                item["body_style_applied"] = True
 
     final_footnotes = []
     blocks_to_restore = []
@@ -1078,6 +1208,36 @@ def main(args=None):
 
             all_page_contents = []
             audit_records = []
+            _gemma_available = gemma_available(DEFAULT_GEMMA_MODEL)
+            audit_records.append({
+                "type": "AI_LAYOUT_CONFIG",
+                "model": DEFAULT_GEMMA_MODEL,
+                "model_available": _gemma_available,
+                "confirmed_style_mapping": dict(style_mapping),
+            })
+            for page_info in pdf_info_list:
+                reviewed_page_num = int(page_info.get("page_idx", 0)) + 1
+                for block in page_info.get("para_blocks", []):
+                    boundary_status = block.get("layout_ai_boundary_status")
+                    if boundary_status:
+                        audit_records.append({
+                            "page": reviewed_page_num,
+                            "type": "AI_LAYOUT_BOUNDARY_STATUS",
+                            **boundary_status,
+                        })
+                    boundaries = list(block.get("layout_ai_boundaries", []))
+                    if block.get("layout_ai_boundary"):
+                        boundaries.append(block["layout_ai_boundary"])
+                    for boundary in boundaries:
+                        audit_records.append({
+                            "page": reviewed_page_num,
+                            "type": "AI_LAYOUT_BOUNDARY",
+                            **boundary,
+                        })
+            print(json.dumps({
+                "progress": 20,
+                "message": f"[INFO] Gemma 段落判定：{'已啟用 ' + DEFAULT_GEMMA_MODEL if _gemma_available else '模型未安裝，使用確定性判定'}",
+            }, ensure_ascii=False))
             previous_open_footnote = None
 
             if pdf_info_list:

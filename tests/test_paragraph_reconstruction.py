@@ -92,6 +92,27 @@ class TestParagraphReconstruction(unittest.TestCase):
         self.assertIn("主要病理改变的慢性进行性", paras[0].text)
         self.assertNotIn("改变的 慢性", paras[0].text)
 
+    def test_ai_boundary_override_can_split_only_an_uncertain_pair(self):
+        """A trusted review must correct a low-certainty join without changing source text."""
+        l1 = self._make_line("l1", "短段落結束。", 60.0, 100.0, 180.0, 115.0)
+        l2 = self._make_line("l2", "下一段開始。", 60.0, 118.0, 180.0, 133.0)
+
+        paras = reconstruct_page_paragraphs(
+            [l1, l2], self.default_page, standard_pitch=18.0, boundary_overrides={"l2": True}
+        )
+
+        self.assertEqual([para.text for para in paras], ["短段落結束。", "下一段開始。"])
+
+    def test_ai_boundary_override_cannot_break_an_unclosed_delimiter_continuation(self):
+        l1 = self._make_line("l1", "引文開始《未完成", 60.0, 100.0, 200.0, 115.0)
+        l2 = self._make_line("l2", "後續文字》結束。", 60.0, 118.0, 200.0, 133.0)
+
+        paras = reconstruct_page_paragraphs(
+            [l1, l2], self.default_page, standard_pitch=18.0, boundary_overrides={"l2": True}
+        )
+
+        self.assertEqual(len(paras), 1)
+
     # ── PR-02: Short standalone block isolated from subsequent body ───────────
     def test_pr02_short_heading_isolation(self):
         """A short standalone line without terminal punctuation must NOT glue into body."""

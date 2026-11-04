@@ -17,6 +17,7 @@ from typing import Optional, Dict, Any, List, Tuple, Callable, Sequence, TYPE_CH
 
 # pyrefly: ignore [missing-import]
 import fitz
+from src.scripts.gemma_layout_assistant import DEFAULT_GEMMA_MODEL, gemma_available, review_uncertain_layout
 
 if TYPE_CHECKING:
     from src.pod_studio.section_ast import BookAST, SectionAdapter, SectionUnit, ParagraphUnit
@@ -575,6 +576,12 @@ def _parse_pdf_layout_flow(
         "footnotes_fallback": 0,
         "footnotes_detail": [],
         "paragraphs_reflowed": 0,
+        "ai_layout": {
+            "model": DEFAULT_GEMMA_MODEL,
+            "model_available": False,
+            "confirmed_style_mapping": dict(style_mapping),
+            "decisions": [],
+        },
         "doc_profile": {
             "body_size": body_size,
             "body_font": body_font,
@@ -582,6 +589,9 @@ def _parse_pdf_layout_flow(
             "is_native_toc": doc_profile.get("is_native_toc", False),
         }
     }
+    audit_data["ai_layout"]["model_available"] = gemma_available(DEFAULT_GEMMA_MODEL)
+    if not audit_data["ai_layout"]["model_available"]:
+        print(f"[WARN] 本機未安裝 {DEFAULT_GEMMA_MODEL}，標題與斷行使用確定性判定。", flush=True)
     
     final_md_pages = []
     all_image_blocks = []
@@ -815,7 +825,12 @@ def _parse_pdf_layout_flow(
                     custom_style_val = kaiti_style
                     para_md = f'::: {{custom-style="{kaiti_style}"}}\n{para_text}\n:::'
                 else:
-                    para_md = para_text
+                    body_style = style_mapping.get("body")
+                    if body_style:
+                        custom_style_val = body_style
+                        para_md = f'::: {{custom-style="{body_style}"}}\n{para_text}\n:::'
+                    else:
+                        para_md = para_text
                 page_paragraphs.append(para_md)
 
                 # Record structured paragraph block
@@ -889,8 +904,97 @@ def _parse_pdf_layout_flow(
                 "data": rtbl,
             })
 
+        # Batch short structural candidates once per PDF page. The model is
+        # consulted only after deterministic rules fail later in this loop.
+        ai_heading_by_block: Dict[int, Dict[str, Any]] = {}
+        ai_candidates = []
+        ai_candidate_blocks: Dict[str, int] = {}
+        for candidate_idx, candidate in enumerate(body_blocks):
+            candidate_lines = candidate.get("lines", [])
+            candidate_text = "".join(
+                span.get("text", "") for candidate_line in candidate_lines
+                for span in candidate_line.get("spans", [])
+            ).strip()
+            candidate_bbox = candidate.get("bbox", [0, 0, 0, 0])
+            candidate_sizes = [span.get("size", 0.0) for ln in candidate_lines for span in ln.get("spans", [])]
+            candidate_size = sum(candidate_sizes) / len(candidate_sizes) if candidate_sizes else body_size
+            candidate_bold = any(span.get("flags", 0) & 16 for ln in candidate_lines for span in ln.get("spans", []))
+            candidate_center = abs(((candidate_bbox[0] + candidate_bbox[2]) / 2.0) - page_w / 2.0) < page_w * 0.12
+            candidate_is_heading_like = (
+                2 <= len(candidate_text) <= 55
+                and not re.search(r'[。！？；.]$', candidate_text)
+                and not re.match(r'^(?:表|圖|图|Table|Figure)\s*\d+', candidate_text, re.IGNORECASE)
+            )
+            if candidate_is_heading_like and (candidate_bold or candidate_center or candidate_size >= body_size or len(candidate_text) <= 35):
+                paragraph_id = f"pdf-{page_num}-{candidate_idx}"
+                ai_candidates.append({
+                    "paragraph_id": paragraph_id,
+                    "text": candidate_text,
+                    "font_size": round(candidate_size, 2),
+                    "is_bold": bool(candidate_bold),
+                    "is_centered": bool(candidate_center),
+                })
+                ai_candidate_blocks[paragraph_id] = id(candidate)
+        if ai_candidates:
+            for result in review_uncertain_layout(ai_candidates[:12], model=DEFAULT_GEMMA_MODEL):
+                if result.get("source") == "gemma":
+                    ai_heading_by_block[ai_candidate_blocks[result["paragraph_id"]]] = result
+                elif result.get("ai_status") and result.get("ai_status") != "model_unavailable":
+                    audit_data["ai_layout"]["decisions"].append({
+                        "page": page_num,
+                        "type": "classification_status",
+                        "paragraph_id": result.get("paragraph_id"),
+                        "status": result["ai_status"],
+                    })
+
         # Sort by top-to-bottom reading order (y0, then x0)
         flow_items.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
+
+        # Ask Gemma only about close, adjacent text blocks. Explicit heading,
+        # style, prefix, and delimiter rules still veto model boundary changes.
+        ai_boundary_by_item: Dict[str, bool] = {}
+        text_flow = [entry for entry in flow_items if entry["type"] == "text"]
+        boundary_candidates = []
+        for boundary_idx, (previous_item, current_item) in enumerate(zip(text_flow, text_flow[1:]), start=1):
+            previous_block = previous_item["data"]
+            current_block = current_item["data"]
+            previous_text = "".join(
+                span.get("text", "") for line in previous_block.get("lines", [])
+                for span in line.get("spans", [])
+            ).strip()
+            current_text = "".join(
+                span.get("text", "") for line in current_block.get("lines", [])
+                for span in line.get("spans", [])
+            ).strip()
+            previous_bbox, current_bbox = previous_item["bbox"], current_item["bbox"]
+            gap = current_bbox[1] - previous_bbox[3]
+            previous_tail = previous_text[-1] if previous_text else ""
+            indentation_change = abs(current_bbox[0] - previous_bbox[0]) >= 10.0
+            punctuation_conflict = previous_tail in {"，", ",", "：", ":", "；", ";", "…"}
+            near_gap_threshold = gap >= body_size * 1.5
+            if previous_text and current_text and 0 <= gap <= body_size * 2.2 and (indentation_change or punctuation_conflict or near_gap_threshold):
+                key = f"pdf-line-{page_num}-{boundary_idx}"
+                current_item["ai_boundary_key"] = key
+                boundary_candidates.append({
+                    "next_line_id": key,
+                    "previous_text": previous_text[:300],
+                    "next_text": current_text[:300],
+                    "vertical_gap": round(gap, 2),
+                    "indent_delta": round(current_bbox[0] - previous_bbox[0], 2),
+                })
+        if boundary_candidates:
+            try:
+                from src.scripts.gemma_layout_assistant import review_uncertain_boundaries
+                ai_boundary_by_item = review_uncertain_boundaries(boundary_candidates[:12])
+            except Exception:
+                ai_boundary_by_item = {}
+        ai_boundary_status = ai_boundary_by_item.pop("_status", None)
+        if ai_boundary_status and ai_boundary_status.get("status") != "ready":
+            audit_data["ai_layout"]["decisions"].append({
+                "page": page_num,
+                "type": "boundary_status",
+                **ai_boundary_status,
+            })
 
         for item in flow_items:
             itype = item["type"]
@@ -1118,6 +1222,19 @@ def _parse_pdf_layout_flow(
                             if not re.search(r'[的了在]$', clean_content):
                                 heading_level = 2
 
+            ai_review = ai_heading_by_block.get(id(bb))
+            ai_heading_applied = False
+            if (
+                not heading_level
+                and not _has_font_mapping
+                and not _is_ignored_font
+                and not is_toc_line
+                and ai_review
+                and ai_review.get("role") == "heading"
+            ):
+                heading_level = ai_review.get("level") or 0
+                ai_heading_applied = heading_level in (1, 2, 3)
+
             if heading_level > 0:
                 flush_current_para()
                 last_block_x0 = bbox[0]
@@ -1132,7 +1249,10 @@ def _parse_pdf_layout_flow(
                 audit_data["headings_detected"].append({
                     "page": page_num,
                     "level": f"H{heading_level}",
-                    "text": bb_text
+                    "text": bb_text,
+                    "source": "gemma" if ai_heading_applied else "deterministic",
+                    "confidence": ai_review.get("confidence") if ai_heading_applied else None,
+                    "reason": ai_review.get("reason", "") if ai_heading_applied else "",
                 })
                 # Custom style annotation: font mapping docx_style takes highest priority
                 custom_style = _block_docx_style or style_mapping.get(f"h{heading_level}")
@@ -1236,6 +1356,8 @@ def _parse_pdf_layout_flow(
             elif _has_font_mapping:
                 # 已明確映射為其他樣式者，不再觸發楷體規則
                 is_block_kaiti = False
+            elif ai_review and ai_review.get("source") == "gemma" and ai_review.get("role") == "quote":
+                is_block_kaiti = True
             else:
                 is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
             
@@ -1264,6 +1386,10 @@ def _parse_pdf_layout_flow(
 
             if current_para_lines:
                 should_flush = False
+                ai_boundary_override = ai_boundary_by_item.get(item.get("ai_boundary_key"))
+                is_unclosed_continuation = False
+                prev_is_heading_like = False
+                curr_clean = bb_text.strip()
                 # 1. 樣式/字體邊界（人工映射 Word 樣式或楷體不同）-> 強制分段
                 if is_block_kaiti != current_para_is_kaiti:
                     should_flush = True
@@ -1327,6 +1453,27 @@ def _parse_pdf_layout_flow(
                                 elif not is_hanging_indent_citation and (is_indented or curr_has_space_indent) and indent_jump and prev_block_was_short_line:
                                     # 6. 無終止標點但有明確首行縮排跳躍且前行未滿行 -> 容錯分段
                                     should_flush = True
+
+                    if (
+                        ai_boundary_override is not None
+                        and not is_unclosed_continuation
+                        and not prev_is_heading_like
+                        and not (curr_clean and _PARA_START_PREFIX_RE.match(curr_clean))
+                        and block_custom_style == current_para_custom_style
+                        and is_block_kaiti == current_para_is_kaiti
+                    ):
+                        ai_should_break = ai_boundary_override.get("should_break") if isinstance(ai_boundary_override, dict) else ai_boundary_override
+                        if type(ai_should_break) is bool:
+                            should_flush = ai_should_break
+                        audit_data["ai_layout"]["decisions"].append({
+                            "page": page_num,
+                            "type": "boundary",
+                            "source": "gemma",
+                            "previous": prev_clean[:120],
+                            "next": curr_clean[:120],
+                            "decision": "break" if should_flush else "merge",
+                            "confidence": ai_boundary_override.get("confidence") if isinstance(ai_boundary_override, dict) else None,
+                        })
 
                 if should_flush:
                     flush_current_para()

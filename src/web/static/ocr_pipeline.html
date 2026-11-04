@@ -287,6 +287,8 @@
                                 </legend>
                                 <div class="style-mapper-toolbar">
                                     <input type="search" id="styleMapperFilter" class="input" style="font-size: 0.78rem; padding: 4px 8px; margin-bottom: 6px;" placeholder="快速搜尋角色或樣式名稱…">
+                                    <button type="button" id="gemmaStyleSuggestBtn" class="btn btn-secondary btn-sm" style="margin-bottom: 6px;">Gemma 建議並預覽</button>
+                                    <div id="gemmaStyleSuggestStatus" class="hint" role="status" aria-live="polite" style="margin-bottom: 6px;"></div>
                                 </div>
                                 <div class="style-mapper-table-wrap">
                                     <table class="style-mapper-table" role="grid">
@@ -315,6 +317,11 @@
                                                 <td class="role-cell"><label for="h3Style">三級標題 (###)</label></td>
                                                 <td><select id="h3Style" name="h3_style" class="style-table-select"><option value="">(預設 Heading 3)</option></select></td>
                                                 <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="h3Style">預設</button></td>
+                                            </tr>
+                                            <tr data-role-label="正文">
+                                                <td class="role-cell"><label for="bodyStyle">正文</label></td>
+                                                <td><select id="bodyStyle" name="body_style" class="style-table-select"><option value="">(使用範本預設正文)</option></select></td>
+                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="bodyStyle">預設</button></td>
                                             </tr>
                                             <!-- 圖片標籤 -->
                                             <tr data-role-label="圖片標籤">
@@ -773,6 +780,7 @@
             h1Style: '(預設 Heading 1)',
             h2Style: '(預設 Heading 2)',
             h3Style: '(預設 Heading 3)',
+            bodyStyle: '(使用範本預設正文)',
             imageCaptionStyle: '(不套用自訂樣式)',
             kaitiStyle: '(不套用自訂樣式)'
         };
@@ -801,8 +809,44 @@
             }
         }
 
+        const gemmaStyleSuggestBtn = document.getElementById('gemmaStyleSuggestBtn');
+        const gemmaStyleSuggestStatus = document.getElementById('gemmaStyleSuggestStatus');
+        if (gemmaStyleSuggestBtn) {
+            gemmaStyleSuggestBtn.onclick = async () => {
+                gemmaStyleSuggestBtn.disabled = true;
+                gemmaStyleSuggestStatus.textContent = '正在讀取範本樣式並詢問本機 Gemma…';
+                try {
+                    const res = await fetch('/api/suggest_ocr_style_mapping', { method: 'POST' });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || '樣式建議失敗');
+                    if (data.status === 'ready') {
+                        const map = data.mapping || {};
+                        const selections = {
+                            h1Style: map.h1,
+                            h2Style: map.h2,
+                            h3Style: map.h3,
+                            bodyStyle: map.body,
+                            imageCaptionStyle: map.caption,
+                            kaitiStyle: map.quote
+                        };
+                        Object.entries(selections).forEach(([id, styleName]) => {
+                            const select = document.getElementById(id);
+                            if (select && styleName && [...select.options].some(option => option.value === styleName)) {
+                                select.value = styleName;
+                            }
+                        });
+                    }
+                    gemmaStyleSuggestStatus.textContent = data.message || '請檢查樣式對應後再開始整稿。';
+                } catch (err) {
+                    gemmaStyleSuggestStatus.textContent = `無法取得建議：${err.message}`;
+                } finally {
+                    gemmaStyleSuggestBtn.disabled = false;
+                }
+            };
+        }
+
         function populateStyleSelects(styles) {
-            const roleKeys = ['h1Style', 'h2Style', 'h3Style', 'imageCaptionStyle', 'kaitiStyle'];
+            const roleKeys = ['h1Style', 'h2Style', 'h3Style', 'bodyStyle', 'imageCaptionStyle', 'kaitiStyle'];
             roleKeys.forEach(id => {
                 const selectEl = document.getElementById(id);
                 if (!selectEl) return;
@@ -847,7 +891,7 @@
         const resetAllStylesBtn = document.getElementById('resetAllStylesBtn');
         if (resetAllStylesBtn) {
             resetAllStylesBtn.onclick = () => {
-                ['h1Style', 'h2Style', 'h3Style', 'imageCaptionStyle', 'kaitiStyle'].forEach(id => {
+                ['h1Style', 'h2Style', 'h3Style', 'bodyStyle', 'imageCaptionStyle', 'kaitiStyle'].forEach(id => {
                     const sel = document.getElementById(id);
                     if (sel) sel.value = '';
                 });
@@ -1127,13 +1171,15 @@
             const h1Style = document.getElementById('h1Style')?.value;
             const h2Style = document.getElementById('h2Style')?.value;
             const h3Style = document.getElementById('h3Style')?.value;
+            const bodyStyle = document.getElementById('bodyStyle')?.value;
             const imageCaptionStyle = document.getElementById('imageCaptionStyle')?.value;
             const kaitiStyle = document.getElementById('kaitiStyle')?.value;
-            if (h1Style || h2Style || h3Style || imageCaptionStyle || kaitiStyle) {
+            if (h1Style || h2Style || h3Style || bodyStyle || imageCaptionStyle || kaitiStyle) {
                 formData.append('style_mapping', JSON.stringify({
                     h1: h1Style,
                     h2: h2Style,
                     h3: h3Style,
+                    body: bodyStyle,
                     image_caption: imageCaptionStyle,
                     kaiti: kaitiStyle
                 }));

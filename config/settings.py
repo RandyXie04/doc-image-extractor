@@ -187,6 +187,7 @@ class _Config:
     ollama_host:         str   = field(default_factory=lambda: os.getenv("OLLAMA_HOST", "http://localhost:11434"))
     ollama_model:        str   = field(default_factory=lambda: os.getenv("OLLAMA_MODEL", "qwen3.5:4b"))
     ollama_text_model:   str   = field(default_factory=lambda: os.getenv("OLLAMA_TEXT_MODEL", "qwen3.5:4b"))
+    ai_layout_model:     str   = field(default_factory=lambda: os.getenv("AI_LAYOUT_MODEL", "gemma4:e4b"))
     ollama_num_ctx:      int   = field(default_factory=lambda: int(os.getenv("OLLAMA_NUM_CTX", "16384")))
     ollama_keep_alive:   str   = field(default_factory=lambda: os.getenv("OLLAMA_KEEP_ALIVE", "10m"))
     

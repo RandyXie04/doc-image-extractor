@@ -435,6 +435,7 @@ def reconstruct_page_paragraphs(
     lines: List[LineRecord],
     page_geo: PageGeometry,
     standard_pitch: Optional[float] = None,
+    boundary_overrides: Optional[Dict[str, Any]] = None,
 ) -> List[ParagraphRecord]:
     """
     Reconstructs semantic paragraphs for a single PDF page in deterministic order.
@@ -517,6 +518,16 @@ def reconstruct_page_paragraphs(
             standard_pitch=resolved_pitch,
             unclosed_stack=delimiter_stack,
         )
+
+        # Model reviews are accepted only for deterministic boundaries at or
+        # below the uncertainty threshold; strong geometric/delimiter evidence
+        # remains authoritative.
+        if boundary_overrides and line.line_id in boundary_overrides and evidence.confidence <= 0.80:
+            override = boundary_overrides[line.line_id]
+            should_break = override.get("should_break") if isinstance(override, dict) else override
+            if type(should_break) is bool:
+                evidence.should_break = should_break
+                evidence.reasons.append("AI_REVIEW: uncertain boundary adjudicated")
 
         if evidence.should_break:
             flush_current_paragraph(boundary_before=True, boundary_after=evidence)

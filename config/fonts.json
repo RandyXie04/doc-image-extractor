@@ -322,5 +322,20 @@
     "role": null,
     "docx_style": "Normal",
     "mapped_by": "user"
+  },
+  "FZDBSK--GBK1-0 (17.0pt)": {
+    "role": "H1",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (11.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZFSK--GBK1-0 (10.0pt)": {
+    "role": "楷體",
+    "docx_style": null,
+    "mapped_by": "user"
   }
 }
