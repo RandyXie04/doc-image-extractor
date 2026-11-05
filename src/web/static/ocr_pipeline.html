@@ -199,8 +199,8 @@
                     <div class="inspector-accordion" id="tierAdvancedAccordion">
                         <button type="button" class="accordion-trigger" id="tierAdvancedTrigger" aria-expanded="false" aria-controls="tierAdvancedContent">
                             <div class="trigger-label">
-                                <span class="trigger-title">進階版面與樣式設定</span>
-                                <span class="trigger-summary" id="advancedSummaryText">裁切邊界 · 頁碼範圍 · 樣式對應</span>
+                                <span class="trigger-title">進階版面與裁切設定</span>
+                                <span class="trigger-summary" id="advancedSummaryText">裁切邊界 · 頁碼範圍</span>
                             </div>
                             <span class="chevron-icon" aria-hidden="true">▼</span>
                         </button>
@@ -276,67 +276,6 @@
                                         <input type="range" id="rightSlider" min="0" max="0.30" step="0.01" value="0.00" data-dir="right">
                                         <input type="number" id="rightNumInput" name="right_ratio" class="crop-num-input" min="0" max="0.30" step="0.01" value="0.00" data-dir="right" aria-label="右側邊距比率">
                                     </div>
-                                </div>
-                            </fieldset>
-
-                            <!-- 2C. 表格化 Word 樣式對應器 (保留原始 ID，保證向下相容) -->
-                            <fieldset class="sub-panel" id="styleMappingSection">
-                                <legend class="sub-panel-title">
-                                    <span>Word 樣式角色對應</span>
-                                    <button type="button" id="resetAllStylesBtn" class="btn-link-xs">重設為預設樣式</button>
-                                </legend>
-                                <div class="style-mapper-toolbar">
-                                    <input type="search" id="styleMapperFilter" class="input" style="font-size: 0.78rem; padding: 4px 8px; margin-bottom: 6px;" placeholder="快速搜尋角色或樣式名稱…">
-                                    <button type="button" id="gemmaStyleSuggestBtn" class="btn btn-secondary btn-sm" style="margin-bottom: 6px;">Gemma 建議並預覽</button>
-                                    <div id="gemmaStyleSuggestStatus" class="hint" role="status" aria-live="polite" style="margin-bottom: 6px;"></div>
-                                </div>
-                                <div class="style-mapper-table-wrap">
-                                    <table class="style-mapper-table" role="grid">
-                                        <thead>
-                                            <tr>
-                                                <th style="width: 38%;">PDF 內容角色</th>
-                                                <th style="width: 44%;">對應 Word 樣式</th>
-                                                <th style="width: 18%; text-align: center;">操作</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="tabularStyleMapperMount">
-                                            <!-- 一級標題 -->
-                                            <tr data-role-label="一級標題">
-                                                <td class="role-cell"><label for="h1Style">一級標題 (#)</label></td>
-                                                <td><select id="h1Style" name="h1_style" class="style-table-select"><option value="">(預設 Heading 1)</option></select></td>
-                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="h1Style">預設</button></td>
-                                            </tr>
-                                            <!-- 二級標題 -->
-                                            <tr data-role-label="二級標題">
-                                                <td class="role-cell"><label for="h2Style">二級標題 (##)</label></td>
-                                                <td><select id="h2Style" name="h2_style" class="style-table-select"><option value="">(預設 Heading 2)</option></select></td>
-                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="h2Style">預設</button></td>
-                                            </tr>
-                                            <!-- 三級標題 -->
-                                            <tr data-role-label="三級標題">
-                                                <td class="role-cell"><label for="h3Style">三級標題 (###)</label></td>
-                                                <td><select id="h3Style" name="h3_style" class="style-table-select"><option value="">(預設 Heading 3)</option></select></td>
-                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="h3Style">預設</button></td>
-                                            </tr>
-                                            <tr data-role-label="正文">
-                                                <td class="role-cell"><label for="bodyStyle">正文</label></td>
-                                                <td><select id="bodyStyle" name="body_style" class="style-table-select"><option value="">(使用範本預設正文)</option></select></td>
-                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="bodyStyle">預設</button></td>
-                                            </tr>
-                                            <!-- 圖片標籤 -->
-                                            <tr data-role-label="圖片標籤">
-                                                <td class="role-cell"><label for="imageCaptionStyle">圖片標籤</label></td>
-                                                <td><select id="imageCaptionStyle" name="image_caption_style" class="style-table-select"><option value="">(不套用自訂樣式)</option></select></td>
-                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="imageCaptionStyle">預設</button></td>
-                                            </tr>
-                                            <!-- 楷體/引言 -->
-                                            <tr data-role-label="楷體引言">
-                                                <td class="role-cell"><label for="kaitiStyle">楷體 / 引言</label></td>
-                                                <td><select id="kaitiStyle" name="kaiti_style" class="style-table-select"><option value="">(不套用自訂樣式)</option></select></td>
-                                                <td style="text-align: center;"><button type="button" class="btn-reset-row" data-target="kaitiStyle">預設</button></td>
-                                            </tr>
-                                        </tbody>
-                                    </table>
                                 </div>
                             </fieldset>
                         </div>
@@ -429,24 +368,37 @@
              字體 → 樣式 審閱 Modal (Fluent 2 DataGrid)
              ══════════════════════════════════════════════════════ -->
         <div class="modal-overlay" id="fontModalOverlay" role="dialog" aria-modal="true" aria-labelledby="fontModalTitle">
-            <div class="modal" style="max-width: 760px; width: 92%;">
-                <h2 id="fontModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary, #242424);">字體樣式對應審閱</h2>
-                <p class="hint" style="margin: 0 0 0.75rem 0; font-size: 0.85rem;">
-                    以下為本 PDF 中偵測到的字體。請為每種字體指定對應的 Word 樣式角色；確認後儲存至 fonts.json，下次整稿時將自動套用。
-                </p>
+            <div class="modal" style="max-width: 980px; width: 95%;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 0.5rem;">
+                    <div>
+                        <h2 id="fontModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary, #242424); margin: 0;">審閱 PDF 字體與編碼角色</h2>
+                        <p class="hint" style="margin: 4px 0 0 0; font-size: 0.84rem;">
+                            以下為本 PDF 偵測到的字體群組摘要。您可按需點擊「Gemma 智慧建議」取得角色與 DOCX 範本樣式建議，覆核或調整後點擊「確認套用」儲存至 fonts.json。
+                        </p>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <button type="button" class="btn btn-secondary btn-sm" id="gemmaFontSuggestBtn">
+                            ✨ Gemma 智慧建議 (8K)
+                        </button>
+                    </div>
+                </div>
+                <div id="gemmaFontSuggestBanner" class="hint" role="status" aria-live="polite" style="margin-bottom: 0.6rem; padding: 6px 10px; border-radius: 4px; background: var(--f2-color-surface-secondary, #f8fafc); border: 1px solid var(--f2-color-border-subtle, #e5e7eb); font-size: 0.82rem;">
+                    狀態：Gemma 尚未參與（目前顯示規則預選與既有設定，可點擊右上角按鈕按需執行建議）
+                </div>
                 <div class="modal-body" style="max-height: 58vh; overflow-y: auto;">
                     <table class="data-table" id="fontTable">
                         <thead>
                             <tr>
-                                <th style="width: 28%;">字體名稱</th>
-                                <th style="width: 14%;">字級</th>
-                                <th style="width: 32%;">範例文字</th>
-                                <th style="width: 26%;">對應樣式角色</th>
+                                <th style="width: 22%;">字體名稱與字級</th>
+                                <th style="width: 14%;">頻率与版面分布</th>
+                                <th style="width: 24%;">範例文字</th>
+                                <th style="width: 20%;">Gemma 建議與理由</th>
+                                <th style="width: 20%;">對應樣式角色</th>
                             </tr>
                         </thead>
                         <tbody id="fontTableBody">
                             <tr>
-                                <td colspan="4" class="cell-empty">正在分析字體，請稍候…</td>
+                                <td colspan="5" class="cell-empty">正在分析字體，請稍候…</td>
                             </tr>
                         </tbody>
                     </table>
@@ -774,16 +726,44 @@
         const cropManager = new CropStateManager();
 
         // ══════════════════════════════════════════════════════
-        // 4. 表格化 Word 樣式對應器 (TabularStyleMapper)
+        // 4. Word 範本載入與內部角色樣式相容 Fallback (由字體審閱表統一覆核)
         // ══════════════════════════════════════════════════════
-        const STYLE_ROLE_DEFAULTS = {
-            h1Style: '(預設 Heading 1)',
-            h2Style: '(預設 Heading 2)',
-            h3Style: '(預設 Heading 3)',
-            bodyStyle: '(使用範本預設正文)',
-            imageCaptionStyle: '(不套用自訂樣式)',
-            kaitiStyle: '(不套用自訂樣式)'
+        const STYLE_ROLE_FALLBACK_DEFAULTS = {
+            h1: '',
+            h2: '',
+            h3: '',
+            body: '',
+            image_caption: '',
+            kaiti: ''
         };
+        let _confirmedRoleStyleMap = { ...STYLE_ROLE_FALLBACK_DEFAULTS };
+
+        function syncConfirmedRoleStylesFromFontMapping(mappingObj) {
+            const nextMap = { ...STYLE_ROLE_FALLBACK_DEFAULTS };
+            const roleKeyMap = {
+                'h1': 'h1',
+                'h2': 'h2',
+                'h3': 'h3',
+                '正文': 'body',
+                '內文': 'body',
+                'body': 'body',
+                '圖說': 'image_caption',
+                '图说': 'image_caption',
+                'caption': 'image_caption',
+                '楷體': 'kaiti',
+                '楷体': 'kaiti',
+                'kaiti': 'kaiti'
+            };
+            Object.values(mappingObj || {}).forEach(entry => {
+                if (!entry || !entry.docx_style) return;
+                const r = String(entry.role || '').trim().toLowerCase();
+                const targetKey = roleKeyMap[r];
+                if (targetKey && !nextMap[targetKey]) {
+                    nextMap[targetKey] = entry.docx_style;
+                }
+            });
+            _confirmedRoleStyleMap = nextMap;
+        }
 
         async function loadCurrentTemplate() {
             try {
@@ -802,101 +782,10 @@
                 const data = await res.json();
                 if (data.status === 'success' && data.styles && data.styles.length > 0) {
                     availableTemplateStyles = data.styles;
-                    populateStyleSelects(availableTemplateStyles);
                 }
             } catch (err) {
                 console.error("無法取得樣式", err);
             }
-        }
-
-        const gemmaStyleSuggestBtn = document.getElementById('gemmaStyleSuggestBtn');
-        const gemmaStyleSuggestStatus = document.getElementById('gemmaStyleSuggestStatus');
-        if (gemmaStyleSuggestBtn) {
-            gemmaStyleSuggestBtn.onclick = async () => {
-                gemmaStyleSuggestBtn.disabled = true;
-                gemmaStyleSuggestStatus.textContent = '正在讀取範本樣式並詢問本機 Gemma…';
-                try {
-                    const res = await fetch('/api/suggest_ocr_style_mapping', { method: 'POST' });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data.detail || '樣式建議失敗');
-                    if (data.status === 'ready') {
-                        const map = data.mapping || {};
-                        const selections = {
-                            h1Style: map.h1,
-                            h2Style: map.h2,
-                            h3Style: map.h3,
-                            bodyStyle: map.body,
-                            imageCaptionStyle: map.caption,
-                            kaitiStyle: map.quote
-                        };
-                        Object.entries(selections).forEach(([id, styleName]) => {
-                            const select = document.getElementById(id);
-                            if (select && styleName && [...select.options].some(option => option.value === styleName)) {
-                                select.value = styleName;
-                            }
-                        });
-                    }
-                    gemmaStyleSuggestStatus.textContent = data.message || '請檢查樣式對應後再開始整稿。';
-                } catch (err) {
-                    gemmaStyleSuggestStatus.textContent = `無法取得建議：${err.message}`;
-                } finally {
-                    gemmaStyleSuggestBtn.disabled = false;
-                }
-            };
-        }
-
-        function populateStyleSelects(styles) {
-            const roleKeys = ['h1Style', 'h2Style', 'h3Style', 'bodyStyle', 'imageCaptionStyle', 'kaitiStyle'];
-            roleKeys.forEach(id => {
-                const selectEl = document.getElementById(id);
-                if (!selectEl) return;
-                const defaultLabel = STYLE_ROLE_DEFAULTS[id];
-                const currentVal = selectEl.value;
-                let html = `<option value="">${defaultLabel}</option>`;
-                styles.forEach(s => {
-                    const isSelected = s === currentVal ? 'selected' : '';
-                    html += `<option value="${toolbox.escape(s)}" ${isSelected}>${toolbox.escape(s)}</option>`;
-                });
-                selectEl.innerHTML = html;
-            });
-        }
-
-        // 樣式快速搜尋過濾
-        const styleFilterInput = document.getElementById('styleMapperFilter');
-        if (styleFilterInput) {
-            styleFilterInput.addEventListener('input', (e) => {
-                const q = e.target.value.trim().toLowerCase();
-                document.querySelectorAll('#tabularStyleMapperMount tr').forEach(row => {
-                    const label = row.dataset.roleLabel || '';
-                    const select = row.querySelector('select');
-                    const selectedVal = select ? select.value.toLowerCase() : '';
-                    const isMatch = !q || label.includes(q) || selectedVal.includes(q);
-                    row.style.display = isMatch ? '' : 'none';
-                });
-            });
-        }
-
-        // 單列重設與全部重設按鈕
-        document.querySelectorAll('.btn-reset-row').forEach(btn => {
-            btn.onclick = () => {
-                const targetId = btn.dataset.target;
-                const selectEl = document.getElementById(targetId);
-                if (selectEl) {
-                    selectEl.value = '';
-                    toolbox.notify(`已重設 ${targetId} 為預設樣式`, 'info', 2000);
-                }
-            };
-        });
-
-        const resetAllStylesBtn = document.getElementById('resetAllStylesBtn');
-        if (resetAllStylesBtn) {
-            resetAllStylesBtn.onclick = () => {
-                ['h1Style', 'h2Style', 'h3Style', 'bodyStyle', 'imageCaptionStyle', 'kaitiStyle'].forEach(id => {
-                    const sel = document.getElementById(id);
-                    if (sel) sel.value = '';
-                });
-                toolbox.notify('已重設所有標題與角色為預設樣式', 'info', 2500);
-            };
         }
 
         templateInput.onchange = async (e) => {
@@ -1168,20 +1057,15 @@
                 formData.append('file', currentFile);
             }
 
-            const h1Style = document.getElementById('h1Style')?.value;
-            const h2Style = document.getElementById('h2Style')?.value;
-            const h3Style = document.getElementById('h3Style')?.value;
-            const bodyStyle = document.getElementById('bodyStyle')?.value;
-            const imageCaptionStyle = document.getElementById('imageCaptionStyle')?.value;
-            const kaitiStyle = document.getElementById('kaitiStyle')?.value;
-            if (h1Style || h2Style || h3Style || bodyStyle || imageCaptionStyle || kaitiStyle) {
+            const { h1, h2, h3, body, image_caption, kaiti } = _confirmedRoleStyleMap;
+            if (h1 || h2 || h3 || body || image_caption || kaiti) {
                 formData.append('style_mapping', JSON.stringify({
-                    h1: h1Style,
-                    h2: h2Style,
-                    h3: h3Style,
-                    body: bodyStyle,
-                    image_caption: imageCaptionStyle,
-                    kaiti: kaitiStyle
+                    h1,
+                    h2,
+                    h3,
+                    body,
+                    image_caption,
+                    kaiti
                 }));
             }
 
@@ -1523,19 +1407,27 @@
         const fontModalConfirmBtn = document.getElementById('fontModalConfirmBtn');
         const fontModalCancelBtn = document.getElementById('fontModalCancelBtn');
         const fontMappingSaveStatus = document.getElementById('fontMappingSaveStatus');
+        const gemmaFontSuggestBtn = document.getElementById('gemmaFontSuggestBtn');
+        const gemmaFontSuggestBanner = document.getElementById('gemmaFontSuggestBanner');
 
         let _docxStyleList = [];
+        let _docxStyleProfiles = [];
         let _defaultRoles = ['H1', 'H2', 'H3', '圖說', '楷體', '正文', '忽略'];
         let _fontData = [];
+        let _gemmaSuggestions = {};
 
         analyzeFontsBtn.addEventListener('click', async () => {
             if (!currentFileId) {
                 toolbox.notify('請先上傳 PDF 檔案', 'warning');
                 return;
             }
-            fontTableBody.innerHTML = '<tr><td colspan="4" class="cell-empty">正在掃描字體，請稍候…</td></tr>';
+            fontTableBody.innerHTML = '<tr><td colspan="5" class="cell-empty">正在掃描字體，請稍候…</td></tr>';
             fontModalOverlay.classList.add('open');
             fontMappingSaveStatus.textContent = '';
+            _gemmaSuggestions = {};
+            if (gemmaFontSuggestBanner) {
+                gemmaFontSuggestBanner.textContent = '狀態：Gemma 尚未參與（目前顯示規則預選與既有設定，可點擊右上角按鈕按需執行建議）';
+            }
 
             try {
                 const resp = await fetch('/api/scan_fonts', {
@@ -1554,24 +1446,106 @@
                 const data = window.OcrContracts ? window.OcrContracts.assertFontScanContract(raw) : raw;
                 _fontData = data.fonts || [];
                 _docxStyleList = data.docx_styles || [];
+                _docxStyleProfiles = data.docx_style_profiles || [];
                 _defaultRoles = data.default_roles || _defaultRoles;
-                renderFontTable(_fontData, _docxStyleList, _defaultRoles);
+                const initialMap = {};
+                _fontData.forEach(f => {
+                    if (f.current_docx_style || (f.current_role && f.current_role !== 'auto')) {
+                        initialMap[f.name] = { role: f.current_role !== 'auto' ? f.current_role : f.suggested_role, docx_style: f.current_docx_style };
+                    }
+                });
+                syncConfirmedRoleStylesFromFontMapping(initialMap);
+                renderFontTable(_fontData, _docxStyleList, _defaultRoles, _gemmaSuggestions);
             } catch (e) {
-                fontTableBody.innerHTML = `<tr><td colspan="4" class="cell-empty" style="color:var(--danger)">字體掃描失敗：${toolbox.escape(e.message)}</td></tr>`;
+                fontTableBody.innerHTML = `<tr><td colspan="5" class="cell-empty" style="color:var(--danger)">字體掃描失敗：${toolbox.escape(e.message)}</td></tr>`;
             }
         });
+
+        const GEMMA_STATUS_CATEGORY_LABELS = {
+            ready: '建議完成',
+            low_confidence: '低信心回退',
+            no_suggestions: '無有效建議',
+            ollama_unavailable: '服務未連線 (回退規則)',
+            model_unavailable: '模型未安裝 (回退規則)',
+            timeout: '推論逾時 (回退規則)',
+            inference_failed: '推論失敗 (回退規則)',
+            request_error: '請求錯誤'
+        };
+
+        if (gemmaFontSuggestBtn) {
+            gemmaFontSuggestBtn.onclick = async () => {
+                if (!_fontData.length) {
+                    toolbox.notify('目前沒有可分析的字體群組', 'warning');
+                    return;
+                }
+                gemmaFontSuggestBtn.disabled = true;
+                if (gemmaFontSuggestBanner) {
+                    gemmaFontSuggestBanner.dataset.gemmaStatus = 'running';
+                    gemmaFontSuggestBanner.dataset.gemmaOutcome = 'pending';
+                    gemmaFontSuggestBanner.textContent = '狀態：正在排隊等待 GPU 資源並由本機 Gemma (8K context) 批次分析字體與範本樣式…';
+                }
+                try {
+                    const resp = await fetch('/api/suggest_font_mappings', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            file_id: currentFileId,
+                            filename_orig: currentFileOrigName ? currentFileOrigName + '.pdf' : '',
+                            fonts: _fontData,
+                            docx_style_profiles: _docxStyleProfiles
+                        })
+                    });
+                    const data = await resp.json();
+                    if (!resp.ok) throw new Error(data.detail || 'Gemma 建議請求失敗');
+
+                    _gemmaSuggestions = data.suggestions || {};
+                    const gemmaStatus = data.status || 'inference_failed';
+                    const gemmaOutcome = data.outcome || (gemmaStatus === 'ready' ? 'success' : 'fallback');
+                    const statusCategory = GEMMA_STATUS_CATEGORY_LABELS[gemmaStatus] || gemmaStatus;
+                    if (gemmaFontSuggestBanner) {
+                        gemmaFontSuggestBanner.dataset.gemmaStatus = gemmaStatus;
+                        gemmaFontSuggestBanner.dataset.gemmaOutcome = gemmaOutcome;
+                        gemmaFontSuggestBanner.textContent = `狀態 [${statusCategory}]：${data.message || 'Gemma 分析完成'}`;
+                    }
+                    // Apply high-confidence Gemma suggestions as pre-selections for unmapped ("auto") rows
+                    _fontData.forEach(f => {
+                        const sug = _gemmaSuggestions[f.name];
+                        if (!sug) return;
+                        const isCurrentlyAuto = (!f.current_role || f.current_role === 'auto') && !f.current_docx_style;
+                        if (isCurrentlyAuto && sug.status === 'suggested') {
+                            if (sug.docx_style && _docxStyleList.includes(sug.docx_style)) {
+                                f.preselected_docx_style = sug.docx_style;
+                                f.preselected_role = sug.role || null;
+                            } else if (sug.role && _defaultRoles.includes(sug.role)) {
+                                f.preselected_role = sug.role;
+                                f.preselected_docx_style = null;
+                            }
+                        }
+                    });
+                    renderFontTable(_fontData, _docxStyleList, _defaultRoles, _gemmaSuggestions);
+                } catch (err) {
+                    if (gemmaFontSuggestBanner) {
+                        gemmaFontSuggestBanner.dataset.gemmaStatus = 'inference_failed';
+                        gemmaFontSuggestBanner.dataset.gemmaOutcome = 'failed';
+                        gemmaFontSuggestBanner.textContent = `狀態 [推論失敗 (回退規則)]：Gemma 推論失敗 (${err.message})；已保留既有規則結果與人工覆核。`;
+                    }
+                } finally {
+                    gemmaFontSuggestBtn.disabled = false;
+                }
+            };
+        }
 
         function buildStyleOptions(styleList, roles, currentRole, currentDocxStyle, suggestedRole) {
             const allOptions = [];
             const isAuto = (!currentRole && !currentDocxStyle) || currentRole === 'auto' || currentRole === '自動';
-            const autoLabel = suggestedRole ? `自動 (字名推薦: ${toolbox.escape(suggestedRole)})` : '自動（依版面與章節規則辨識）';
+            const autoLabel = suggestedRole ? `自動 (規則推薦: ${toolbox.escape(suggestedRole)})` : '自動（依版面與章節規則辨識）';
             allOptions.push(`<option value="auto"${isAuto ? ' selected' : ''}>${autoLabel}</option>`);
 
             const filteredRoles = (roles || []).filter(r => r !== 'auto' && r !== '自動');
             if (filteredRoles.length) {
                 allOptions.push('<optgroup label="版面角色">');
                 for (const r of filteredRoles) {
-                    const sel = (!isAuto && currentRole === r) ? ' selected' : '';
+                    const sel = (!isAuto && !currentDocxStyle && currentRole === r) ? ' selected' : '';
                     let label = r;
                     if (r === '忽略') label = '忽略（強制排除，不作為標題/楷體）';
                     else if (r === '正文') label = '正文（強制為內文段落）';
@@ -1592,19 +1566,59 @@
             return allOptions.join('');
         }
 
-        function renderFontTable(fonts, styles, roles) {
+        function formatGemmaSuggestionCell(font, sug) {
+            if (!sug) {
+                return '<span class="hint" style="font-size:0.78rem;">Gemma 未參與</span>';
+            }
+            const statusLabels = {
+                suggested: 'Gemma 建議',
+                low_confidence: '低信心建議',
+                no_suggestion: '無建議',
+                failed: '推論失敗',
+                not_participated: 'Gemma 未參與'
+            };
+            const label = statusLabels[sug.status] || 'Gemma 狀態';
+            const confText = (typeof sug.confidence === 'number') ? ` (${Math.round(sug.confidence * 100)}%)` : '';
+            const targetParts = [];
+            if (sug.role) targetParts.push(`角色: ${toolbox.escape(sug.role)}`);
+            if (sug.docx_style) targetParts.push(`樣式: ${toolbox.escape(sug.docx_style)}`);
+            const targetLine = targetParts.length ? `<div style="font-weight:600; font-size:0.8rem; margin-top:2px;">${targetParts.join(' · ')}</div>` : '';
+            const reasonLine = sug.reason ? `<div class="hint" style="font-size:0.76rem; margin-top:2px;">${toolbox.escape(sug.reason)}</div>` : '';
+            return `<div>
+                <span class="badge" style="font-size:0.74rem;">${toolbox.escape(label)}${toolbox.escape(confText)}</span>
+                ${targetLine}
+                ${reasonLine}
+            </div>`;
+        }
+
+        function renderFontTable(fonts, styles, roles, suggestions = {}) {
             if (!fonts.length) {
-                fontTableBody.innerHTML = '<tr><td colspan="4" class="cell-empty">未偵測到任何內嵌字體資訊</td></tr>';
+                fontTableBody.innerHTML = '<tr><td colspan="5" class="cell-empty">未偵測到任何內嵌字體資訊</td></tr>';
                 return;
             }
+            const zoneLabels = { top: '頁頂', middle: '版心', bottom: '頁底' };
             const rows = fonts.map((f, idx) => {
                 const samples = (f.sample_texts || []).slice(0, 2).join(' / ');
-                const opts = buildStyleOptions(styles, roles, f.current_role, f.current_docx_style, f.suggested_role);
-                const sugBadge = f.suggested_role ? `<span class="badge" style="margin-left:6px;font-size:0.75rem;opacity:0.85;">${toolbox.escape(f.suggested_role)}</span>` : '';
+                const effectiveRole = f.preselected_role || f.current_role;
+                const effectiveStyle = f.preselected_docx_style || f.current_docx_style;
+                const opts = buildStyleOptions(styles, roles, effectiveRole, effectiveStyle, f.suggested_role);
+                const sugBadge = f.suggested_role ? `<span class="badge" style="margin-left:6px;font-size:0.74rem;opacity:0.85;">規則: ${toolbox.escape(f.suggested_role)}</span>` : '';
+                const occ = f.occurrence_count || 0;
+                const pages = f.page_count || 0;
+                const pos = f.position_summary || {};
+                const zone = zoneLabels[pos.dominant_zone] || '版心';
+                const gemmaCell = formatGemmaSuggestionCell(f, suggestions[f.name]);
                 return `<tr>
-                    <td class="cell-mono">${toolbox.escape(f.name)}${sugBadge}</td>
-                    <td><span class="badge">${toolbox.escape(f.size_pt)} pt</span></td>
+                    <td class="cell-mono">
+                        <div>${toolbox.escape(f.name)}</div>
+                        <div style="margin-top:4px;"><span class="badge">${toolbox.escape(f.size_pt)} pt</span>${sugBadge}</div>
+                    </td>
+                    <td style="font-size:0.78rem;">
+                        <div>出現 <strong>${toolbox.escape(occ)}</strong> 次 / ${toolbox.escape(pages)} 頁</div>
+                        <div class="hint" style="font-size:0.74rem;">主要分布：${toolbox.escape(zone)}</div>
+                    </td>
                     <td class="cell-sample">${toolbox.escape(samples)}</td>
+                    <td>${gemmaCell}</td>
                     <td>
                         <select class="input font-role-select" data-font-name="${toolbox.escape(f.name)}" data-idx="${idx}">
                             ${opts}
@@ -1636,12 +1650,24 @@
                     mapping[fontName] = { role: val.slice(6), docx_style: null };
                 } else if (val.startsWith('style::')) {
                     const docxStyle = val.slice(7);
-                    let role = null;
-                    if (/標題\s*1|heading\s*1/i.test(docxStyle)) role = 'H1';
-                    else if (/標題\s*2|heading\s*2/i.test(docxStyle)) role = 'H2';
-                    else if (/標題\s*3|heading\s*3/i.test(docxStyle)) role = 'H3';
-                    else if (/圖說|caption/i.test(docxStyle)) role = '圖說';
-                    else if (/楷/i.test(docxStyle)) role = '楷體';
+                    const sug = _gemmaSuggestions[fontName];
+                    let role = (sug && sug.docx_style === docxStyle && sug.role) ? sug.role : null;
+                    if (!role) {
+                        const prof = (_docxStyleProfiles || []).find(p => p && p.name === docxStyle);
+                        if (prof && prof.outline_level === 1) role = 'H1';
+                        else if (prof && prof.outline_level === 2) role = 'H2';
+                        else if (prof && prof.outline_level === 3) role = 'H3';
+                        else if (/標題\s*1|heading\s*1/i.test(docxStyle)) role = 'H1';
+                        else if (/標題\s*2|heading\s*2/i.test(docxStyle)) role = 'H2';
+                        else if (/標題\s*3|heading\s*3/i.test(docxStyle)) role = 'H3';
+                        else if (/圖說|图说|caption/i.test(docxStyle)) role = '圖說';
+                        else if (/楷|kai/i.test(docxStyle)) role = '楷體';
+                        else if (/正文|內文|normal|body/i.test(docxStyle)) role = '正文';
+                        else {
+                            const fItem = (_fontData || []).find(f => f && f.name === fontName);
+                            if (fItem && fItem.suggested_role) role = fItem.suggested_role;
+                        }
+                    }
                     mapping[fontName] = { role, docx_style: docxStyle };
                 }
             });
@@ -1662,6 +1688,7 @@
                 });
                 const result = await resp.json();
                 if (resp.ok) {
+                    syncConfirmedRoleStylesFromFontMapping(mapping);
                     fontMappingSaveStatus.textContent = `${result.message || '儲存成功'}，整稿時將自動套用。`;
                     toolbox.notify('字體樣式對應已儲存', 'success');
                     setTimeout(() => fontModalOverlay.classList.remove('open'), 1200);

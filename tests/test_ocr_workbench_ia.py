@@ -58,15 +58,12 @@ class TestOcrWorkbenchIA(unittest.TestCase):
             "leftNumInput",
             "rightSlider",
             "rightNumInput",
-            # Style mapper roles
-            "h1Style",
-            "h2Style",
-            "h3Style",
-            "imageCaptionStyle",
-            "kaitiStyle",
-            # Buttons & Status
+            # Buttons & Font Review Modal controls
             "submitBtn",
             "analyzeFontsBtn",
+            "fontModalOverlay",
+            "fontTableBody",
+            "fontModalConfirmBtn",
             # Compatibility label anchors
             "headerValLabel",
             "footerValLabel",
@@ -76,6 +73,23 @@ class TestOcrWorkbenchIA(unittest.TestCase):
 
         for elem_id in required_ids:
             self.assertIn(f'id="{elem_id}"', self.html_content, f"Missing critical element ID: {elem_id}")
+
+        # Independent "Word 樣式角色對應" UI panel and duplicate Gemma style suggest controls must be removed;
+        # role & DOCX style review is unified in Font Review Modal with internal fallback preserved.
+        for removed_id in (
+            "styleMappingSection",
+            "tabularStyleMapperMount",
+            "resetAllStylesBtn",
+            "styleMapperFilter",
+            "gemmaStyleSuggestBtn",
+        ):
+            self.assertNotIn(f'id="{removed_id}"', self.html_content, f"Redundant style UI element should be removed: {removed_id}")
+        self.assertNotIn("/api/suggest_ocr_style_mapping", self.html_content)
+        self.assertIn('id="gemmaFontSuggestBtn"', self.html_content)
+        self.assertIn('id="gemmaFontSuggestBanner"', self.html_content)
+        self.assertIn("/api/suggest_font_mappings", self.html_content)
+        self.assertIn("STYLE_ROLE_FALLBACK_DEFAULTS", self.html_content)
+        self.assertIn("syncConfirmedRoleStylesFromFontMapping", self.html_content)
 
     def test_workflow_stepper_and_pipeline_stages(self):
         """Verify 4-step workflow stepper and 6-stage semantic pipeline elements are present."""

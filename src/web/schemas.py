@@ -135,14 +135,20 @@ class FontInfoItem(StrictApiSchema):
     name: str
     full_name: str
     size_pt: float
+    occurrence_count: int = Field(default=0, ge=0)
+    page_count: int = Field(default=0, ge=0)
+    position_summary: Dict[str, Any] = Field(default_factory=dict)
     sample_texts: List[str] = Field(default_factory=list)
     current_role: Optional[str] = "auto"
     current_docx_style: Optional[str] = None
+    suggested_role: Optional[str] = None
+    gemma_status: Optional[str] = "not_run"
 
 
 class FontScanResponse(StrictApiSchema):
     fonts: List[FontInfoItem]
     docx_styles: List[str] = Field(default_factory=list)
+    docx_style_profiles: List[Dict[str, Any]] = Field(default_factory=list)
     default_roles: List[str] = Field(default_factory=list)
 
 

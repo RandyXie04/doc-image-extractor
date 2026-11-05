@@ -105,14 +105,20 @@ export interface FontInfoItem {
   readonly name: string;
   readonly full_name: string;
   readonly size_pt: number;
+  readonly occurrence_count: number;
+  readonly page_count: number;
+  readonly position_summary?: Record<string, unknown>;
   readonly sample_texts?: string[];
   readonly current_role: string | null;
   readonly current_docx_style: string | null;
+  readonly suggested_role: string | null;
+  readonly gemma_status: string | null;
 }
 
 export interface FontScanResponse {
   readonly fonts: FontInfoItem[];
   readonly docx_styles?: string[];
+  readonly docx_style_profiles?: Record<string, unknown>[];
   readonly default_roles?: string[];
 }
 

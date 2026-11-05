@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json as _json
+import logging
 import os
 import shutil
 import sys
@@ -34,7 +35,14 @@ from src.web.dependencies import (
 )
 from src.web.schemas import OcrProgressResponse, OcrRunStartResponse
 
+logger = logging.getLogger("ocr_router")
 router = APIRouter(tags=["ocr_pipeline"])
+
+
+def _emit_font_suggest_diag(log_line: str) -> None:
+    """Emit a single-line diagnostic log to both standard logger and CMD stdout."""
+    logger.info(log_line)
+    print(log_line, flush=True)
 
 # Shared in-memory OCR progress tracking for backward-compatible polling
 ocr_progress_dict: Dict[str, Dict[str, Any]] = {}
@@ -511,7 +519,198 @@ async def scan_fonts(request: Request):
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"字型分析失敗: {str(e)}")
+        from src.scripts.gemma_layout_assistant import sanitize_diagnostic_text
+        safe_err = sanitize_diagnostic_text(e)
+        raise HTTPException(status_code=500, detail=f"字型分析失敗 ({type(e).__name__}): {safe_err}")
+
+
+@router.post("/api/suggest_font_mappings")
+async def suggest_font_mappings(request: Request):
+    """
+    按需觸發 Gemma 針對 PDF 字體群組與 DOCX 範本樣式提供角色與樣式建議。
+    - 8K context (num_ctx=8192)
+    - 序列批次推論
+    - 受全域 GPU semaphore 排程保護，不與 Surya OCR 並行推論
+    - 輸出隱私安全之單行 CMD 診斷紀錄（開始與結束狀態、模型、群組數、有效建議數、低信心數、耗時）
+    """
+    from src.scripts.gemma_layout_assistant import (
+        DEFAULT_GEMMA_MODEL,
+        GEMMA_FONT_NUM_CTX,
+        format_font_suggestion_diag_log,
+        resolve_font_suggestion_outcome,
+        sanitize_diagnostic_text,
+        suggest_pdf_font_group_mappings,
+    )
+    from src.scripts.pdf_font_analyzer import scan_pdf_fonts
+    from src.utils.docx_style_profiles import read_docx_style_profiles
+    from src.utils.path_helper import get_template_path
+
+    req_id = uuid.uuid4().hex[:8]
+    start_ts = time.perf_counter()
+    model = CFG.ai_layout_model or DEFAULT_GEMMA_MODEL
+
+    data = await request.json()
+    file_id: str = data.get("file_id", "")
+    filename_orig: str = data.get("filename_orig", "")
+    supplied_fonts = data.get("fonts")
+    supplied_styles = data.get("docx_style_profiles")
+
+    if isinstance(supplied_fonts, list) and supplied_fonts:
+        font_groups = supplied_fonts
+    else:
+        pdf_path = None
+        if file_id:
+            candidate = PATHS.input_dir / file_id
+            if candidate.exists():
+                pdf_path = str(candidate)
+        if not pdf_path and filename_orig:
+            candidate2 = PATHS.root / "data" / "database_text" / filename_orig
+            if Path(candidate2).exists():
+                pdf_path = str(candidate2)
+        if not pdf_path:
+            elapsed_ms = int(round((time.perf_counter() - start_ts) * 1000))
+            _emit_font_suggest_diag(
+                format_font_suggestion_diag_log("start", req_id=req_id, model=model, total_groups=0, template_styles=0)
+            )
+            _emit_font_suggest_diag(
+                format_font_suggestion_diag_log(
+                    "end",
+                    req_id=req_id,
+                    model=model,
+                    total_groups=0,
+                    status="request_error",
+                    valid_suggestions=0,
+                    low_confidence=0,
+                    elapsed_ms=elapsed_ms,
+                    error_type="FileNotFoundError",
+                    error_msg="PDF file not found",
+                )
+            )
+            raise HTTPException(status_code=404, detail="找不到 PDF 檔案，請先上傳 PDF。")
+        font_groups = await asyncio.to_thread(scan_pdf_fonts, pdf_path)
+
+    if isinstance(supplied_styles, list):
+        docx_style_profiles = supplied_styles
+    else:
+        template_candidates = [
+            PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx",
+            PATHS.data_dir / "database_text" / "template.docx",
+            get_template_path(),
+        ]
+        template_path = None
+        for tc in template_candidates:
+            if Path(str(tc)).exists():
+                template_path = str(tc)
+                break
+        docx_style_profiles = []
+        if template_path:
+            try:
+                docx_style_profiles = await asyncio.to_thread(read_docx_style_profiles, template_path)
+            except Exception:
+                docx_style_profiles = []
+
+    total_groups = len(font_groups) if isinstance(font_groups, list) else 0
+    _emit_font_suggest_diag(
+        format_font_suggestion_diag_log(
+            "start",
+            req_id=req_id,
+            model=model,
+            total_groups=total_groups,
+            template_styles=len(docx_style_profiles),
+        )
+    )
+
+    try:
+        async with get_gpu_semaphore():
+            result = await asyncio.to_thread(
+                suggest_pdf_font_group_mappings,
+                font_groups=font_groups,
+                docx_styles=docx_style_profiles,
+                model=model,
+                num_ctx=GEMMA_FONT_NUM_CTX,
+            )
+    except Exception as exc:
+        elapsed_ms = int(round((time.perf_counter() - start_ts) * 1000))
+        err_type = type(exc).__name__
+        safe_err = sanitize_diagnostic_text(exc)
+        _emit_font_suggest_diag(
+            format_font_suggestion_diag_log(
+                "end",
+                req_id=req_id,
+                model=model,
+                total_groups=total_groups,
+                status="inference_failed",
+                valid_suggestions=0,
+                low_confidence=0,
+                elapsed_ms=elapsed_ms,
+                error_type=err_type,
+                error_msg=safe_err,
+            )
+        )
+        return {
+            "req_id": req_id,
+            "status": "inference_failed",
+            "outcome": "failed",
+            "model": model,
+            "num_ctx": GEMMA_FONT_NUM_CTX,
+            "elapsed_ms": elapsed_ms,
+            "message": "Gemma 推論失敗；已保留既有規則建議與人工選擇。",
+            "stats": {
+                "total_groups": total_groups,
+                "valid_suggestions": 0,
+                "low_confidence": 0,
+                "elapsed_ms": elapsed_ms,
+            },
+            "error_type": err_type,
+            "sanitized_error": safe_err,
+            "suggestions": {
+                str(g.get("name", "")): {
+                    "font_name": str(g.get("name", "")),
+                    "role": None,
+                    "docx_style": None,
+                    "confidence": None,
+                    "reason": "Gemma 推論異常，保留規則與人工設定",
+                    "status": "failed",
+                    "source": "deterministic",
+                }
+                for g in (font_groups or [])
+                if isinstance(g, dict) and g.get("name")
+            },
+        }
+
+    elapsed_ms = int(round((time.perf_counter() - start_ts) * 1000))
+    status = str(result.get("status") or "inference_failed")
+    suggestions_map = result.get("suggestions") or {}
+    stats = result.get("stats")
+    if not isinstance(stats, dict):
+        valid_cnt = sum(1 for v in suggestions_map.values() if isinstance(v, dict) and v.get("status") == "suggested")
+        low_cnt = sum(1 for v in suggestions_map.values() if isinstance(v, dict) and v.get("status") == "low_confidence")
+        stats = {
+            "total_groups": total_groups,
+            "valid_suggestions": valid_cnt,
+            "low_confidence": low_cnt,
+        }
+    stats["elapsed_ms"] = elapsed_ms
+    result["stats"] = stats
+    result["req_id"] = req_id
+    result["elapsed_ms"] = elapsed_ms
+    result["outcome"] = result.get("outcome") or resolve_font_suggestion_outcome(status)
+
+    _emit_font_suggest_diag(
+        format_font_suggestion_diag_log(
+            "end",
+            req_id=req_id,
+            model=str(result.get("model") or model),
+            total_groups=stats.get("total_groups", total_groups),
+            status=status,
+            valid_suggestions=stats.get("valid_suggestions", 0),
+            low_confidence=stats.get("low_confidence", 0),
+            elapsed_ms=elapsed_ms,
+            error_type=result.get("error_type"),
+            error_msg=result.get("sanitized_error"),
+        )
+    )
+    return result
 
 
 @router.post("/api/save_font_mapping")
@@ -520,6 +719,7 @@ async def save_font_mapping_endpoint(request: Request):
     儲存人工審查後的字型 -> 樣式 fonts.json。
     Body JSON: { "mapping": { "FontName": {"role": "H2", "docx_style": "標題 2"}, ... }, "remove_keys": ["FontName", ...] }
     """
+    from src.scripts.gemma_layout_assistant import sanitize_diagnostic_text
     from src.scripts.pdf_font_analyzer import save_fonts_json
 
     data = await request.json()
@@ -541,7 +741,8 @@ async def save_font_mapping_endpoint(request: Request):
     try:
         save_fonts_json(fonts_json_path, mapping, remove_keys=remove_keys)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"儲存 fonts.json 失敗: {str(e)}")
+        safe_err = sanitize_diagnostic_text(e)
+        raise HTTPException(status_code=500, detail=f"儲存 fonts.json 失敗 ({type(e).__name__}): {safe_err}")
 
     return {
         "status": "success",

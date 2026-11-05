@@ -26,12 +26,6 @@ from PIL import Image, ImageDraw
 
 from src.core_agent import PDFConversionAgent
 from src.utils.task_queue import TaskRecord, TaskStatus, get_event_broadcaster, get_task_queue
-from src.utils.docx_style_profiles import read_docx_style_profiles
-from src.scripts.gemma_layout_assistant import (
-    DEFAULT_GEMMA_MODEL,
-    gemma_available,
-    suggest_docx_style_mapping,
-)
 from src.web.dependencies import (
     CFG,
     PATHS,
@@ -203,44 +197,6 @@ async def get_template_styles():
         return {"status": "error", "message": f"解析樣式失敗: {e}"}
 
     return {"status": "success", "styles": styles}
-
-
-@router.post("/api/suggest_ocr_style_mapping")
-async def suggest_ocr_style_mapping():
-    """Suggest semantic roles for the active DOCX template using local Gemma."""
-    from src.utils.path_helper import get_template_path
-
-    template_path = PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx"
-    if not template_path.exists():
-        template_path = PATHS.data_dir / "database_text" / "template.docx"
-        if not template_path.exists():
-            template_path = get_template_path()
-    if not template_path.exists():
-        raise HTTPException(status_code=404, detail="找不到可用的 DOCX 範本")
-
-    try:
-        styles = read_docx_style_profiles(template_path)
-    except (OSError, zipfile.BadZipFile, ET.ParseError) as exc:
-        raise HTTPException(status_code=400, detail=f"無法讀取 DOCX 樣式：{exc}") from exc
-    if not styles:
-        raise HTTPException(status_code=400, detail="DOCX 範本沒有可辨識的段落樣式")
-
-    model = CFG.ai_layout_model or DEFAULT_GEMMA_MODEL
-    available = gemma_available(model)
-    mapping = suggest_docx_style_mapping(styles, model=model) if available else {}
-    has_suggestions = any(mapping.values())
-    status = "ready" if available and has_suggestions else ("invalid_response" if available else "model_unavailable")
-    message = (
-        "已產生樣式建議，請檢查後再開始整稿。" if status == "ready" else
-        (f"{model} 未回傳可用的範本樣式對應；請手動指定樣式。" if available else f"本機尚未安裝 {model}；請手動指定樣式，Gemma 未參與。")
-    )
-    return {
-        "status": status,
-        "model": model,
-        "message": message,
-        "styles": styles,
-        "mapping": mapping,
-    }
 
 
 @router.get("/api/render_preview/{file_id}")

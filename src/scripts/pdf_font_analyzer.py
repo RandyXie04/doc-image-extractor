@@ -15,6 +15,8 @@ from typing import Optional
 # pyrefly: ignore [missing-import]
 import fitz
 
+from src.utils.docx_style_profiles import read_docx_style_profiles
+
 
 def scan_pdf_fonts(pdf_path: str, max_samples: int = 3, max_sample_len: int = 60) -> list[dict]:
     """
@@ -22,19 +24,24 @@ def scan_pdf_fonts(pdf_path: str, max_samples: int = 3, max_sample_len: int = 60
       - name      : 字體名稱（去掉 PDF 子集前綴，如 ABCDEF+FontName → FontName）
       - full_name : 原始完整字體名
       - size_pt   : 該字體最常見的字級（取眾數四捨五入至 0.5pt）
+      - occurrence_count : 出現次數（span 數）
+      - page_count : 涵蓋頁數
+      - position_summary : 頁面位置分布（top/middle/bottom 比例與置中比例）
       - sample_texts : 最多 max_samples 句代表性文字
     """
     doc = fitz.open(pdf_path)
 
-    # font_name → {sizes: [], texts: set()}
     font_data: dict[str, dict] = {}
 
-    for page in doc:
+    for page_idx, page in enumerate(doc):
+        page_h = max(1.0, float(page.rect.height))
+        page_w = max(1.0, float(page.rect.width))
         blocks = page.get_text("dict").get("blocks", [])
         for block in blocks:
             if block.get("type") != 0:
                 continue
             for line in block.get("lines", []):
+                line_bbox = line.get("bbox", block.get("bbox", [0, 0, 0, 0]))
                 for span in line.get("spans", []):
                     raw_font = span.get("font", "") or ""
                     text = (span.get("text") or "").strip()
@@ -54,12 +61,34 @@ def scan_pdf_fonts(pdf_path: str, max_samples: int = 3, max_sample_len: int = 60
                             "full_name": raw_font,
                             "size": size,
                             "texts": [],
+                            "occurrence_count": 0,
+                            "pages": set(),
+                            "pos_counts": {"top": 0, "middle": 0, "bottom": 0},
+                            "centered_count": 0,
                         }
 
                     entry = font_data[font_key]
+                    entry["occurrence_count"] += 1
+                    entry["pages"].add(page_idx + 1)
+
+                    span_bbox = span.get("bbox") or line_bbox
+                    if span_bbox and len(span_bbox) >= 4:
+                        y_center = (float(span_bbox[1]) + float(span_bbox[3])) / 2.0
+                        x_center = (float(span_bbox[0]) + float(span_bbox[2])) / 2.0
+                        y_ratio = y_center / page_h
+                        if y_ratio < 0.25:
+                            entry["pos_counts"]["top"] += 1
+                        elif y_ratio > 0.75:
+                            entry["pos_counts"]["bottom"] += 1
+                        else:
+                            entry["pos_counts"]["middle"] += 1
+                        if abs(x_center - (page_w / 2.0)) < (page_w * 0.12):
+                            entry["centered_count"] += 1
+                    else:
+                        entry["pos_counts"]["middle"] += 1
 
                     # 積累非重複的樣本句子
-                    if text not in entry["texts"] and len(text) >= 3:
+                    if text not in entry["texts"] and len(text) >= 2:
                         entry["texts"].append(text)
 
     doc.close()
@@ -68,6 +97,18 @@ def scan_pdf_fonts(pdf_path: str, max_samples: int = 3, max_sample_len: int = 60
     for font_key, data in font_data.items():
         clean_name = data["clean_name"]
         size_mode = data["size"]
+        occ_count = data["occurrence_count"]
+        page_count = len(data["pages"])
+        pos_counts = data["pos_counts"]
+        total_pos = max(1, sum(pos_counts.values()))
+        dominant_zone = max(pos_counts.items(), key=lambda kv: kv[1])[0]
+        position_summary = {
+            "top_ratio": round(pos_counts["top"] / total_pos, 2),
+            "middle_ratio": round(pos_counts["middle"] / total_pos, 2),
+            "bottom_ratio": round(pos_counts["bottom"] / total_pos, 2),
+            "centered_ratio": round(data["centered_count"] / total_pos, 2),
+            "dominant_zone": dominant_zone,
+        }
 
         samples = []
         texts = data["texts"]
@@ -78,13 +119,13 @@ def scan_pdf_fonts(pdf_path: str, max_samples: int = 3, max_sample_len: int = 60
                     break
                 samples.append(texts[i][:max_sample_len])
 
-        # Add rounded size to the name to distinguish them in the UI if needed
-        # Or we can just keep the name clean, but the UI might need to show the size.
-        # The result structure already has size_pt.
         result.append({
-            "name": f"{clean_name} ({size_mode}pt)", # Combine name and size for the identifier
+            "name": f"{clean_name} ({size_mode}pt)",  # Combine name and size for the identifier
             "full_name": data["full_name"],
             "size_pt": size_mode,
+            "occurrence_count": occ_count,
+            "page_count": page_count,
+            "position_summary": position_summary,
             "sample_texts": samples,
         })
 
@@ -112,7 +153,7 @@ def read_docx_styles(template_path: str) -> list[str]:
                             if val:
                                 styles.append(val)
     except Exception as e:
-        print(f"[FontAnalyzer] 讀取 template.docx 樣式失敗: {e}")
+        print(f"[FontAnalyzer] 讀取 template.docx 樣式失敗 ({type(e).__name__})")
     return styles
 
 
@@ -175,13 +216,86 @@ def get_font_role_map(fonts_json_path: str) -> dict[str, dict]:
     return result
 
 
+def derive_style_mapping_from_fonts(
+    fonts_json_path: str,
+    base_style_mapping: Optional[dict] = None,
+    active_font_names: Optional[list | set] = None,
+) -> dict:
+    """
+    從 fonts.json 的字體審閱確認值推導通用角色樣式對應表 (h1, h2, h3, body, image_caption, kaiti)，
+    作為獨立 Word 樣式角色對應 UI 收斂後的內部相容 fallback。
+    若呼叫端已明確傳入 base_style_mapping 的非空欄位，優先保留呼叫端設定。
+    若提供 active_font_names，僅從當前 PDF 出現的字體群組推導。
+    """
+    import re
+    merged: dict = {}
+    if isinstance(base_style_mapping, dict):
+        for k, v in base_style_mapping.items():
+            if isinstance(v, str) and v.strip():
+                merged[k] = v.strip()
+
+    role_to_key = {
+        "h1": "h1",
+        "h2": "h2",
+        "h3": "h3",
+        "正文": "body",
+        "內文": "body",
+        "body": "body",
+        "圖說": "image_caption",
+        "图说": "image_caption",
+        "caption": "image_caption",
+        "image_caption": "image_caption",
+        "楷體": "kaiti",
+        "楷体": "kaiti",
+        "kaiti": "kaiti",
+        "blockquote": "kaiti",
+    }
+
+    active_set = {str(x) for x in active_font_names} if active_font_names is not None else None
+    font_map = get_font_role_map(fonts_json_path)
+    for font_name, entry in font_map.items():
+        if active_set is not None and font_name not in active_set:
+            continue
+        if not isinstance(entry, dict):
+            continue
+        docx_style = (entry.get("docx_style") or "").strip()
+        if not docx_style:
+            continue
+        raw_role = (entry.get("role") or "").strip()
+        target_key = role_to_key.get(raw_role.lower()) if raw_role else None
+        if not target_key:
+            if re.search(r"標題\s*1|heading\s*1", docx_style, re.I):
+                target_key = "h1"
+            elif re.search(r"標題\s*2|heading\s*2", docx_style, re.I):
+                target_key = "h2"
+            elif re.search(r"標題\s*3|heading\s*3", docx_style, re.I):
+                target_key = "h3"
+            elif re.search(r"圖說|图说|caption", docx_style, re.I):
+                target_key = "image_caption"
+            elif re.search(r"楷|kai", docx_style, re.I):
+                target_key = "kaiti"
+            elif re.search(r"正文|內文|normal|body", docx_style, re.I):
+                target_key = "body"
+        if target_key and not merged.get(target_key):
+            merged[target_key] = docx_style
+
+    return merged
+
+
 def analyze_pdf_for_ui(pdf_path: str, template_path: Optional[str], fonts_json_path: str) -> dict:
     """
     整合入口：掃描 PDF 字體、讀取 docx 樣式、讀取已存的對應表，
     回傳供前端 Modal 使用的 JSON。
+    掃描階段不自動呼叫 Gemma（Gemma 採按需觸發）。
     """
     fonts = scan_pdf_fonts(pdf_path)
     docx_styles = read_docx_styles(template_path) if template_path else []
+    docx_style_profiles = []
+    if template_path:
+        try:
+            docx_style_profiles = read_docx_style_profiles(template_path)
+        except Exception:
+            docx_style_profiles = []
     existing_mapping = load_fonts_json(fonts_json_path)
 
     # 合併現有對應（讓已設定過的字體在 UI 中預選，未設定者預設為「auto」）
@@ -207,6 +321,7 @@ def analyze_pdf_for_ui(pdf_path: str, template_path: Optional[str], fonts_json_p
             font["suggested_role"] = "H2" if font.get("size_pt", 0) >= 12.0 else "正文"
         else:
             font["suggested_role"] = None
+        font["gemma_status"] = "not_run"
 
     # 固定預設角色清單（作為 fallback，若 docx 無樣式時使用）
     default_roles = ["H1", "H2", "H3", "圖說", "楷體", "正文", "忽略"]
@@ -214,6 +329,7 @@ def analyze_pdf_for_ui(pdf_path: str, template_path: Optional[str], fonts_json_p
     return {
         "fonts": fonts,
         "docx_styles": docx_styles,
+        "docx_style_profiles": docx_style_profiles,
         "default_roles": default_roles,
     }
 
