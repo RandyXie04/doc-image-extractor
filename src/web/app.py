@@ -13,6 +13,7 @@ import base64
 import json
 import os
 import secrets
+import socket
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -262,10 +263,48 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+def get_local_dev_ips() -> set[str]:
+    """取得開發本機所有 Loopback 與本機網卡 IP 位址集合"""
+    ips = {"127.0.0.1", "::1", "localhost", "testclient"}
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None):
+            addr = info[4][0]
+            if addr:
+                ips.add(str(addr).split("%")[0])
+    except Exception:
+        pass
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ips.add(s.getsockname()[0])
+    except Exception:
+        pass
+    return ips
+
+
+def is_local_dev_request(request: Request) -> bool:
+    """偵測請求來源是否為開發本機 IP 位址"""
+    client_host = (request.client.host if request.client else "").strip()
+    if not client_host:
+        return False
+    normalized = client_host.split("%")[0]
+    if normalized.startswith("::ffff:"):
+        normalized = normalized[7:]
+    return normalized in get_local_dev_ips()
+
+
 # App Mode API
 @app.get("/api/app_mode")
-async def get_app_mode():
-    return {"mode": CFG.app_mode}
+async def get_app_mode(request: Request):
+    is_local = is_local_dev_request(request)
+    client_host = (request.client.host if request.client else "").strip()
+    effective_mode = CFG.app_mode if is_local else "editor"
+    return {
+        "mode": effective_mode,
+        "is_local_dev": is_local,
+        "client_ip": client_host,
+    }
 
 
 @app.post("/api/set_app_mode")
@@ -274,10 +313,24 @@ async def set_app_mode(request: Request):
     new_mode = data.get("mode", "editor").lower()
     if new_mode not in ["editor", "dev"]:
         raise HTTPException(status_code=400, detail="模式必須為 'editor' 或 'dev'")
+
+    is_local = is_local_dev_request(request)
+    client_host = (request.client.host if request.client else "unknown").strip()
+    if new_mode == "dev" and not is_local:
+        raise HTTPException(
+            status_code=403,
+            detail=f"安全限制：工程師除錯模式僅允許於開發本機 IP 位址啟動（目前連線 IP: {client_host}）",
+        )
+
     import config.settings
 
     object.__setattr__(config.settings.CFG, "app_mode", new_mode)
-    return {"status": "success", "mode": new_mode}
+    return {
+        "status": "success",
+        "mode": new_mode,
+        "is_local_dev": is_local,
+        "client_ip": client_host,
+    }
 
 
 # Universal SSE Event Stream

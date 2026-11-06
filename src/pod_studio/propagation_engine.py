@@ -333,7 +333,7 @@ class PropagationEngine:
                 if not ollama_ready:
                     raise RuntimeError(
                         f"已選取本機離線模型 '{target_model}'，但 Ollama 服務未啟動 (http://localhost:11434)。"
-                        f"請確認已啟動 Ollama 服務 (可執行 start_app.bat / start_app_dev.bat 或 ollama serve)，系統拒絕私自降級。"
+                        f"請確認已啟動 Ollama 服務 (可執行 start_app.bat 或 ollama serve)，系統拒絕私自降級。"
                     )
                 if not is_model_installed(target_model):
                     raise RuntimeError(

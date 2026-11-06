@@ -136,6 +136,34 @@ class TestSidebarAndDocs(unittest.TestCase):
         self.assertEqual(self.client.get("/api/docs/glossary", headers=self.auth_headers).status_code, 404)
         self.assertEqual(self.client.get("/api/docs/decisions", headers=self.auth_headers).status_code, 404)
 
+    def test_single_start_app_bat_and_dev_mode_ip_guard(self):
+        """Verify start_app_dev.bat is consolidated into start_app.bat and dev mode requires local dev IP."""
+        from unittest.mock import patch
+
+        self.assertTrue((self.project_dir / "start_app.bat").exists(), "start_app.bat must exist")
+        self.assertFalse((self.project_dir / "start_app_dev.bat").exists(), "start_app_dev.bat must be removed")
+
+        # 1. Local dev client (TestClient default 'testclient') is allowed to switch to dev mode
+        resp_dev = self.client.post("/api/set_app_mode", json={"mode": "dev"}, headers=self.auth_headers)
+        self.assertEqual(resp_dev.status_code, 200)
+        data_dev = resp_dev.json()
+        self.assertEqual(data_dev["mode"], "dev")
+        self.assertTrue(data_dev["is_local_dev"])
+
+        # 2. Non-local LAN IP must be blocked (403) when attempting to switch to dev mode
+        with patch("src.web.app.is_local_dev_request", return_value=False):
+            resp_forbidden = self.client.post("/api/set_app_mode", json={"mode": "dev"}, headers=self.auth_headers)
+            self.assertEqual(resp_forbidden.status_code, 403)
+
+            # Non-local LAN IP querying /api/app_mode receives editor mode and is_local_dev=False
+            resp_mode = self.client.get("/api/app_mode", headers=self.auth_headers)
+            self.assertEqual(resp_mode.status_code, 200)
+            self.assertEqual(resp_mode.json()["mode"], "editor")
+            self.assertFalse(resp_mode.json()["is_local_dev"])
+
+        # Restore editor mode
+        self.client.post("/api/set_app_mode", json={"mode": "editor"}, headers=self.auth_headers)
+
 
 if __name__ == "__main__":
     unittest.main()

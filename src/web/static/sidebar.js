@@ -833,15 +833,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const isDevPreset = localStorage.getItem('developer_engineer_mode') === 'true';
     fetch('/api/app_mode').then(r => r.json()).then(d => {
+        const isLocalDev = d && d.is_local_dev !== false;
+        if (!isLocalDev) {
+            localStorage.setItem('developer_engineer_mode', 'false');
+            updateModeBtnUI('editor');
+            window.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: 'editor' } }));
+            document.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: 'editor' } }));
+            return;
+        }
         const mode = d && d.mode ? d.mode : (isDevPreset ? 'dev' : 'editor');
         if (isDevPreset && d && d.mode !== 'dev') {
             fetch('/api/set_app_mode', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ mode: 'dev' })
-            }).then(() => updateModeBtnUI('dev')).catch(() => updateModeBtnUI(mode));
+            }).then(res => {
+                if (!res.ok) throw new Error('Forbidden');
+                return res.json();
+            }).then(resData => {
+                const activeMode = (resData && resData.mode) || 'dev';
+                updateModeBtnUI(activeMode);
+                window.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: activeMode } }));
+                document.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: activeMode } }));
+            }).catch(() => {
+                localStorage.setItem('developer_engineer_mode', 'false');
+                updateModeBtnUI('editor');
+            });
         } else {
             updateModeBtnUI(mode);
+            window.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode } }));
+            document.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode } }));
         }
     }).catch((err) => {
         console.debug('[AppMode] Fetch skipped:', err);
@@ -852,20 +873,31 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modeToggleBtn) {
         modeToggleBtn.onclick = async () => {
             const targetMode = modeToggleBtn.dataset.mode === 'dev' ? 'editor' : 'dev';
-            localStorage.setItem('developer_engineer_mode', targetMode === 'dev' ? 'true' : 'false');
             try {
                 const res = await fetch('/api/set_app_mode', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ mode: targetMode })
                 });
-                const d = await res.json();
+                const d = await res.json().catch(() => ({}));
+                if (!res.ok) {
+                    localStorage.setItem('developer_engineer_mode', 'false');
+                    updateModeBtnUI('editor');
+                    window.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: 'editor' } }));
+                    document.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: 'editor' } }));
+                    const errDetail = d.detail || d.msg || '工程師除錯模式僅允許於開發本機 IP 位址啟動。';
+                    if (window.toolbox && window.toolbox.notify) {
+                        window.toolbox.notify(errDetail, 'warning');
+                    }
+                    return;
+                }
                 if (d.status === 'success') {
+                    localStorage.setItem('developer_engineer_mode', d.mode === 'dev' ? 'true' : 'false');
                     window.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: d.mode } }));
                     document.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: d.mode } }));
                     updateModeBtnUI(d.mode);
                     const msg = d.mode === 'dev'
-                        ? '已切換為工程師除錯模式：顯示處理日誌與內部目錄。'
+                        ? `已偵測為開發本機 IP (${d.client_ip || '127.0.0.1'})，啟動工程師除錯模式。`
                         : '已切換為出版社編輯模式：隱藏處理日誌與內部目錄。';
                     if (window.toolbox && window.toolbox.notify) {
                         window.toolbox.notify(msg, 'success');

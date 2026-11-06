@@ -24,7 +24,7 @@ REM 2. Launch Web Server
 echo ============================================================
 echo Launching PDF Toolkit application...
 echo ============================================================
-python "%~dp0main.py"
+python "%~dp0main.py" %*
 if errorlevel 1 (
     echo.
     echo [ERROR] Web Server exited with code %ERRORLEVEL%

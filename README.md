@@ -136,13 +136,11 @@ start_app.bat
 ```
 系統將啟動背景服務並自動於預設瀏覽器（Edge / Chrome）開啟首頁 `http://127.0.0.1:8000`。
 
-### 2. 開發與除錯模式
+### 2. 開發與除錯模式 (工程師模式)
+直接於網頁側邊欄點選 **「Settings > 進階與系統維護 > 模式切換」**，系統將自動偵測是否為開發本機 IP 位址（`127.0.0.1` / `localhost` / 本機網卡 IP）以啟動工程師除錯模式；或於命令列執行：
 ```bash
-start_app_dev.bat
-# 或命令列執行：
 python main.py --dev
 ```
-此模式將開啟詳細終端輸出、自動熱重載（Hot Reload）以及各節點暫存檔除錯檢視。
 
 ### 3. 自訂連接埠與伺服器常駐
 ```bash
@@ -248,7 +246,6 @@ doc-image-extractor/
 ├── GLOSSARY.md                         # 系統關鍵名詞與領域術語表
 ├── main.py                             # 網頁服務核心啟動進入點
 ├── start_app.bat                       # 繁體中文 Windows 一鍵啟動批次檔
-├── start_app_dev.bat                   # 開發與除錯環境啟動批次檔
 ├── requirements.txt                    # Python 模組相依清單
 └── version.json                        # 軟體版本與更新識別檔
 ```
