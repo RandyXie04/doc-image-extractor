@@ -27,7 +27,9 @@ TASK.md
 config/RULE.md
 config/TODOTASK.md
 config/.hardware_profile.json
-.agents/
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 
 # Logs and Debugging (新增防禦：防止敏感錯誤訊息外洩)
 *.log
