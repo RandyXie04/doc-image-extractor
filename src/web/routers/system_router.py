@@ -288,24 +288,6 @@ DOCS_CATALOGUE = [
         "description": "雙引擎自適應 OCR、YOLOv8 DirectML 公式提取、無損圖片流與方正字型修復",
         "file": "docs/TECH_MODULES.md",
     },
-    {
-        "id": "glossary",
-        "title": "名詞定義與術語表",
-        "category": "技術規格",
-        "audience": "dev",
-        "icon": "list",
-        "description": "系統關鍵名詞、排版概念與資料流術語對照",
-        "file": "GLOSSARY.md",
-    },
-    {
-        "id": "decisions",
-        "title": "架構設計決策記錄 (ADR)",
-        "category": "技術規格",
-        "audience": "dev",
-        "icon": "fileText",
-        "description": "無腳注雙通道架構、2D 座標三線表重建、無日誌安全規範等設計決策",
-        "file": "docs/DECISIONS.md",
-    },
 ]
 
 

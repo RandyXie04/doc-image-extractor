@@ -547,9 +547,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ];
                 if (currentMode === 'dev') {
                     docs.push(
-                        { id: 'modules', title: '核心模組技術說明', category: '技術規格', icon: 'cpu', description: '雙引擎、YOLOv8、方正' },
-                        { id: 'glossary', title: '名詞定義與術語表', category: '技術規格', icon: 'list', description: '系統排版術語彙編' },
-                        { id: 'decisions', title: '架構設計決策記錄', category: '技術規格', icon: 'fileText', description: 'ADR 關鍵設計決策' }
+                        { id: 'modules', title: '核心模組技術說明', category: '技術規格', icon: 'cpu', description: '雙引擎、YOLOv8、方正' }
                     );
                 }
             }
