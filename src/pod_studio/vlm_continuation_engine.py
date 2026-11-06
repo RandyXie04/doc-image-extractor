@@ -283,13 +283,14 @@ class SecureVLMContinuationEngine:
                 try:
                     from google import genai
                     from google.genai import types
+                    from src.utils.ollama_client import normalize_gemini_model_name
 
                     client = genai.Client(api_key=api_key)
                     image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/png")
 
                     response = await asyncio.to_thread(
                         client.models.generate_content,
-                        model=model_name,
+                        model=normalize_gemini_model_name(model_name),
                         contents=[
                             types.Content(
                                 role="user",

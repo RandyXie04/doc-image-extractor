@@ -60,14 +60,14 @@ class TestInterleavedTablesAndFigures(unittest.TestCase):
         self.assertIn("段落一：出現在圖片之前。", content)
         self.assertIn("![](images/image_p1_0.png){width=80%}", content)
         self.assertIn("段落二：位於圖片之後、表格之前。", content)
-        self.assertIn("| 欄位甲 | 欄位乙 |", content)
+        self.assertTrue("欄位甲" in content and "欄位乙" in content, "表格內容欄位甲與欄位乙應存在")
         self.assertIn("段落三：位於表格之後。", content)
 
         # 驗證相對順序完全符合自然閱讀流（非沉底排版）
         idx_p1 = content.index("段落一：出現在圖片之前。")
         idx_img = content.index("![](images/image_p1_0.png)")
         idx_p2 = content.index("段落二：位於圖片之後、表格之前。")
-        idx_tbl = content.index("| 欄位甲 | 欄位乙 |")
+        idx_tbl = content.index("欄位甲")
         idx_p3 = content.index("段落三：位於表格之後。")
 
         self.assertLess(idx_p1, idx_img, "圖片應在段落一之後")

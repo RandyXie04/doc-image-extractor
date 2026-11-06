@@ -205,6 +205,7 @@ async def api_founder_repair(
                 success=True,
                 source_path=f"data/03_output/{output_docx.name}",
                 filename=output_docx.name,
+                download_url=f"/api/founder/download/{output_docx.name}",
             )
 
         output_docx = output_dir / f"repaired_{Path(filename).stem}_{task_id[:8]}.docx"
@@ -215,10 +216,28 @@ async def api_founder_repair(
             success=True,
             source_path=f"data/03_output/{output_docx.name}",
             filename=output_docx.name,
+            download_url=f"/api/founder/download/{output_docx.name}",
         )
     except Exception as e:
         _cleanup_temp_files(*created_temps)
         raise HTTPException(status_code=500, detail=f"修復過程發生異常: {str(e)}")
+
+
+@router.get("/api/founder/download/{filename}")
+async def download_founder_repaired_file(filename: str):
+    """Download repaired Founder Word (.docx) output file."""
+    from fastapi.responses import FileResponse
+
+    safe_name = Path(filename).name
+    output_dir = (PATHS.root / "data" / "03_output").resolve()
+    target_path = (output_dir / safe_name).resolve()
+    if not target_path.is_relative_to(output_dir) or not target_path.exists():
+        raise HTTPException(status_code=404, detail="修復成果檔案不存在或已過期")
+    return FileResponse(
+        path=str(target_path),
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=safe_name,
+    )
 
 
 @router.post("/api/report_issue")

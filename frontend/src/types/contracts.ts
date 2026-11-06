@@ -96,7 +96,7 @@ export interface OcrProgressResponse {
   readonly task_id: string | null;
   readonly progress: number;
   readonly message: string;
-  readonly status: "processing" | "completed" | "failed" | "queued" | "running";
+  readonly status: "processing" | "completed" | "failed" | "queued" | "running" | "cancelled";
   readonly error: string | null;
   readonly created_at: number | null;
 }
@@ -193,6 +193,7 @@ export interface FounderRepairResponse {
   readonly success: boolean;
   readonly source_path: string;
   readonly filename: string;
+  readonly download_url: string;
 }
 
 export interface HardwareStatusResponse {

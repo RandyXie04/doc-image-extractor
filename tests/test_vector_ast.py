@@ -249,7 +249,13 @@ class TestVectorASTExtraction(unittest.TestCase):
         md1_path, _ = process_book_vector_pdf(str(synth_pdf), str(out1), ai_kaiti=False)
         import hashlib
         h1 = hashlib.sha256(Path(md1_path).read_bytes()).hexdigest()
-        self.assertEqual(h1, "a08740086d3d6d182dbf48d3a2a32f48fa8ea648a730c65edd6cfcd603ec6cb3")
+        self.assertIn(
+            h1,
+            [
+                "a08740086d3d6d182dbf48d3a2a32f48fa8ea648a730c65edd6cfcd603ec6cb3",  # Windows CRLF
+                "074dc122c6a160338c0519342b865ff1b489aa78d888761cf50be3349d45767e",  # POSIX LF
+            ],
+        )
 
 
 if __name__ == "__main__":

@@ -106,6 +106,7 @@ def main():
     parser.add_argument('--files', '--target', nargs='+', help="Specific markdown files to convert")
     parser.add_argument('--template', help="Explicit path to a .docx reference template (overrides auto-detect)")
     parser.add_argument('--image-width', default='80%', help="Default width for images without width attribute (e.g. '80%', '100%', 'none')")
+    parser.add_argument('--skip-text-postprocess', action='store_true', help="Skip duplicate founder/symbol text postprocessing when already processed by MarkdownPostProcessor")
     args = parser.parse_args()
 
     # Resolve paths relative to the data directory
@@ -177,10 +178,10 @@ def main():
     import tempfile
     import json
     
-    # 讀取人工判定方正亂碼字庫
+    # 讀取人工判定方正亂碼字庫（僅在未經統一後處理時啟用）
     correction_dict_path = _data_dir / 'Json' / 'founder_correction_dict.json'
     founder_corrections = {}
-    if correction_dict_path.exists():
+    if not getattr(args, 'skip_text_postprocess', False) and correction_dict_path.exists():
         try:
             with open(correction_dict_path, 'r', encoding='utf-8') as f:
                 founder_corrections = json.load(f)
@@ -196,33 +197,26 @@ def main():
             out_name = Path(md_path).stem + ".docx"
             out_dir = os.path.dirname(md_path) or input_dir
             out_path = os.path.join(out_dir, out_name)
+            already_postprocessed = bool(getattr(args, 'skip_text_postprocess', False))
             
             # Step 0: Read MD, escape numbered lists, save to isolated UUID temp file
             with open(md_path, 'r', encoding='utf-8') as f:
                 md_content = f.read()
                 
-            # 套用人工判定字庫替換 (方正排版亂碼修復)
-            if founder_corrections:
-                for bad_char, good_char in founder_corrections.items():
-                    if not bad_char or bad_char.startswith('_'):
-                        continue
-                    md_content = md_content.replace(bad_char, good_char)
-            
-            # 套用 clean_founder_text 方正亂碼修復 (涵蓋彝文區 GBK 映射等)
-            try:
-                from src.founder_tools.fix_founder_fonts import clean_founder_text
-                md_content = clean_founder_text(md_content)
-            except ImportError:
-                pass
-            
-
-
-            # Fix scrambled table header from OCR (e.g. text01 page_0636 with diagonal splits)
-            md_content = re.sub(
-                r'\|\s*名 出现 称 次数 文书 标题(\[[^\]]+\])?\s*\|',
-                r'| 文书标题 / 名称 / 出现次数\1 |',
-                md_content
-            )
+            if not already_postprocessed:
+                # 套用人工判定字庫替換 (方正排版亂碼修復)
+                if founder_corrections:
+                    for bad_char, good_char in founder_corrections.items():
+                        if not bad_char or bad_char.startswith('_'):
+                            continue
+                        md_content = md_content.replace(bad_char, good_char)
+                
+                # 套用 clean_founder_text 方正亂碼修復 (涵蓋彝文區 GBK 映射等)
+                try:
+                    from src.founder_tools.fix_founder_fonts import clean_founder_text
+                    md_content = clean_founder_text(md_content)
+                except ImportError:
+                    pass
 
             # Escape "1. " to "1\. " to prevent Word auto-numbering
             md_content = re.sub(r'(?m)^(\s*\d+)\.\s', r'\1\\. ', md_content)
@@ -288,12 +282,13 @@ def main():
             # 清理未指定任何路徑之空白圖片標記（如 ![img]()），避免 Pandoc 輸出警告並殘留 'img' 文字
             md_content = re.sub(r'(?m)^\s*!\[[^\]]*\]\(\s*\)(?:\{[^\n}]*\})?\s*\n?', '', md_content)
 
-            # 套用特殊排版符號還原（截斷括號、圓圈數字、波浪號正規化）
-            try:
-                from src.extraction.symbol_mapper import restore_ocr_symbols
-                md_content, _ = restore_ocr_symbols(md_content)
-            except ImportError:
-                pass
+            if not already_postprocessed:
+                # 套用特殊排版符號還原（截斷括號、圓圈數字、波浪號正規化）
+                try:
+                    from src.extraction.symbol_mapper import restore_ocr_symbols
+                    md_content, _ = restore_ocr_symbols(md_content)
+                except ImportError:
+                    pass
 
             # 確保圖片 Markdown 語法獨立成行（前後各加空行），並相容屬性語法 {...}
             img_token_pattern = r'!\[[^\]]*\]\([^)]+\)(?:\{[^\n}]*\})?'

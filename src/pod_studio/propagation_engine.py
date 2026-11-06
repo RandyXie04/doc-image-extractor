@@ -425,10 +425,12 @@ class PropagationEngine:
                                 batch_success = True
                                 break
                         else:
+                            from src.utils.ollama_client import normalize_gemini_model_name
+
                             resp_text = ""
                             if hasattr(ai_client, "models") and hasattr(ai_client.models, "generate_content"):
                                 resp = ai_client.models.generate_content(
-                                    model=target_model,
+                                    model=normalize_gemini_model_name(target_model),
                                     contents=prompt,
                                 )
                                 resp_text = resp.text.strip()

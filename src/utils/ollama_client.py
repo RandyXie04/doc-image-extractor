@@ -95,6 +95,23 @@ def get_default_keep_alive() -> str:
     return os.getenv("OLLAMA_KEEP_ALIVE", "10m")
 
 
+_GEMINI_MODEL_ALIASES: Dict[str, str] = {
+    "gemini-3.8-flash": "gemini-2.5-flash",
+    "gemini-3.5-flash-lite": "gemini-2.5-flash-lite",
+}
+
+
+def normalize_gemini_model_name(model: Optional[str], default: str = "gemini-2.5-flash") -> str:
+    """
+    Normalizes UI/legacy Gemini model aliases (such as 'gemini-3.8-flash' or
+    'gemini-3.5-flash-lite') to valid Google Gemini API model identifiers before SDK calls.
+    """
+    raw = (model or "").strip()
+    if not raw:
+        return default
+    return _GEMINI_MODEL_ALIASES.get(raw.lower(), raw)
+
+
 def clean_llm_output(text: str, strip_markdown_fence: bool = True) -> str:
     """
     清理推理模型輸出：

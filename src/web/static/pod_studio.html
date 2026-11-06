@@ -675,12 +675,21 @@
                 noticeEl.className = 'panel';
                 noticeEl.style.cssText = 'border-left: 4px solid var(--accent, #ea580c); background: #fff7ed; margin-bottom: 1.25rem; padding: 0.85rem 1.2rem;';
                 noticeEl.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                        <div>
-                            <strong style="color: #c2410c; font-size:0.95rem;">🚀 已成功載入全自動整稿初稿《${toolbox.escape(stem || sessId)}》</strong>
-                            <p class="hint" style="margin: 4px 0 0 0; color: #7c2d12; font-size:0.83rem;">初稿 Word (Book_seed.docx) 與原始 PDF 已移轉至 POD 工作區。請確認段落後直接啟動「範本學習與藍圖合成」。</p>
+                    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
+                        <div style="flex: 1; min-width: 280px;">
+                            <strong style="color: #c2410c; font-size:0.98rem; display:block; margin-bottom: 4px;">🚀 已成功載入全自動整稿初稿《${toolbox.escape(stem || sessId)}》</strong>
+                            <p class="hint" style="margin: 0 0 6px 0; color: #7c2d12; font-size:0.84rem; line-height: 1.5;">
+                                原始 PDF (source_book.pdf) 與未套樣式之生稿 (Book_seed.docx) 已移轉至工作區。<br>
+                                <strong>💡 推薦三步驟整稿指引：</strong><br>
+                                1. 點擊右側按鈕下載生稿 Word 檔。<br>
+                                2. 用 Word 手動排版前 1~2 章（標註標題、正文、引文楷體），並在修訂結束處輸入 <code>【人工整稿截止】</code>。<br>
+                                3. 將修整後的 Word 拖曳覆蓋至下方「人工修整範本檔」格，隨後點擊「學習範本特徵並合成藍圖」。
+                            </p>
                         </div>
-                        <span class="file-chip" style="background:#ffedd5; color:#9a3412; font-weight:600;">Step 2 就緒</span>
+                        <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
+                            <span class="file-chip" style="background:#ffedd5; color:#9a3412; font-weight:600;">POD 擴散就緒</span>
+                            <a href="/api/pod/download/${encodeURIComponent(sessId)}/Book_seed.docx" class="btn btn-secondary btn-sm" download style="font-size:0.82rem; white-space:nowrap;">📥 下載初稿進行前段排版</a>
+                        </div>
                     </div>`;
                 if (containerEl && containerEl.children.length > 1) {
                     containerEl.insertBefore(noticeEl, containerEl.children[1]);

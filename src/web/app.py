@@ -348,6 +348,15 @@ async def get_queue_tasks(limit: int = 50, status: Optional[str] = None) -> Queu
 @app.post("/api/queue/cancel/{task_id}")
 async def cancel_queue_task(task_id: str):
     cancelled = get_task_queue().cancel_task(task_id)
+    for stem_key, prog in list(ocr_progress_dict.items()):
+        if prog.get("task_id") == task_id and prog.get("status") in ("processing", "queued", "running"):
+            prog["status"] = "cancelled"
+            prog["message"] = "任務已由使用者取消"
+            cancelled = True
+    if task_id in tasks and tasks[task_id].get("status") in ("processing", "queued", "running"):
+        tasks[task_id]["status"] = "cancelled"
+        tasks[task_id]["message"] = "任務已由使用者取消"
+        cancelled = True
     if not cancelled:
         raise HTTPException(status_code=400, detail="無法取消此任務（任務可能已完成或不存在）")
     return {"status": "success", "message": f"任務 {task_id} 已成功取消"}

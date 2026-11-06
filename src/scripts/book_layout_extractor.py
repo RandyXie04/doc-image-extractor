@@ -81,6 +81,14 @@ except ImportError:
         is_valid_pymupdf_table = None
         extract_reconstructed_tables_from_page = None
 
+try:
+    from src.scripts.paragraph_reconstruction import update_delimiter_stack
+except ImportError:
+    try:
+        from paragraph_reconstruction import update_delimiter_stack
+    except ImportError:
+        update_delimiter_stack = None
+
 CIRCLED_MAP = {
     '①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5,
     '⑥': 6, '⑦': 7, '⑧': 8, '⑨': 9, '⑩': 10,
@@ -100,8 +108,6 @@ _STARTS_WITH_FN_MARKER_RE = re.compile(r'^\s*(' + FN_MARKER_PATTERN + r')\s*')
 _FN_MARKER_PARSE_RE = re.compile(r'^\s*([①-⑩\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|[\[［〔【]\s*\d+\s*[\]］〕】]|[\(（]\s*\d+\s*[\)）]|[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|\d+[.、])\s*')
 
 _PAGE_HEADER_PATTERNS = [
-    re.compile(r'版图之枷'),
-    re.compile(r'军事后勤视野'),
     re.compile(r'^[上下中]篇[:：|｜]'),
     re.compile(r'第[一二三四五六七八九十百]+章'),
     re.compile(r'^/\s*\d+'),
@@ -1009,15 +1015,17 @@ def _parse_pdf_layout_flow(
                     "page_w": page_w,
                     "page_h": page_h,
                 })
+                fig_raw_md = f"![__IMG_PLACEHOLDER_{page_num}_{block_idx}__]()"
+                page_paragraphs.append(fig_raw_md)
                 layout_records.append({
                     "type": "figure",
                     "page_num": page_num,
                     "block_idx": block_idx,
+                    "raw_md": fig_raw_md,
                     "bbox": fig_bbox,
-                    "page_w": page_w,
-                    "page_h": page_h,
+                    "font_name": "figure",
+                    "font_size": 10.5,
                 })
-                page_paragraphs.append(f"![__IMG_PLACEHOLDER_{page_num}_{block_idx}__]()")
                 last_block_x0 = fig_bbox[0]
                 last_block_x1 = fig_bbox[2]
                 last_block_y1 = fig_bbox[3]
@@ -1404,8 +1412,10 @@ def _parse_pdf_layout_flow(
                         should_flush = True
                     else:
                         prev_ends_with_open = bool(_OPEN_PUNCT_RE.search(prev_clean))
+                        unclosed_delims = update_delimiter_stack(prev_clean) if update_delimiter_stack else []
                         has_unclosed_cjk_quote = bool(
-                            prev_clean.count('《') > prev_clean.count('》')
+                            len(unclosed_delims) > 0
+                            or prev_clean.count('《') > prev_clean.count('》')
                             or prev_clean.count('“') > prev_clean.count('”')
                             or prev_clean.count('（') > prev_clean.count('）')
                             or prev_clean.count('(') > prev_clean.count(')')
@@ -1540,6 +1550,13 @@ def _parse_pdf_layout_flow(
 
         if page_paragraphs:
             final_md_pages.append("\n\n".join(page_paragraphs))
+
+    try:
+        from src.extraction.contracts import validate_layout_records
+        validate_layout_records(layout_records)
+    except Exception as val_err:
+        print(f"[Warning] Layout records contract validation notice: {val_err}")
+
     return final_md_pages, all_image_blocks, audit_data, layout_records
 
 

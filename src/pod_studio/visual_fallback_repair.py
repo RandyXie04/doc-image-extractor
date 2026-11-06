@@ -128,8 +128,10 @@ def repair_corrupted_section_with_vlm(
     # 1. 優先嘗試 Gemini（若指定 Gemini 模型且已配置 API Key）
     if ai_client is not None and ("gemini" in target_model.lower()):
         if hasattr(ai_client, "models") and hasattr(ai_client.models, "generate_content"):
+            from src.utils.ollama_client import normalize_gemini_model_name
+
             resp = ai_client.models.generate_content(
-                model=target_model,
+                model=normalize_gemini_model_name(target_model),
                 contents=[image_bytes, prompt],
             )
             return resp.text.strip()

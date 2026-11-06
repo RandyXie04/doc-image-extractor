@@ -123,9 +123,14 @@ async def stream_ocr_events(filename_stem: str):
     broadcaster = get_event_broadcaster()
     queue = get_task_queue()
     rec = queue.get_task_by_stem(filename_stem)
-    task_id = rec.task_id if rec else None
+    task_id = rec.task_id if rec else ocr_progress_dict.get(filename_stem, {}).get("task_id")
 
     async def event_generator():
+        if not task_id:
+            if filename_stem in ocr_progress_dict:
+                yield f"data: {_json.dumps(ocr_progress_dict[filename_stem], ensure_ascii=False)}\n\n"
+            return
+
         sub_queue = broadcaster.subscribe(task_id)
         try:
             # Emit current known state first
@@ -236,6 +241,8 @@ async def upload_and_run_ocr(
             engine=engine,
             payload={
                 "file_path": str(input_pdf_path),
+                "raw_pdf_path": str(raw_pdf_path),
+                "file_id": file_id or "",
                 "ai_kaiti": ai_kaiti,
                 "ai_kaiti_threshold": ai_kaiti_threshold,
                 "no_footnote": no_footnote,
@@ -248,15 +255,31 @@ async def upload_and_run_ocr(
         "progress": 0,
         "message": "正在初始化任務...",
         "status": "processing",
+        "raw_pdf_path": str(raw_pdf_path),
+        "file_id": file_id or "",
         "created_at": time.time(),
     }
 
     async def run_scripts_async(tid, pdf_path_str, stem, style_map_json, eng, skip_footnotes, ai_kaiti_on, ai_kaiti_thresh):
+        from collections import deque
+
         style_map_file_path: Path | None = None
         try:
+            curr_rec = queue.get_task(tid)
+            if curr_rec and curr_rec.status == TaskStatus.CANCELLED.value:
+                ocr_progress_dict[stem]["status"] = "cancelled"
+                ocr_progress_dict[stem]["message"] = "任務已由使用者取消"
+                return
+
             ocr_progress_dict[stem]["message"] = "已排入轉檔佇列，等待運算資源..."
             queue.update_task(tid, status=TaskStatus.RUNNING.value, message="已排入轉檔佇列，等待運算資源...")
             async with get_gpu_semaphore():
+                curr_rec = queue.get_task(tid)
+                if curr_rec and curr_rec.status == TaskStatus.CANCELLED.value:
+                    ocr_progress_dict[stem]["status"] = "cancelled"
+                    ocr_progress_dict[stem]["message"] = "任務已由使用者取消"
+                    return
+
                 output_dir = PATHS.root / "data" / "03_output"
                 backup_dir = output_dir / "backup_originals"
                 output_dir.mkdir(parents=True, exist_ok=True)
@@ -303,7 +326,9 @@ async def upload_and_run_ocr(
                     stderr=asyncio.subprocess.STDOUT,
                     cwd=str(PATHS.root),
                 )
+                queue.register_runtime_handles(tid, proc=proc)
 
+                recent_error_lines: deque[str] = deque(maxlen=10)
                 if proc.stdout is not None:
                     async for raw_line in proc.stdout:
                         try:
@@ -319,27 +344,41 @@ async def upload_and_run_ocr(
                                     ocr_progress_dict[stem]["progress"] = prog
                                     ocr_progress_dict[stem]["message"] = msg
                                     queue.update_task(tid, progress=prog, message=msg)
+                                    if any(k in msg for k in ("[ERROR]", "[FATAL]", "失敗", "失败", "Exception", "Error")):
+                                        recent_error_lines.append(msg[:200])
                                 except Exception:
                                     pass
                             elif is_meaningful_progress_line(line):
                                 short_msg = line[:120]
                                 ocr_progress_dict[stem]["message"] = short_msg
                                 queue.update_task(tid, message=short_msg)
+                                if any(k in line for k in ("[ERROR]", "[FATAL]", "失敗", "失败", "Exception", "Error")):
+                                    recent_error_lines.append(line[:200])
+                            elif not line.startswith(("UserWarning:", "FutureWarning:", "DeprecationWarning:", "RuntimeWarning:", "warnings.warn(")):
+                                if any(k in line for k in ("Error", "Exception", "[ERROR]", "[FATAL]", "失敗", "失败")):
+                                    recent_error_lines.append(line[:200])
 
                 await proc.wait()
 
+                curr_rec = queue.get_task(tid)
+                if curr_rec and curr_rec.status == TaskStatus.CANCELLED.value:
+                    ocr_progress_dict[stem]["status"] = "cancelled"
+                    ocr_progress_dict[stem]["message"] = "任務已由使用者取消"
+                    return
+
                 if proc.returncode != 0:
                     last_msg = ocr_progress_dict[stem].get("message", "")
+                    err_summary = recent_error_lines[-1] if recent_error_lines else last_msg
                     fail_msg = f"轉檔程序執行失敗 (代碼: {proc.returncode})"
-                    if last_msg and not last_msg.startswith("{") and "轉檔程序執行失敗" not in last_msg:
-                        fail_msg = f"{fail_msg}: {last_msg}"
+                    if err_summary and not err_summary.startswith("{") and "轉檔程序執行失敗" not in err_summary:
+                        fail_msg = f"{fail_msg}: {err_summary}"
                     ocr_progress_dict[stem]["status"] = "failed"
                     ocr_progress_dict[stem]["message"] = fail_msg
                     queue.update_task(
                         tid,
                         status=TaskStatus.FAILED.value,
                         message=fail_msg,
-                        error=f"Process exited with {proc.returncode}: {last_msg}",
+                        error=f"Process exited with {proc.returncode}: {err_summary}",
                     )
                     return
 
@@ -361,11 +400,19 @@ async def upload_and_run_ocr(
                     "src.scripts.md_to_docx",
                     "--files",
                     str(md_file),
+                    "--skip-text-postprocess",
                     cwd=str(PATHS.root),
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
+                queue.register_runtime_handles(tid, proc=md_proc)
                 _, md_err = await md_proc.communicate()
+
+                curr_rec = queue.get_task(tid)
+                if curr_rec and curr_rec.status == TaskStatus.CANCELLED.value:
+                    ocr_progress_dict[stem]["status"] = "cancelled"
+                    ocr_progress_dict[stem]["message"] = "任務已由使用者取消"
+                    return
 
                 if md_proc.returncode != 0 or not docx_file.exists():
                     err_detail = md_err.decode(errors="replace").strip() if md_err else ""
@@ -379,12 +426,17 @@ async def upload_and_run_ocr(
                 ocr_progress_dict[stem]["message"] = "轉檔完成！"
                 ocr_progress_dict[stem]["status"] = "completed"
                 queue.update_task(tid, status=TaskStatus.COMPLETED.value, progress=100, message="轉檔完成！")
+        except asyncio.CancelledError:
+            ocr_progress_dict[stem]["status"] = "cancelled"
+            ocr_progress_dict[stem]["message"] = "任務已由使用者取消"
+            raise
         except Exception as err:
             err_msg = f"處理過程異常: {str(err)}"
             ocr_progress_dict[stem]["status"] = "failed"
             ocr_progress_dict[stem]["message"] = err_msg
             queue.update_task(tid, status=TaskStatus.FAILED.value, message=err_msg, error=str(err))
         finally:
+            queue.unregister_runtime_handles(tid)
             if style_map_file_path is not None and style_map_file_path.exists():
                 try:
                     style_map_file_path.unlink()
@@ -408,6 +460,7 @@ async def upload_and_run_ocr(
             ai_kaiti_threshold,
         )
     )
+    queue.register_runtime_handles(task_id, task=t)
     track_background_task(t)
 
     return OcrRunStartResponse(message="OCR 管道已成功啟動", filename_stem=filename_stem, task_id=task_id)

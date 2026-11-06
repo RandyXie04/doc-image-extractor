@@ -27,7 +27,7 @@ from src.pod_studio.pod_service import (
     propagate_and_validate_session,
 )
 from src.pod_studio.vlm_continuation_engine import SecureVLMContinuationEngine
-from src.web.dependencies import CFG, PATHS, save_upload_file_safely
+from src.web.dependencies import CFG, PATHS, get_gpu_semaphore, save_upload_file_safely
 from src.web.schemas import (
     PodAuditSummary,
     PodCompileBlueprintResponse,
@@ -49,6 +49,7 @@ def _get_web_deps():
 @router.post("/api/pod/handoff_from_ocr", response_model=PodHandoffResponse)
 async def pod_handoff_from_ocr(
     filename_stem: str = Form(...),
+    file_id: Optional[str] = Form(None),
 ) -> PodHandoffResponse:
     """
     主流程無縫串接：由全自動整稿（第 1 步）完成後，一鍵建立 POD 工作區（第 2 步）。
@@ -67,15 +68,46 @@ async def pod_handoff_from_ocr(
     shutil.copy2(candidate_docx, target_seed)
 
     target_pdf_name = ""
-    candidate_pdfs = [
+    candidate_pdfs: list[Path] = []
+    if file_id:
+        safe_fid = Path(file_id).name
+        if safe_fid:
+            candidate_pdfs.append(PATHS.input_dir / safe_fid)
+
+    try:
+        from src.web.routers.ocr_router import ocr_progress_dict
+
+        prog_entry = ocr_progress_dict.get(clean_stem) or {}
+        if prog_entry.get("raw_pdf_path"):
+            candidate_pdfs.append(Path(prog_entry["raw_pdf_path"]))
+        if prog_entry.get("file_id"):
+            candidate_pdfs.append(PATHS.input_dir / Path(str(prog_entry["file_id"])).name)
+    except Exception:
+        pass
+
+    try:
+        from src.utils.task_queue import get_task_queue
+
+        rec = get_task_queue().get_task_by_stem(clean_stem)
+        if rec and isinstance(rec.payload, dict):
+            for key in ("raw_pdf_path", "file_path"):
+                val = rec.payload.get(key)
+                if val:
+                    candidate_pdfs.append(Path(str(val)))
+            if rec.payload.get("file_id"):
+                candidate_pdfs.append(PATHS.input_dir / Path(str(rec.payload["file_id"])).name)
+    except Exception:
+        pass
+
+    candidate_pdfs.extend([
         PATHS.root / "data" / "database_text" / f"{clean_stem}.pdf",
         PATHS.input_dir / f"{clean_stem}.pdf",
-    ]
+    ])
     for p in PATHS.input_dir.glob(f"*{clean_stem}*.pdf"):
         candidate_pdfs.append(p)
 
     for c_pdf in candidate_pdfs:
-        if c_pdf.exists():
+        if c_pdf and c_pdf.exists() and c_pdf.is_file():
             shutil.copy2(c_pdf, session_dir / "source_book.pdf")
             target_pdf_name = "source_book.pdf"
             break
@@ -268,18 +300,33 @@ async def pod_3_propagate_and_validate(
     pdf_path = pdf_files[0] if pdf_files else None
 
     try:
-        final_docx_path, report, _ = await asyncio.to_thread(
-            propagate_and_validate_session,
-            session_dir=session_dir,
-            engine_mode=engine_mode,
-            template_docx_path=template_path,
-            custom_blueprint=custom_bp,
-            pdf_path=pdf_path,
-            model=model,
-            max_sections=max_continuation_sections,
-            manual_boundary_anchor=manual_boundary_anchor,
-            manual_boundary_idx=manual_boundary_idx,
-        )
+        if engine_mode == "vlm_continuation":
+            async with get_gpu_semaphore():
+                final_docx_path, report, _ = await asyncio.to_thread(
+                    propagate_and_validate_session,
+                    session_dir=session_dir,
+                    engine_mode=engine_mode,
+                    template_docx_path=template_path,
+                    custom_blueprint=custom_bp,
+                    pdf_path=pdf_path,
+                    model=model,
+                    max_sections=max_continuation_sections,
+                    manual_boundary_anchor=manual_boundary_anchor,
+                    manual_boundary_idx=manual_boundary_idx,
+                )
+        else:
+            final_docx_path, report, _ = await asyncio.to_thread(
+                propagate_and_validate_session,
+                session_dir=session_dir,
+                engine_mode=engine_mode,
+                template_docx_path=template_path,
+                custom_blueprint=custom_bp,
+                pdf_path=pdf_path,
+                model=model,
+                max_sections=max_continuation_sections,
+                manual_boundary_anchor=manual_boundary_anchor,
+                manual_boundary_idx=manual_boundary_idx,
+            )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -385,17 +432,18 @@ async def pod_vlm_continuation(
     )
 
     try:
-        result = await engine.execute_continuation(
-            pdf_path=pdf_path,
-            raw_ast_path=ast_path,
-            seed_docx_path=seed_path,
-            template_docx_path=template_path,
-            model_name=model_name,
-            max_continuation_sections=max_continuation_sections,
-            target_session_dir=session_dir,
-            manual_boundary_anchor=manual_boundary_anchor,
-            manual_boundary_idx=manual_boundary_idx,
-        )
+        async with get_gpu_semaphore():
+            result = await engine.execute_continuation(
+                pdf_path=pdf_path,
+                raw_ast_path=ast_path,
+                seed_docx_path=seed_path,
+                template_docx_path=template_path,
+                model_name=model_name,
+                max_continuation_sections=max_continuation_sections,
+                target_session_dir=session_dir,
+                manual_boundary_anchor=manual_boundary_anchor,
+                manual_boundary_idx=manual_boundary_idx,
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"視覺接續流程執行異常: {str(e)}")
 

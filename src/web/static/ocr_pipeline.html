@@ -314,9 +314,12 @@
                          六階段語意進度管道與結果中心
                          ========================================================= -->
                     <div class="pipeline-feedback-card" id="pipelineFeedbackPanel" style="display: none;">
-                        <div class="pipeline-header">
-                            <h3 id="pipelineStatusTitle">準備啟動轉檔任務…</h3>
-                            <span id="pipelinePercentBadge" class="percent-pill">0%</span>
+                        <div class="pipeline-header" style="display: flex; justify-content: space-between; align-items: center;">
+                            <h3 id="pipelineStatusTitle" style="margin: 0;">準備啟動轉檔任務…</h3>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <span id="pipelinePercentBadge" class="percent-pill">0%</span>
+                                <button type="button" id="cancelTaskBtn" class="btn btn-secondary btn-xs" style="display: none; color: var(--f2-color-danger, #d13438); border-color: var(--f2-color-danger, #d13438); padding: 2px 8px; font-size: 0.75rem; cursor: pointer;">取消任務</button>
+                            </div>
                         </div>
 
                         <!-- 進度條 -->
@@ -506,12 +509,14 @@
         const retrySameParamsBtn = document.getElementById('retrySameParamsBtn');
         const adjustSettingsBtn = document.getElementById('adjustSettingsBtn');
         const pipelineResultSummary = document.getElementById('pipelineResultSummary');
+        const cancelTaskBtn = document.getElementById('cancelTaskBtn');
         const statusDiv = document.getElementById('status');
 
         // State Variables
         let currentFile = null;
         let currentFileId = null;
         let currentFileOrigName = "";
+        let currentRunningTaskId = null;
         let currentPreviewPage = 1;
         let totalPdfPages = 1;
         let debounceTimer = null;
@@ -582,22 +587,34 @@
         setupAccordion('tierAdvancedTrigger', 'tierAdvancedContent', 'tierAdvancedAccordion');
         setupAccordion('tierEngineerTrigger', 'tierEngineerContent', 'tierEngineerAccordion');
 
-        // 本機開發者預設開啟工程師模式檢查
-        function checkDevEngineerModePreset() {
-            const isDevPreset = localStorage.getItem('developer_engineer_mode') === 'true';
-            if (isDevPreset) {
-                const engTrigger = document.getElementById('tierEngineerTrigger');
-                const engContent = document.getElementById('tierEngineerContent');
-                const engContainer = document.getElementById('tierEngineerAccordion');
-                if (engTrigger && engContent && engContainer) {
+        // 本機開發者預設開啟工程師模式檢查與即時切換監聽
+        function setEngineerAccordionState(isDev) {
+            const engTrigger = document.getElementById('tierEngineerTrigger');
+            const engContent = document.getElementById('tierEngineerContent');
+            const engContainer = document.getElementById('tierEngineerAccordion');
+            if (engTrigger && engContent && engContainer) {
+                if (isDev) {
                     engTrigger.setAttribute('aria-expanded', 'true');
                     engContainer.classList.add('is-expanded');
                     engContent.removeAttribute('hidden');
                     engContent.style.display = 'flex';
+                } else {
+                    engTrigger.setAttribute('aria-expanded', 'false');
+                    engContainer.classList.remove('is-expanded');
+                    engContent.setAttribute('hidden', '');
+                    engContent.style.display = 'none';
                 }
             }
         }
+        function checkDevEngineerModePreset() {
+            const isDevPreset = localStorage.getItem('developer_engineer_mode') === 'true';
+            setEngineerAccordionState(isDevPreset);
+        }
         window.addEventListener('DOMContentLoaded', checkDevEngineerModePreset);
+        window.addEventListener('appModeChanged', (e) => {
+            const isDev = e.detail && e.detail.mode === 'dev';
+            setEngineerAccordionState(isDev);
+        });
 
         // ══════════════════════════════════════════════════════
         // 3. SSOT 裁切管理器 (CropStateManager)
@@ -1088,6 +1105,8 @@
 
                 const result = await response.json();
                 const stem = result.filename_stem;
+                const taskId = result.task_id;
+                currentRunningTaskId = taskId;
                 activeStem = stem;
 
                 let isFinished = false;
@@ -1095,6 +1114,9 @@
                 let pollInterval = null;
 
                 function cleanupListeners() {
+                    if (cancelTaskBtn) {
+                        cancelTaskBtn.style.display = 'none';
+                    }
                     if (evtSource) {
                         evtSource.close();
                         evtSource = null;
@@ -1103,6 +1125,38 @@
                         clearInterval(pollInterval);
                         pollInterval = null;
                     }
+                }
+
+                if (cancelTaskBtn && taskId) {
+                    cancelTaskBtn.style.display = 'inline-flex';
+                    cancelTaskBtn.disabled = false;
+                    cancelTaskBtn.textContent = '取消任務';
+                    cancelTaskBtn.onclick = async () => {
+                        cancelTaskBtn.disabled = true;
+                        cancelTaskBtn.textContent = '正在取消…';
+                        try {
+                            const cRes = await fetch(`/api/queue/cancel/${encodeURIComponent(taskId)}`, { method: 'POST' });
+                            const cData = await cRes.json().catch(() => ({}));
+                            if (cRes.ok) {
+                                isFinished = true;
+                                cleanupListeners();
+                                setInspectorReadonly(false);
+                                updatePipelineUI(currentStageIdx, 0, '整稿任務已由使用者手動取消');
+                                pipelineStatusTitle.textContent = '整稿任務已取消';
+                                submitBtn.textContent = '重新執行整稿';
+                                submitBtn.disabled = false;
+                                toolbox.notify('任務已取消', 'info');
+                            } else {
+                                toolbox.notify(cData.detail || '取消失敗', 'warning');
+                                cancelTaskBtn.disabled = false;
+                                cancelTaskBtn.textContent = '取消任務';
+                            }
+                        } catch (cErr) {
+                            toolbox.notify('取消失敗：' + cErr.message, 'error');
+                            cancelTaskBtn.disabled = false;
+                            cancelTaskBtn.textContent = '取消任務';
+                        }
+                    };
                 }
 
                 function handleProgressUpdate(progRaw) {
@@ -1163,6 +1217,7 @@
         };
 
         function onFailure(errMsg) {
+            if (cancelTaskBtn) cancelTaskBtn.style.display = 'none';
             setInspectorReadonly(false);
             submitBtn.textContent = '重新執行整稿';
 
@@ -1193,6 +1248,7 @@
         };
 
         function onComplete(stem) {
+            if (cancelTaskBtn) cancelTaskBtn.style.display = 'none';
             setInspectorReadonly(false);
             updatePipelineUI(6, 100, '全自動整稿已完成');
             submitBtn.textContent = '再次重新整稿';
@@ -1273,6 +1329,9 @@
                     try {
                         const fd = new FormData();
                         fd.append('filename_stem', stem);
+                        if (typeof currentFileId !== 'undefined' && currentFileId) {
+                            fd.append('file_id', currentFileId);
+                        }
                         const resp = await fetch('/api/pod/handoff_from_ocr', { method: 'POST', body: fd });
                         const resData = await resp.json();
                         if (!resp.ok) throw new Error(resData.detail || '建立 POD 工作區失敗');

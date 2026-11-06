@@ -389,8 +389,10 @@ class AIKaitiClassifier:
             user_prompt += f"\n截圖中的文字內容為：「{text_hint[:200]}」"
 
         try:
+            from src.utils.ollama_client import normalize_gemini_model_name
+
             interaction = client.models.generate_content(
-                model=self.model,
+                model=normalize_gemini_model_name(self.model),
                 contents=[
                     types.Content(
                         role="user",
@@ -534,8 +536,10 @@ class AIKaitiClassifier:
         from google.genai import types  # pyrefly: ignore [missing-import]
 
         try:
+            from src.utils.ollama_client import normalize_gemini_model_name
+
             interaction = client.models.generate_content(
-                model=self.model,
+                model=normalize_gemini_model_name(self.model),
                 contents=[
                     types.Content(
                         role="user",

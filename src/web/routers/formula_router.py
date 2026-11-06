@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import io
 import os
+import shutil
 import time
 import uuid
 import xml.etree.ElementTree as ET
@@ -90,6 +91,11 @@ def process_pdf_sync(
 
         if pipeline_res and pipeline_res.get("delivery_folder"):
             zip_p = pipeline_res.get("zip_path")
+            orig_stem = Path(file_path).stem
+            isolated_zip = PATHS.output_dir / f"formulas_{orig_stem}_{task_id[:8]}.zip"
+            if zip_p and Path(zip_p).exists() and Path(zip_p) != isolated_zip:
+                shutil.copy2(zip_p, isolated_zip)
+                zip_p = str(isolated_zip)
             formula_tasks[task_id]["word_file"] = None
             formula_tasks[task_id]["zip_file"] = zip_p
             formula_tasks[task_id]["result_file"] = zip_p
@@ -294,22 +300,39 @@ async def start_process(
     )
 
     async def _guarded_runner():
-        async with get_gpu_semaphore():
-            await asyncio.to_thread(
-                process_pdf_sync,
-                task_id,
-                str(file_path),
-                extract_formulas,
-                start_page,
-                end_page,
-                header_ratio,
-                footer_ratio,
-                left_ratio,
-                right_ratio,
-                extract_inline,
-            )
+        try:
+            curr_rec = queue.get_task(task_id)
+            if curr_rec and curr_rec.status == TaskStatus.CANCELLED.value:
+                formula_tasks[task_id]["status"] = "cancelled"
+                formula_tasks[task_id]["message"] = "任務已由使用者取消"
+                return
+            async with get_gpu_semaphore():
+                curr_rec = queue.get_task(task_id)
+                if curr_rec and curr_rec.status == TaskStatus.CANCELLED.value:
+                    formula_tasks[task_id]["status"] = "cancelled"
+                    formula_tasks[task_id]["message"] = "任務已由使用者取消"
+                    return
+                await asyncio.to_thread(
+                    process_pdf_sync,
+                    task_id,
+                    str(file_path),
+                    extract_formulas,
+                    start_page,
+                    end_page,
+                    header_ratio,
+                    footer_ratio,
+                    left_ratio,
+                    right_ratio,
+                    extract_inline,
+                )
+        except asyncio.CancelledError:
+            formula_tasks[task_id]["status"] = "cancelled"
+            formula_tasks[task_id]["message"] = "任務已由使用者取消"
+        finally:
+            queue.unregister_runtime_handles(task_id)
 
     t = asyncio.create_task(_guarded_runner())
+    queue.register_runtime_handles(task_id, task=t)
     track_background_task(t)
 
     return {"task_id": task_id}

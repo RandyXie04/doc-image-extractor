@@ -864,11 +864,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const d = await res.json();
                 if (d.status === 'success') {
                     window.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: d.mode } }));
+                    document.dispatchEvent(new CustomEvent('appModeChanged', { detail: { mode: d.mode } }));
+                    updateModeBtnUI(d.mode);
                     const msg = d.mode === 'dev'
                         ? '已切換為工程師除錯模式：顯示處理日誌與內部目錄。'
                         : '已切換為出版社編輯模式：隱藏處理日誌與內部目錄。';
-                    sessionStorage.setItem('tb-toast', msg);
-                    window.location.reload();
+                    if (window.toolbox && window.toolbox.notify) {
+                        window.toolbox.notify(msg, 'success');
+                    }
                 }
             } catch (err) {
                 window.toolbox.notify('模式切換失敗：' + err.message, 'error');

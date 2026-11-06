@@ -95,7 +95,10 @@
                                         <span class="file-name">${toolbox.escape(result.filename)}</span>
                                         <span class="file-desc">修復後的 Word 文件</span>
                                     </div>
-                                    <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON}另存 Word</button>
+                                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                                        <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON}另存 Word</button>
+                                        <a href="/static/pod_studio.html" class="btn btn-secondary btn-sm" id="handoffPodBtn">接續送入 POD 整稿 →</a>
+                                    </div>
                                 </li>
                             </ul>
                             <div class="result-note">檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀，請及時另存。</div>
@@ -104,7 +107,7 @@
                         sourcePath: result.source_path,
                         filename: result.filename,
                         button: ev.currentTarget,
-                        fallbackUrl: null,
+                        fallbackUrl: result.download_url || ('/api/founder/download/' + encodeURIComponent(result.filename)),
                         mountEl: document.getElementById('resultCard'),
                         label: 'Word'
                     });

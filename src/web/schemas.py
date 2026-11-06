@@ -126,7 +126,7 @@ class OcrProgressResponse(StrictApiSchema):
     task_id: Optional[str] = None
     progress: int = Field(..., ge=0, le=100)
     message: str
-    status: Literal["processing", "completed", "failed", "queued", "running"]
+    status: Literal["processing", "completed", "failed", "queued", "running", "cancelled"]
     error: Optional[str] = None
     created_at: Optional[float] = None
 
@@ -231,6 +231,7 @@ class FounderRepairResponse(StrictApiSchema):
     success: bool = True
     source_path: str
     filename: str
+    download_url: str = ""
 
 
 class HardwareStatusResponse(StrictApiSchema):

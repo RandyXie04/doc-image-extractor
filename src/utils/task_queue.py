@@ -166,6 +166,14 @@ class BaseTaskQueue(abc.ABC):
         """Retrieve file paths currently held by queued or running tasks."""
         pass
 
+    def register_runtime_handles(self, task_id: str, *, task: Any = None, proc: Any = None) -> None:
+        """Register live asyncio.Task or subprocess handle for true cancellation."""
+        pass
+
+    def unregister_runtime_handles(self, task_id: str) -> None:
+        """Unregister runtime handles when a task finishes."""
+        pass
+
 
 class PersistentSQLiteTaskQueue(BaseTaskQueue):
     """
@@ -179,7 +187,19 @@ class PersistentSQLiteTaskQueue(BaseTaskQueue):
     def __init__(self, db_path: Optional[Path] = None):
         self.db_path = db_path or (PATHS.data_dir / "task_queue.db")
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._active_processes: Dict[str, Any] = {}
+        self._active_async_tasks: Dict[str, Any] = {}
         self._init_db()
+
+    def register_runtime_handles(self, task_id: str, *, task: Any = None, proc: Any = None) -> None:
+        if task is not None:
+            self._active_async_tasks[task_id] = task
+        if proc is not None:
+            self._active_processes[task_id] = proc
+
+    def unregister_runtime_handles(self, task_id: str) -> None:
+        self._active_processes.pop(task_id, None)
+        self._active_async_tasks.pop(task_id, None)
 
     @contextlib.contextmanager
     def _get_connection(self):
@@ -320,22 +340,40 @@ class PersistentSQLiteTaskQueue(BaseTaskQueue):
         params.append(time.time())
         params.append(task_id)
 
-        sql = f"UPDATE task_records SET {', '.join(updates)} WHERE task_id = ?"
+        sql = f"UPDATE task_records SET {', '.join(updates)} WHERE task_id = ? AND status != 'cancelled'"
         with self._get_connection() as conn:
-            conn.execute(sql, tuple(params))
+            cursor = conn.cursor()
+            cursor.execute(sql, tuple(params))
             conn.commit()
+            if cursor.rowcount == 0:
+                return
 
-        _GLOBAL_BROADCASTER.publish(
-            task_id,
-            {
-                "task_id": task_id,
-                "status": status,
-                "progress": progress,
-                "message": message,
-                "error": error,
-                "timestamp": time.time(),
-            }
-        )
+        rec = self.get_task(task_id)
+        if rec is not None:
+            _GLOBAL_BROADCASTER.publish(
+                task_id,
+                {
+                    "task_id": rec.task_id,
+                    "stem": rec.stem,
+                    "status": rec.status,
+                    "progress": rec.progress,
+                    "message": rec.message,
+                    "error": rec.error,
+                    "timestamp": time.time(),
+                },
+            )
+        else:
+            _GLOBAL_BROADCASTER.publish(
+                task_id,
+                {
+                    "task_id": task_id,
+                    "status": status,
+                    "progress": progress,
+                    "message": message,
+                    "error": error,
+                    "timestamp": time.time(),
+                },
+            )
 
     def list_tasks(self, limit: int = 50, status: Optional[str] = None) -> List[TaskRecord]:
         with self._get_connection() as conn:
@@ -361,7 +399,40 @@ class PersistentSQLiteTaskQueue(BaseTaskQueue):
                 (time.time(), task_id),
             )
             conn.commit()
-            return cursor.rowcount > 0
+            updated = cursor.rowcount > 0
+
+        proc = self._active_processes.pop(task_id, None)
+        if proc is not None:
+            try:
+                proc.terminate()
+                updated = True
+            except Exception:
+                pass
+
+        async_task = self._active_async_tasks.pop(task_id, None)
+        if async_task is not None:
+            try:
+                async_task.cancel()
+                updated = True
+            except Exception:
+                pass
+
+        if updated:
+            rec = self.get_task(task_id)
+            if rec is not None:
+                _GLOBAL_BROADCASTER.publish(
+                    task_id,
+                    {
+                        "task_id": rec.task_id,
+                        "stem": rec.stem,
+                        "status": rec.status,
+                        "progress": rec.progress,
+                        "message": rec.message,
+                        "error": rec.error,
+                        "timestamp": time.time(),
+                    },
+                )
+        return updated
 
     def cleanup_expired_tasks(self, max_age_seconds: int = 86400) -> int:
         cutoff = time.time() - max_age_seconds
@@ -391,9 +462,10 @@ class PersistentSQLiteTaskQueue(BaseTaskQueue):
                     continue
                 try:
                     payload = json.loads(raw_payload) if isinstance(raw_payload, str) else raw_payload
-                    fp = payload.get("file_path")
-                    if fp:
-                        active_paths.add(Path(fp))
+                    for key in ("file_path", "raw_pdf_path"):
+                        fp = payload.get(key)
+                        if fp:
+                            active_paths.add(Path(fp))
                 except Exception:
                     pass
         return active_paths
@@ -460,6 +532,12 @@ class CeleryTaskQueueAdapter(BaseTaskQueue):
 
     def get_active_payload_paths(self) -> Set[Path]:
         return self.fallback.get_active_payload_paths()
+
+    def register_runtime_handles(self, task_id: str, *, task: Any = None, proc: Any = None) -> None:
+        self.fallback.register_runtime_handles(task_id, task=task, proc=proc)
+
+    def unregister_runtime_handles(self, task_id: str) -> None:
+        self.fallback.unregister_runtime_handles(task_id)
 
 
 # Global task queue singleton
