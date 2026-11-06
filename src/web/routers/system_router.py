@@ -22,7 +22,13 @@ from typing import Optional
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
 from src.web.dependencies import CFG, PATHS, _GPU_SEMAPHORE, save_upload_file_safely
-from src.web.schemas import FounderRepairResponse, HardwareTelemetryResponse
+from src.web.schemas import (
+    FounderRepairResponse,
+    HardwareTelemetryResponse,
+    TaskPluginListResponse,
+    TaskPluginSpecItem,
+)
+from src.plugins.registry import get_plugin_registry
 
 router = APIRouter(tags=["system"])
 
@@ -127,6 +133,18 @@ async def get_system_config():
         "ollama_available": is_ollama_available(),
         "offline_isolated": True,
     }
+
+
+@router.get("/api/system/plugins", response_model=TaskPluginListResponse)
+async def list_system_plugins(
+    category: Optional[str] = Query(None, description="依分類篩選：core_typesetting / core_proofreading / auxiliary_task"),
+    include_disabled: bool = Query(False, description="是否包含停用之外掛"),
+) -> TaskPluginListResponse:
+    """取得系統已註冊之雙核心與專項工作任務外掛能力清單"""
+    registry = get_plugin_registry()
+    specs = registry.list_specs(category=category, only_enabled=not include_disabled)
+    items = [TaskPluginSpecItem(**s.to_dict()) for s in specs]
+    return TaskPluginListResponse(status="success", total=len(items), plugins=items)
 
 
 @router.get("/api/hardware_status")

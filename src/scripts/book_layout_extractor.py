@@ -626,21 +626,6 @@ def _parse_pdf_layout_flow(
         page_tables = []  # list of fitz.table.Table objects
         reconstructed_tables = []  # list of ReconstructedTable objects (3-line tables)
         table_bboxes = []  # list of fitz.Rect for overlap checks
-        try:
-            tabs = page.find_tables()
-            if tabs and tabs.tables:
-                for t in tabs.tables:
-                    if is_valid_pymupdf_table is not None:
-                        try:
-                            cells = t.extract()
-                        except Exception:
-                            cells = []
-                        if not is_valid_pymupdf_table(cells, t.bbox, page_w, page_h):
-                            continue
-                    page_tables.append(t)
-                    table_bboxes.append(fitz.Rect(t.bbox))
-        except Exception:
-            pass  # find_tables() not available in older PyMuPDF – graceful fallback
 
         def _block_overlaps_any_table(bbox_list, block_bbox):
             """Return True if block_bbox overlaps any known table region by >30%."""
@@ -655,6 +640,7 @@ def _parse_pdf_layout_flow(
                     return True
             return False
 
+        # Priority 1: High-precision 2D coordinate clustering for borderless 3-line tables
         if extract_reconstructed_tables_from_page is not None:
             try:
                 three_line_list = extract_reconstructed_tables_from_page(page, blocks=blocks)
@@ -664,6 +650,25 @@ def _parse_pdf_layout_flow(
                         table_bboxes.append(fitz.Rect(rtbl.bbox))
             except Exception:
                 pass
+
+        # Priority 2: PyMuPDF standard bordered grid table detection (skipped if region already claimed)
+        try:
+            tabs = page.find_tables()
+            if tabs and tabs.tables:
+                for t in tabs.tables:
+                    if _block_overlaps_any_table(table_bboxes, t.bbox):
+                        continue
+                    if is_valid_pymupdf_table is not None:
+                        try:
+                            cells = t.extract()
+                        except Exception:
+                            cells = []
+                        if not is_valid_pymupdf_table(cells, t.bbox, page_w, page_h):
+                            continue
+                    page_tables.append(t)
+                    table_bboxes.append(fitz.Rect(t.bbox))
+        except Exception:
+            pass  # find_tables() not available in older PyMuPDF – graceful fallback
 
         # Step 1: Collect valid text blocks, separate header/footer/footnote
         body_blocks = []

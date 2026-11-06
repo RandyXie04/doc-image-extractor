@@ -85,7 +85,8 @@ const ICON = {
     shield: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>',
     fileText: '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>',
     cpu: '<rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>',
-    close: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>'
+    close: '<line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>',
+    check: '<polyline points="20 6 9 17 4 12"/>'
 };
 
 function svg(name, size = 16) {
@@ -186,7 +187,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         <!-- 1.1 General Settings -->
                         <div class="ia-subgroup" role="group" aria-labelledby="sgGeneralTitle">
                             <div class="ia-subgroup-title" id="sgGeneralTitle">一般與工作流設定 (General)</div>
-                            <div class="ia-nav-list">
+                            <div class="ia-nav-list" id="mainNavList">
                                 ${mainNavHtml}
                             </div>
                             <button id="themeToggleBtn" class="ia-action-btn" type="button">
@@ -400,14 +401,18 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
-    document.querySelectorAll('#sidebar a.nav-link, #sidebar a.nav-sub-link').forEach(link => {
-        link.addEventListener('click', () => {
-            const vp = /** @type {any} */ (window).viewportManager;
-            if (vp && typeof vp.isMobile === 'function' && (vp.isMobile() || vp.isTablet())) {
-                vp.closeSidebar();
+    const sidebarNavEl = document.getElementById('sidebar');
+    if (sidebarNavEl) {
+        sidebarNavEl.addEventListener('click', (e) => {
+            const link = e.target.closest('a.nav-link, a.nav-sub-link');
+            if (link) {
+                const vp = /** @type {any} */ (window).viewportManager;
+                if (vp && typeof vp.isMobile === 'function' && (vp.isMobile() || vp.isTablet())) {
+                    vp.closeSidebar();
+                }
             }
         });
-    });
+    }
 
     // 通用兩大主分類 (Settings / Documentation) 展開與收折控制
     function setupPrimaryCategoryToggle(toggleId, panelId, containerId, storageKey) {
@@ -939,4 +944,41 @@ document.addEventListener('DOMContentLoaded', () => {
             updateThemeToggleUI(newTheme);
         };
     }
+
+    // 動態外掛與專項工作任務註冊發現 (Pluggable Task Architecture)
+    async function loadDynamicTaskPlugins() {
+        try {
+            const res = await fetch('/api/system/plugins');
+            if (!res.ok) return;
+            const data = await res.json();
+            if (!data || data.status !== 'success' || !Array.isArray(data.plugins)) return;
+
+            const corePlugins = data.plugins.filter(p => p.category === 'core_typesetting' && p.is_enabled);
+            const auxPlugins = data.plugins.filter(p => p.category === 'auxiliary_task' && p.is_enabled);
+            const curPath = window.location.pathname;
+
+            const mainNavList = document.getElementById('mainNavList');
+            if (mainNavList && corePlugins.length > 0) {
+                mainNavList.innerHTML = corePlugins.map(item => `
+                    <a href="${item.entry_url}" class="nav-link ${curPath.includes(item.id) ? 'active' : ''}"${curPath.includes(item.id) ? ' aria-current="page"' : ''}>
+                        <span class="nav-icon">${svg(item.icon, 15)}</span>
+                        <span class="nav-label">${window.toolbox.escape(item.name)}</span>
+                    </a>`).join('');
+            }
+
+            const auxNavChildren = document.getElementById('auxNavChildren');
+            const auxCountEl = document.querySelector('#auxNavToggle .nav-group-count');
+            if (auxNavChildren && auxPlugins.length > 0) {
+                auxNavChildren.innerHTML = auxPlugins.map(item => `
+                    <a href="${item.entry_url}" class="nav-sub-link ${curPath.includes(item.id) ? 'active' : ''}"${curPath.includes(item.id) ? ' aria-current="page"' : ''}>
+                        <span class="nav-sub-icon">${svg(item.icon, 14)}</span>
+                        <span class="nav-sub-label">${window.toolbox.escape(item.name)}</span>
+                    </a>`).join('');
+                if (auxCountEl) auxCountEl.textContent = auxPlugins.length;
+            }
+        } catch (err) {
+            console.debug('[Plugins] Dynamic discovery skipped:', err);
+        }
+    }
+    loadDynamicTaskPlugins();
 });

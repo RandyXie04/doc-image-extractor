@@ -311,13 +311,6 @@ class PropagationEngine:
                     except Exception:
                         pass
 
-            if model:
-                target_model = model
-            elif ai_client is not None and not isinstance(ai_client, str):
-                target_model = os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
-            else:
-                target_model = os.getenv("DEFAULT_AI_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
-
             from src.utils.ollama_client import (
                 is_ollama_available,
                 ollama_structured_chat,
@@ -325,8 +318,25 @@ class PropagationEngine:
                 is_model_installed,
             )
 
-            is_gemini_model = "gemini" in target_model.lower()
             ollama_ready = is_ollama_available()
+
+            if model:
+                target_model = model
+            elif ai_client is not None and not isinstance(ai_client, str):
+                target_model = os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
+            elif api_key:
+                target_model = os.getenv("GEMINI_MODEL") or "gemini-3.5-flash-lite"
+            elif ollama_ready:
+                target_model = get_default_text_model()
+            elif os.getenv("DEFAULT_AI_MODEL"):
+                target_model = os.getenv("DEFAULT_AI_MODEL")
+            else:
+                # 未指定 AI 模型、無 API 金鑰且本機無 Ollama：確定性整稿規則將其餘未分類段落安全設定為 Normal
+                for idx, _ in unclassified:
+                    results[idx] = "Normal"
+                return results
+
+            is_gemini_model = "gemini" in target_model.lower()
 
             # ── 零靜默降級政策檢驗 (Zero Silent Fallback) ──
             if not is_gemini_model:

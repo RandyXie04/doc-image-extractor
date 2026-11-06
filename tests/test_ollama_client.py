@@ -150,6 +150,7 @@ def test_find_ollama_executable():
         assert find_ollama_executable() == "C:\\FakePath\\ollama.exe"
 
     with patch("shutil.which", return_value=None), \
+         patch("os.name", "nt"), \
          patch("os.path.exists", return_value=True):
         exe = find_ollama_executable()
         assert exe is not None

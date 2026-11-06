@@ -214,6 +214,27 @@ export interface UpdateCheckResponse {
   readonly error: string | null;
 }
 
+export interface TaskPluginSpecItem {
+  readonly id: string;
+  readonly name: string;
+  readonly category: "core_typesetting" | "core_proofreading" | "auxiliary_task";
+  readonly description: string;
+  readonly icon: string;
+  readonly entry_url: string;
+  readonly api_prefix: string;
+  readonly allowed_input_exts: string[];
+  readonly output_types: string[];
+  readonly requires_gpu: boolean;
+  readonly is_enabled: boolean;
+  readonly order: number;
+}
+
+export interface TaskPluginListResponse {
+  readonly status: "success";
+  readonly total: number;
+  readonly plugins: TaskPluginSpecItem[];
+}
+
 export interface ParagraphLayoutContract {
   readonly type: "paragraph" | "caption" | "table_caption";
   readonly page_num: number;

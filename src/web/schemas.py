@@ -276,3 +276,28 @@ class HardwareTelemetryResponse(StrictApiSchema):
     is_accelerated: bool = False
     gpu_locked: bool = False
     app_mode: str = "editor"
+
+
+# ---------------------------------------------------------------------------
+# Pluggable Specialized Task Engine Contracts
+# ---------------------------------------------------------------------------
+
+class TaskPluginSpecItem(StrictApiSchema):
+    id: str
+    name: str
+    category: Literal["core_typesetting", "core_proofreading", "auxiliary_task"]
+    description: str
+    icon: str
+    entry_url: str
+    api_prefix: str
+    allowed_input_exts: List[str]
+    output_types: List[str]
+    requires_gpu: bool = False
+    is_enabled: bool = True
+    order: int = 100
+
+
+class TaskPluginListResponse(StrictApiSchema):
+    status: Literal["success"] = "success"
+    total: int = Field(..., ge=0)
+    plugins: List[TaskPluginSpecItem]

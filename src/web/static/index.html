@@ -139,7 +139,7 @@
         </ol>
 
         <h2 class="section-title">輔助工具</h2>
-        <ul class="tool-list">
+        <ul class="tool-list" id="auxToolList">
             <li>
                 <a href="/static/founder_repair.html">
                     <strong>方正修復</strong>
@@ -162,6 +162,25 @@
     </div>
     <script src="/static/js/viewport_manager.js"></script>
     <script src="/static/sidebar.js"></script>
+    <script>
+        fetch('/api/system/plugins?category=auxiliary_task')
+            .then(r => r.json())
+            .then(data => {
+                if (!data || data.status !== 'success' || !Array.isArray(data.plugins) || data.plugins.length === 0) return;
+                const listEl = document.getElementById('auxToolList');
+                if (listEl) {
+                    listEl.innerHTML = data.plugins.map(p => `
+                        <li>
+                            <a href="${p.entry_url}">
+                                <strong>${p.name}</strong>
+                                <span>${p.description} 輸出：${p.output_types.map(t => t.toUpperCase()).join('、')}。</span>
+                            </a>
+                        </li>
+                    `).join('');
+                }
+            })
+            .catch(() => {});
+    </script>
 </body>
 
 </html>

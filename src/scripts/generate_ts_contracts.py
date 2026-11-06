@@ -42,6 +42,8 @@ try:
         FounderRepairResponse,
         HardwareStatusResponse,
         UpdateCheckResponse,
+        TaskPluginSpecItem,
+        TaskPluginListResponse,
     )
     from src.extraction.contracts import (
         ParagraphLayoutContract,
@@ -82,6 +84,8 @@ except ImportError:
         FounderRepairResponse,
         HardwareStatusResponse,
         UpdateCheckResponse,
+        TaskPluginSpecItem,
+        TaskPluginListResponse,
     )
     from src.extraction.contracts import (
         ParagraphLayoutContract,
@@ -119,6 +123,8 @@ EXPORTED_MODELS: List[Type[BaseModel]] = [
     FounderRepairResponse,
     HardwareStatusResponse,
     UpdateCheckResponse,
+    TaskPluginSpecItem,
+    TaskPluginListResponse,
     ParagraphLayoutContract,
     HeadingLayoutContract,
     TableLayoutContract,
