@@ -108,6 +108,142 @@ class TestSymbolMapperAndOcrFixes(unittest.TestCase):
         slices = _slice_box_into_lines(img, min_line_h=8)
         self.assertEqual(len(slices), 3)
 
+    def test_join_ocr_line_slices_splices_cjk_lines_smoothly(self):
+        """驗證多行切片拼接演算法在 CJK 漢字間無縫拼接且在英文字詞間保留空格"""
+        from src.scripts.process_ocr import _join_ocr_line_slices
+
+        lines = ["双参灵百汤的配伍思路主要借鉴了清代吴鞠通《温", "病条辨》中的沙参麦冬汤。", "Clinical trial", "Phase III"]
+        joined = _join_ocr_line_slices(lines)
+        self.assertEqual(
+            joined,
+            "双参灵百汤的配伍思路主要借鉴了清代吴鞠通《温病条辨》中的沙参麦冬汤。 Clinical trial Phase III"
+        )
+
+    def test_process_page_footnotes_restores_block_without_wiping_headings_and_styles(self):
+        """驗證 L1 修復：頁底未匹配之偽腳注區塊（如條列 ①...）退回正文時，不會抹除頁首標題與樣式"""
+        from src.scripts.process_ocr import process_page_footnotes
+
+        page_info = {
+            "page_idx": 0,
+            "page_size": [1000.0, 1400.0],
+            "para_blocks": [
+                {
+                    "original_label": "section-header",
+                    "bbox": [100.0, 80.0, 400.0, 120.0],
+                    "surya_text": "第一章　组方思路",
+                    "type": None,
+                },
+                {
+                    "original_label": "text",
+                    "bbox": [100.0, 150.0, 900.0, 300.0],
+                    "surya_text": "这是普通正文段落，阐述基本病理机制与药物相互作用关系。",
+                    "type": None,
+                },
+                {
+                    "original_label": "text",
+                    "bbox": [100.0, 1100.0, 850.0, 1150.0],  # y0 > 1400 * 0.72 = 1008
+                    "surya_text": "①将药材洗净后加入清水浸泡三十分钟。",  # 前綴為 ① 但正文無錨點且非文獻引用
+                    "type": None,
+                },
+            ],
+        }
+        audit_records = []
+        style_mapping = {"h1": "heading 1", "h2": "heading 2", "body": "Normal"}
+
+        body_list, final_footnotes, open_fn = process_page_footnotes(
+            page_info=page_info,
+            page_num=1,
+            previous_open_footnote=None,
+            audit_records=audit_records,
+            style_mapping=style_mapping,
+            enable_footnotes=True,
+        )
+
+        # 1. 偽腳注 ① 未被誤轉為腳注，而是完整退回正文
+        self.assertEqual(len(final_footnotes), 0)
+        self.assertIsNone(open_fn)
+        self.assertEqual(len(body_list), 3)
+
+        # 2. 標題依然被正確識別為 H1 並套用 custom-style，未被第二度 render_blocks 抹除！
+        h_md = body_list[0]["md"]
+        self.assertTrue(h_md.startswith("# 第一章　组方思路"))
+        self.assertIn('custom-style="heading 1"', h_md)
+
+        # 3. 內文與退回的條列區塊亦正常套用樣式
+        self.assertIn('custom-style="Normal"', body_list[1]["md"])
+        self.assertIn("①将药材洗净后加入清水浸泡三十分钟。", body_list[2]["md"])
+
+    def test_process_page_footnotes_uses_actual_page_width_for_centered_heading(self):
+        """驗證 L3 修復：以實際頁寬（如 1200px）判定置中標題，避免以硬編碼 300px 誤判左對齊短句"""
+        from src.scripts.process_ocr import process_page_footnotes
+
+        page_info = {
+            "page_idx": 0,
+            "page_size": [1200.0, 1600.0],
+            "para_blocks": [
+                {
+                    # 真正置中短標題：x0=450, x1=750, 中心點 600, 距頁面中點 600 偏差 0
+                    "original_label": "text",
+                    "bbox": [450.0, 100.0, 750.0, 140.0],
+                    "surya_text": "中医内科学导论",
+                    "type": None,
+                },
+                {
+                    # 左對齊短句：x0=100, x1=500, 中心點 300, 距頁面中點 600 偏差 300 (非置中)
+                    "original_label": "text",
+                    "bbox": [100.0, 200.0, 500.0, 230.0],
+                    "surya_text": "普通靠左對齊說明句",
+                    "type": None,
+                },
+            ],
+        }
+        audit_records = []
+        body_list, _, _ = process_page_footnotes(
+            page_info=page_info,
+            page_num=1,
+            previous_open_footnote=None,
+            audit_records=audit_records,
+            style_mapping={"h2": "Heading 2"},
+            enable_footnotes=False,
+        )
+
+        # 左對齊短句不可被誤判為標題
+        self.assertFalse(body_list[1]["md"].startswith("#"))
+        self.assertIn("普通靠左對齊說明句", body_list[1]["md"])
+
+    def test_extract_pdf_images_target_pages_and_scan_exclusion(self):
+        """驗證 M3 修復：extract_from_pdf 傳入 target_pages 僅掃描目標頁，節省 VRAM/磁碟開銷"""
+        import tempfile
+        import os
+        import fitz
+        from typing import Any
+        from PIL import Image
+        from src.scripts.extract_images import extract_from_pdf
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            pdf_path = os.path.join(tmpdir, "multi_page.pdf")
+            out_dir = os.path.join(tmpdir, "extracted")
+
+            # 建立 2 頁 PDF，每頁插入 60x60 圖片
+            doc: Any = fitz.open()
+            img_path = os.path.join(tmpdir, "dot.png")
+            Image.new("RGB", (60, 60), (255, 0, 0)).save(img_path)
+
+            for _ in range(2):
+                page = doc.new_page(width=400, height=600)
+                page.insert_image(fitz.Rect(50, 50, 150, 150), filename=img_path)
+
+            doc.save(pdf_path)
+            doc.close()
+
+            # 僅指定提取第 2 頁
+            count = extract_from_pdf(pdf_path, out_dir, target_pages={2})
+            self.assertEqual(count, 1)
+
+            extracted_files = os.listdir(out_dir)
+            self.assertEqual(len(extracted_files), 1)
+            self.assertTrue(extracted_files[0].startswith("page_0002_"))
+
 
 if __name__ == "__main__":
     unittest.main()

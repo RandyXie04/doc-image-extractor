@@ -31,17 +31,8 @@ from config import PATHS
 from src.scripts.gemma_layout_assistant import (
     DEFAULT_GEMMA_MODEL,
     gemma_available,
-    review_uncertain_boundaries,
     review_uncertain_layout,
 )
-
-try:
-    from src.scripts.ocr_rare_char_corrector import postprocess_ocr_markdown
-except ImportError:
-    try:
-        from scripts.ocr_rare_char_corrector import postprocess_ocr_markdown
-    except ImportError:
-        postprocess_ocr_markdown = None
 
 _HALLUCINATION_REPEAT_RE = re.compile(r'([^\n]{1,10}?)\1{5,}')
 _FOOTNOTE_PREFIX_RE = re.compile(
@@ -69,7 +60,6 @@ from PIL import Image
 import fitz
 import urllib.request
 
-run_recognition: Any = None
 batch_layout_detection: Any = None
 load_rec_model: Any = None
 load_rec_processor: Any = None
@@ -78,7 +68,6 @@ load_layout_processor: Any = None
 settings: Any = None
 
 try:
-    from surya.ocr import run_recognition
     from surya.layout import batch_layout_detection
     from surya.model.recognition.model import load_model as load_rec_model
     from surya.model.recognition.processor import load_processor as load_rec_processor
@@ -110,6 +99,32 @@ try:
     from src.founder_tools.core.heading_detector import HeadingDetector
 except ImportError:
     HeadingDetector = None
+
+
+def _join_ocr_line_slices(lines: list[str]) -> str:
+    """
+    Seamlessly joins multiple OCR line slices within a single bounding box.
+    Preserves single spaces between ASCII words; merges CJK characters without newlines or spaces.
+    """
+    if not lines:
+        return ""
+    joined = ""
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        if not joined:
+            joined = s
+        else:
+            prev_char = joined[-1]
+            curr_char = s[0]
+            prev_is_cjk = bool(re.match(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]', prev_char))
+            curr_is_cjk = bool(re.match(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]', curr_char))
+            if prev_is_cjk and curr_is_cjk:
+                joined += s
+            else:
+                joined += " " + s
+    return joined
 
 
 def _slice_box_into_lines(box_img: Image.Image, min_line_h: int = 10) -> list[Image.Image]:
@@ -163,49 +178,15 @@ def _is_heading_like(txt: str, block: dict, page_w: float) -> bool:
 def _merge_wrapping_paragraphs(para_blocks: list, page_w: float = 1000.0, line_height_thresh: float = 35.0) -> list:
     """
     Merges vertically adjacent text blocks that represent the same paragraph
-    broken by an image cutout or text-wrapping around an illustration.
+    broken by an image cutout or text-wrapping around an illustration using
+    pure deterministic layout & punctuation semantics (Zero VRAM contention).
     """
     if not para_blocks:
         return para_blocks
 
     terminal_chars = {'。', '！', '？', '；', '…', ':', '：'}
-    boundary_candidates = []
-    for idx in range(1, len(para_blocks)):
-        prev, curr = para_blocks[idx - 1], para_blocks[idx]
-        if prev.get("original_label", "").lower() not in ("text", "paragraph", "section-header"):
-            continue
-        if curr.get("original_label", "").lower() not in ("text", "paragraph"):
-            continue
-        prev_text = prev.get("surya_text", "").strip()
-        curr_text = curr.get("surya_text", "").strip()
-        if not prev_text or not curr_text or _is_heading_like(prev_text, prev, page_w) or _is_heading_like(curr_text, curr, page_w):
-            continue
-        prev_box = prev.get("bbox", [0, 0, 0, 0])
-        curr_box = curr.get("bbox", [0, 0, 0, 0])
-        gap = curr_box[1] - prev_box[3]
-        previous_tail = prev_text[-1]
-        indentation_change = abs(curr_box[0] - prev_box[0]) >= 10.0
-        punctuation_conflict = previous_tail in {"，", ",", "：", ":", "；", ";", "…"}
-        near_gap_threshold = gap >= line_height_thresh * 0.7
-        if 0 <= gap <= line_height_thresh and (indentation_change or punctuation_conflict or near_gap_threshold):
-            boundary_candidates.append({
-                "next_line_id": f"ocr-line-{idx}",
-                "previous_text": prev_text[:300],
-                "next_text": curr_text[:300],
-                "vertical_gap": round(gap, 2),
-                "page_width": round(page_w, 2),
-                "existing_merge": prev_text[-1] not in terminal_chars or prev_text[-1] in ('《', '“', '（', '(', '[', '〈'),
-            })
-    try:
-        ai_boundary_overrides = review_uncertain_boundaries(boundary_candidates[:12])
-    except Exception:
-        ai_boundary_overrides = {}
-    ai_status = ai_boundary_overrides.pop("_status", None)
-    if ai_status and ai_status.get("status") != "ready" and para_blocks:
-        para_blocks[0]["layout_ai_boundary_status"] = ai_status
-
     merged = []
-    for block_idx, blk in enumerate(para_blocks):
+    for blk in para_blocks:
         if not merged:
             merged.append(blk)
             continue
@@ -231,26 +212,14 @@ def _merge_wrapping_paragraphs(para_blocks: list, page_w: float = 1000.0, line_h
             curr_bbox = blk.get("bbox", [0, 0, 0, 0])
             y_gap = curr_bbox[1] - prev_bbox[3]
 
-            should_merge = ends_mid_sentence and 0 <= y_gap <= line_height_thresh
-            override = ai_boundary_overrides.get(f"ocr-line-{block_idx}")
-            if override is not None:
-                should_break = override.get("should_break") if isinstance(override, dict) else override
-                if type(should_break) is bool:
-                    should_merge = not should_break and 0 <= y_gap <= line_height_thresh
-                    boundary_record = {
-                        "source": "gemma",
-                        "confidence": override.get("confidence") if isinstance(override, dict) else None,
-                        "decision": "merge" if should_merge else "break",
-                        "previous_text": prev_txt[:120],
-                        "next_text": curr_txt[:120],
-                    }
-                    if should_merge:
-                        prev.setdefault("layout_ai_boundaries", []).append(boundary_record)
-                    else:
-                        blk["layout_ai_boundary"] = boundary_record
+            curr_is_list_start = bool(_FOOTNOTE_PREFIX_RE.match(curr_txt) or re.match(r'^[（(]?\d+[)）.]', curr_txt))
+            should_merge = ends_mid_sentence and not curr_is_list_start and 0 <= y_gap <= line_height_thresh
 
             if should_merge:
-                prev["surya_text"] = prev_txt + curr_txt
+                prev_is_cjk = bool(re.match(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]', prev_last_char))
+                curr_is_cjk = bool(re.match(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]', curr_txt[0])) if curr_txt else False
+                separator = "" if (prev_is_cjk and curr_is_cjk) else " "
+                prev["surya_text"] = prev_txt + separator + curr_txt
                 prev["bbox"] = [
                     min(prev_bbox[0], curr_bbox[0]),
                     prev_bbox[1],
@@ -470,10 +439,9 @@ def process_page_footnotes(
     """
     Process layout blocks of a single page (text & footnotes ONLY):
     1. Separate candidate footnote blocks from definite body blocks while tracking indices.
-    2. Handle cross-page continuation.
-    3. Match body anchors or verify strong citation characteristics.
-    4. If unmatched and lacking citation semantics, preserve block in original reading order.
-    5. Render page markdown with Pandoc footnotes [^n].
+    2. Handle cross-page continuation and match body anchors or citation semantics.
+    3. Restore unmatched blocks back to body stream without wiping heading or Word styles.
+    4. Render final page markdown with Pandoc footnotes [^n], headings (#) and custom styles.
     Image extraction is handled separately by pdf_image_extractor.py.
     """
     if not enable_footnotes:
@@ -485,11 +453,11 @@ def process_page_footnotes(
         style_mapping = {}
 
     page_size = page_info.get("page_size", [1000, 1000])
-    page_h = page_size[1] if len(page_size) >= 2 else 1000
+    page_w = float(page_size[0]) if len(page_size) >= 1 else 1000.0
+    page_h = float(page_size[1]) if len(page_size) >= 2 else 1000.0
     para_blocks = page_info.get("para_blocks", [])
 
     # Keep track of blocks by original order
-    # item: {"block": block, "is_candidate_fn": bool, "orig_idx": int}
     indexed_blocks = []
     for idx, block in enumerate(para_blocks):
         b_type = block.get("type")
@@ -498,7 +466,6 @@ def process_page_footnotes(
         y0 = bbox[1] if len(bbox) >= 2 else 0
 
         is_fn = False
-        # ✅ 僅在啟用註腳時才將區塊標記為候選註腳；否則一律視為正文
         if enable_footnotes:
             is_fn = orig_label in ["footnote", "vision_footnote"]
             if not is_fn and y0 > (page_h * 0.72) and b_type not in ["Title", "Table", "Figure"]:
@@ -511,19 +478,6 @@ def process_page_footnotes(
             "is_candidate_fn": is_fn,
             "orig_idx": idx
         })
-
-    # Render candidate body text for marker detection
-    initial_body_blocks = [item["block"] for item in indexed_blocks if not item["is_candidate_fn"]]
-    candidate_fn_items = [item for item in indexed_blocks if item["is_candidate_fn"]]
-
-    # Extract footnote entries
-    new_open_footnote = None
-    parsed_entries_map = {}  # orig_idx -> entries
-
-    for fn_item in candidate_fn_items:
-        blk_txt = extract_block_text(fn_item["block"]).strip()
-        entries = parse_footnote_entries(blk_txt)
-        parsed_entries_map[fn_item["orig_idx"]] = entries
 
     def render_blocks(blocks_with_idx):
         rendered = []
@@ -562,19 +516,135 @@ def process_page_footnotes(
             rendered.append({"orig_idx": item["orig_idx"], "block": blk, "md": md_text})
         return rendered
 
-    # Initial body markdown list
-    rendered_initial = render_blocks([item for item in indexed_blocks if not item["is_candidate_fn"]])
+    # ── Step 1: Footnote matching and anchor resolution ──
+    candidate_fn_items = [item for item in indexed_blocks if item["is_candidate_fn"]]
+    initial_body_blocks = [item["block"] for item in indexed_blocks if not item["is_candidate_fn"]]
+    initial_body_texts = [b.get("surya_text", "") for b in initial_body_blocks]
 
-    # Apply Heading Detection to upgrade headings based on geometry & regex
+    final_footnotes = []
+    new_open_footnote = None
+    for fn_item in candidate_fn_items:
+        blk_txt = extract_block_text(fn_item["block"]).strip()
+        entries = parse_footnote_entries(blk_txt)
+
+        # Check cross-page continuation
+        if entries and not entries[0]["raw_marker"] and previous_open_footnote:
+            previous_open_footnote["content"] += " " + entries[0]["content"]
+            audit_records.append({
+                "page": page_num,
+                "type": "CONTINUATION",
+                "id": previous_open_footnote["id"],
+                "msg": f"跨頁接續注釋：已自動拼接至前頁注釋 [{previous_open_footnote['id']}] 末尾。"
+            })
+            entries = entries[1:]
+
+        valid_entries_in_block = []
+        for entry in entries:
+            fn_id = entry["id"]
+            marker_str = entry["raw_marker"]
+            content = entry["content"]
+
+            matched = False
+            is_weak_marker = bool(not marker_str or re.fullmatch(r'[\d.、\s()]+', marker_str))
+            for b_txt in initial_body_texts:
+                if not is_weak_marker and marker_str and marker_str in b_txt:
+                    idx = b_txt.find(marker_str)
+                    if idx == 0 and not is_strong_citation_text(b_txt):
+                        continue
+                    matched = True
+                    break
+                elif MarkerDetector:
+                    detected = MarkerDetector.detect(b_txt, "auto")
+                    for d in detected:
+                        if d.number == fn_id:
+                            matched = True
+                            break
+                    if matched:
+                        break
+
+            if matched:
+                entry["is_fallback_citation"] = False
+                valid_entries_in_block.append(entry)
+                audit_records.append({
+                    "page": page_num,
+                    "type": "MATCHED",
+                    "id": fn_id,
+                    "msg": f"注釋 [{fn_id}] 雙向匹配成功，已替換正文標記。"
+                })
+            elif is_strong_citation_text(content):
+                entry["is_fallback_citation"] = True
+                valid_entries_in_block.append(entry)
+                audit_records.append({
+                    "page": page_num,
+                    "type": "FALLBACK",
+                    "id": fn_id,
+                    "msg": f"⚠️ 警告：文獻注釋 [{fn_id}] 正文未偵測到上標，已安全降級插入至當頁段落末端。內容：{content[:35]}..."
+                })
+
+        if valid_entries_in_block:
+            final_footnotes.extend(valid_entries_in_block)
+            new_open_footnote = valid_entries_in_block[-1]
+        else:
+            # Entire block has no matched footnote and is not a citation -> restore to body
+            fn_item["is_candidate_fn"] = False
+
+    # ── Step 2: Render unified final body items (including restored blocks) ONCE ──
+    final_body_items = sorted([item for item in indexed_blocks if not item["is_candidate_fn"]], key=lambda x: x["orig_idx"])
+    rendered_body = render_blocks(final_body_items)
+
+    # ── Step 3: Replace footnote anchors in rendered body markdown ──
+    for fn in final_footnotes:
+        fn_id = fn["id"]
+        marker_str = fn["raw_marker"]
+        fn_ref_tag = f"[^p{page_num}_{fn_id}]"
+        is_weak_marker = bool(not marker_str or _WEAK_MARKER_CHECK_RE.fullmatch(marker_str))
+        replaced = False
+        for p_item in rendered_body:
+            if not is_weak_marker and marker_str and marker_str in p_item["md"]:
+                idx = p_item["md"].find(marker_str)
+                if idx == 0 and not is_strong_citation_text(p_item["md"]):
+                    continue
+                p_item["md"] = p_item["md"][:idx] + fn_ref_tag + p_item["md"][idx + len(marker_str):]
+                replaced = True
+                break
+            elif is_weak_marker and marker_str:
+                safe_pat = re.compile(r'(?<!\d)' + re.escape(marker_str) + r'(?!\d)')
+                new_text, n_subs = safe_pat.subn(fn_ref_tag, p_item["md"], count=1)
+                if n_subs > 0:
+                    p_item["md"] = new_text
+                    replaced = True
+                    break
+            elif MarkerDetector:
+                detected = MarkerDetector.detect(p_item["md"], "auto")
+                for d in detected:
+                    if d.number == fn_id:
+                        p_item["md"] = p_item["md"][:d.start_char] + fn_ref_tag + p_item["md"][d.end_char:]
+                        replaced = True
+                        break
+                if replaced:
+                    break
+
+        if not replaced and fn.get("is_fallback_citation"):
+            target_p_idx = -1
+            for idx in range(len(rendered_body) - 1, -1, -1):
+                if rendered_body[idx]["md"].strip():
+                    target_p_idx = idx
+                    break
+            if target_p_idx >= 0:
+                rendered_body[target_p_idx]["md"] = rendered_body[target_p_idx]["md"].rstrip() + fn_ref_tag
+            else:
+                rendered_body.append({"orig_idx": -1, "block": {}, "md": fn_ref_tag})
+
+    # ── Step 4: Apply Heading Detection & Custom Word Styles on FINAL body list ──
     ai_candidate_items = []
     try:
         from src.founder_tools.core.heading_detector import HeadingDetector
-        for item in rendered_initial:
+        for item in rendered_body:
             blk = item["block"]
             if blk.get("type") == "Table":
                 continue
 
-            level = HeadingDetector.detect_block_level(blk, page_width=600.0)
+            level = HeadingDetector.detect_block_level(blk, page_width=page_w)
             if level > 0:
                 clean_text = item["md"].lstrip('#').strip()
                 prefix = '#' * level
@@ -593,23 +663,22 @@ def process_page_footnotes(
                     bbox = blk.get("bbox", [0, 0, 0, 0])
                     spans = [span for line in blk.get("lines", []) for span in line.get("spans", [])]
                     sizes = [float(span.get("size", 0.0) or 0.0) for span in spans]
+                    is_centered = abs(((bbox[0] + bbox[2]) / 2.0) - (page_w / 2.0)) < (page_w * 0.08)
                     ai_candidate_items.append({
                         "paragraph_id": f"ocr-{page_num}-{item['orig_idx']}",
                         "text": candidate_text,
                         "font_size": round(sum(sizes) / len(sizes), 2) if sizes else None,
                         "is_bold": any(bool(span.get("bold") or (span.get("flags", 0) & 16)) for span in spans),
-                        "is_centered": abs(((bbox[0] + bbox[2]) / 2.0) - 300.0) < 60.0,
+                        "is_centered": is_centered,
                     })
     except ImportError:
         pass
 
     if ai_candidate_items:
         ai_by_id = {item["paragraph_id"]: item for item in review_uncertain_layout(ai_candidate_items[:12])}
-        for item in rendered_initial:
+        for item in rendered_body:
             review = ai_by_id.get(f"ocr-{page_num}-{item['orig_idx']}")
-            if not review:
-                continue
-            if review.get("ai_status") == "model_unavailable":
+            if not review or review.get("ai_status") == "model_unavailable":
                 continue
             if review.get("source") != "gemma":
                 if review.get("ai_status"):
@@ -621,7 +690,6 @@ def process_page_footnotes(
                         "model": DEFAULT_GEMMA_MODEL,
                     })
                 continue
-            block = item["block"]
             if review.get("role") == "heading" and review.get("level") in (1, 2, 3):
                 level = review["level"]
                 clean_text = (item.get("md") or "").lstrip("#").strip()
@@ -649,149 +717,15 @@ def process_page_footnotes(
 
     body_style = style_mapping.get("body")
     if body_style:
-        for item in rendered_initial:
+        for item in rendered_body:
             text = (item.get("md") or "").strip()
             block_label = item["block"].get("original_label", "").lower()
             if text and not text.startswith(("#", "|", "![", ":::", "[^")) and block_label not in ("caption", "figure", "image", "table"):
                 item["md"] = f'::: {{custom-style="{body_style}"}}\n{text}\n:::'
                 item["body_style_applied"] = True
 
-    final_footnotes = []
-    blocks_to_restore = []
-
-    # Evaluate each candidate footnote block
-    for fn_item in candidate_fn_items:
-        orig_idx = fn_item["orig_idx"]
-        entries = parsed_entries_map.get(orig_idx, [])
-        blk_txt = extract_block_text(fn_item["block"])
-
-        # Check cross-page continuation
-        if entries and not entries[0]["raw_marker"] and previous_open_footnote:
-            previous_open_footnote["content"] += " " + entries[0]["content"]
-            audit_records.append({
-                "page": page_num,
-                "type": "CONTINUATION",
-                "id": previous_open_footnote["id"],
-                "msg": f"跨頁接續注釋：已自動拼接至前頁注釋 [{previous_open_footnote['id']}] 末尾。"
-            })
-            entries = entries[1:]
-
-        block_has_matched_anchor = False
-        valid_entries_in_block = []
-
-        for entry in entries:
-            fn_id = entry["id"]
-            marker_str = entry["raw_marker"]
-            content = entry["content"]
-            fn_ref_tag = f"[^p{page_num}_{fn_id}]"
-
-            matched = False
-            
-            # Determine if the marker is 'weak' (just digits, punctuation, or spaces).
-            # Strong markers like ① or [1] are safe for naive string replacement.
-            is_weak_marker = bool(not marker_str or re.fullmatch(r'[\d.、\s()]+', marker_str))
-            
-            # Check in body markdown
-            for p_item in rendered_initial:
-                if not is_weak_marker and marker_str and marker_str in p_item["md"]:
-                    idx = p_item["md"].find(marker_str)
-                    # 註腳正文上標應依附於詞句中或句末，絕非獨立段落起始的條目編號 (例如 ②將藥材...)
-                    if idx == 0 and not is_strong_citation_text(p_item["md"]):
-                        continue
-                    p_item["md"] = p_item["md"][:idx] + fn_ref_tag + p_item["md"][idx + len(marker_str):]
-                    matched = True
-                    break
-                elif MarkerDetector:
-                    detected = MarkerDetector.detect(p_item["md"], "auto")
-                    for d in detected:
-                        if d.number == fn_id:
-                            p_item["md"] = p_item["md"][:d.start_char] + fn_ref_tag + p_item["md"][d.end_char:]
-                            matched = True
-                            break
-                    if matched:
-                        break
-
-            if matched:
-                block_has_matched_anchor = True
-                valid_entries_in_block.append(entry)
-                audit_records.append({
-                    "page": page_num,
-                    "type": "MATCHED",
-                    "id": fn_id,
-                    "msg": f"注釋 [{fn_id}] 雙向匹配成功，已替換正文標記。"
-                })
-            else:
-                # Missing anchor in body: Check if it's genuinely a citation
-                if is_strong_citation_text(content):
-                    # Genuine footnote with lost OCR superscript -> safely append reference
-                    target_p_idx = -1
-                    for idx in range(len(rendered_initial) - 1, -1, -1):
-                        if rendered_initial[idx]["md"].strip():
-                            target_p_idx = idx
-                            break
-                    if target_p_idx >= 0:
-                        rendered_initial[target_p_idx]["md"] = rendered_initial[target_p_idx]["md"].rstrip() + fn_ref_tag
-                    else:
-                        # Append a new item
-                        rendered_initial.append({"orig_idx": -1, "md": fn_ref_tag})
-
-                    valid_entries_in_block.append(entry)
-                    audit_records.append({
-                        "page": page_num,
-                        "type": "FALLBACK",
-                        "id": fn_id,
-                        "msg": f"⚠️ 警告：文獻注釋 [{fn_id}] 正文未偵測到上標，已安全降級插入至當頁段落末端。內容：{content[:35]}..."
-                    })
-                else:
-                    # It is regular body text (e.g. ordered list items like ⑤执行...)
-                    # DO NOT convert to footnote! Mark block for restoration.
-                    pass
-
-        if valid_entries_in_block:
-            final_footnotes.extend(valid_entries_in_block)
-            new_open_footnote = valid_entries_in_block[-1]
-        else:
-            # Entire block is body text -> restore to body!
-            blocks_to_restore.append(fn_item)
-
-    # If blocks need to be restored to original reading order, re-render body with them included
-    if blocks_to_restore:
-        for item in blocks_to_restore:
-            item["is_candidate_fn"] = False
-
-        # Sort all blocks by original index to ensure pristine reading order
-        final_body_items = sorted([item for item in indexed_blocks if not item["is_candidate_fn"]], key=lambda x: x["orig_idx"])
-        rendered_initial = render_blocks(final_body_items)
-
-        # Re-apply matched footnote references to the re-rendered body
-        for fn in final_footnotes:
-            fn_id = fn["id"]
-            marker_str = fn["raw_marker"]
-            fn_ref_tag = f"[^p{page_num}_{fn_id}]"
-            is_weak_marker = bool(not marker_str or _WEAK_MARKER_CHECK_RE.fullmatch(marker_str))
-            for p_item in rendered_initial:
-                if not is_weak_marker and marker_str and marker_str in p_item["md"]:
-                    p_item["md"] = p_item["md"].replace(marker_str, fn_ref_tag, 1)
-                    break
-                elif is_weak_marker and marker_str:
-                    safe_pat = re.compile(r'(?<!\d)' + re.escape(marker_str) + r'(?!\d)')
-                    new_text, n_subs = safe_pat.subn(fn_ref_tag, p_item["md"], count=1)
-                    if n_subs > 0:
-                        p_item["md"] = new_text
-                        break
-                elif MarkerDetector:
-                    detected = MarkerDetector.detect(p_item["md"], "auto")
-                    found = False
-                    for d in detected:
-                        if d.number == fn_id:
-                            p_item["md"] = p_item["md"][:d.start_char] + fn_ref_tag + p_item["md"][d.end_char:]
-                            found = True
-                            break
-                    if found:
-                        break
-
     # Return list of dicts: [{"orig_idx": idx, "md": text, "block": blk}, ...]
-    body_markdown_list = [{"orig_idx": item["orig_idx"], "md": item["md"], "block": item.get("block", {})} for item in rendered_initial]
+    body_markdown_list = [{"orig_idx": item["orig_idx"], "md": item["md"], "block": item.get("block", {})} for item in rendered_body]
     return body_markdown_list, final_footnotes, new_open_footnote
 
 
@@ -1048,7 +982,7 @@ def main(args=None):
                 print(json.dumps({"progress": 20, "message": f"[INFO] PDF 共 {total_pages} 頁，開始分批 (Chunk) 版面分析與 OCR..."}))
                 sys.stdout.flush()
 
-                chunk_size = 10
+                chunk_size = 6 if _device == "cuda" else 3
                 pdf_info_list = []
 
                 for chunk_start in range(0, total_pages, chunk_size):
@@ -1091,7 +1025,12 @@ def main(args=None):
                             bbox = [min(xs), min(ys), max(xs), max(ys)]
                             label = box.label.lower()
 
-                            r = fitz.Rect(bbox[0]/sx, bbox[1]/sy, bbox[2]/sx, bbox[3]/sy)
+                            r = fitz.Rect(
+                                p_page.rect.x0 + bbox[0] / sx,
+                                p_page.rect.y0 + bbox[1] / sy,
+                                p_page.rect.x0 + bbox[2] / sx,
+                                p_page.rect.y0 + bbox[3] / sy,
+                            )
                             r_area = max(0.0, float(r.width) * float(r.height))
                             vec_text = p_page.get_text("text", clip=r).strip()
 
@@ -1167,7 +1106,7 @@ def main(args=None):
                         for offset, orig_idx, count in ocr_slice_tasks:
                             preds = all_preds[s_idx : s_idx + count]
                             s_idx += count
-                            combined = "\n".join(preds)
+                            combined = _join_ocr_line_slices(preds)
                             page_box_texts[offset][orig_idx] = combined
 
                     for offset, (img, layout) in enumerate(zip(chunk_imgs, chunk_layouts)):
@@ -1204,7 +1143,35 @@ def main(args=None):
                         })
 
                     # 顯式釋放當前批次之記憶體資源
+                    for c_img in chunk_imgs:
+                        try:
+                            c_img.close()
+                        except Exception:
+                            pass
                     del chunk_imgs, chunk_layouts, all_slices_to_rec, ocr_slice_tasks, page_box_texts, page_box_labels
+                    import gc
+                    gc.collect()
+                    try:
+                        import torch
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                    except Exception:
+                        pass
+
+            # 顯式釋放 Surya 模型佔用之顯存 (VRAM) 與記憶體
+            del rec_model, layout_model, rec_processor, layout_processor
+            rec_model = None
+            layout_model = None
+            rec_processor = None
+            layout_processor = None
+            import gc
+            gc.collect()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
 
             all_page_contents = []
             audit_records = []
@@ -1341,7 +1308,7 @@ def main(args=None):
             out_name = f"{out_stem}.md"
             out_path = os.path.join(output_dir, out_name)
 
-            final_md, rare_char_stats = postprocess_markdown(
+            final_md, _rare_char_stats = postprocess_markdown(
                 markdown_text=final_md,
                 pdf_name=out_stem,
                 output_dir=output_dir,

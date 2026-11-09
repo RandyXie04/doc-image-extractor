@@ -23,30 +23,7 @@ import os
 import re
 import shutil
 import tempfile
-from pathlib import Path
 from typing import Any, Optional
-
-
-def _rect_overlap(img_bbox, clip_bbox, threshold: float = 0.40) -> bool:
-    """
-    Return True if the image bbox overlaps the clip bbox by more than
-    `threshold` of the image area.
-    img_bbox / clip_bbox: (x0, y0, x1, y1) in PDF points.
-    """
-    ix0, iy0, ix1, iy1 = img_bbox
-    cx0, cy0, cx1, cy1 = clip_bbox
-
-    inter_x0 = max(ix0, cx0)
-    inter_y0 = max(iy0, cy0)
-    inter_x1 = min(ix1, cx1)
-    inter_y1 = min(iy1, cy1)
-
-    if inter_x1 <= inter_x0 or inter_y1 <= inter_y0:
-        return False
-
-    inter_area = (inter_x1 - inter_x0) * (inter_y1 - inter_y0)
-    img_area = max((ix1 - ix0) * (iy1 - iy0), 1)
-    return (inter_area / img_area) >= threshold
 
 
 def _parse_xref_from_filename(filename: str) -> Optional[int]:
@@ -57,17 +34,6 @@ def _parse_xref_from_filename(filename: str) -> Optional[int]:
       page_0001_xref42.tif   → 42
     """
     m = re.search(r'xref(\d+)', filename)
-    if m:
-        return int(m.group(1))
-    return None
-
-
-def _parse_page_from_filename(filename: str) -> Optional[int]:
-    """
-    Parse the 1-indexed page number from filenames produced by extract_from_pdf().
-    Expected pattern:  page_0003_xref42.png  → 3
-    """
-    m = re.search(r'page_(\d+)_', filename)
     if m:
         return int(m.group(1))
     return None
@@ -115,6 +81,8 @@ def extract_pdf_images(
     if not image_blocks:
         return results
 
+    needed_pages = set(blk["page_num"] for blk in image_blocks)
+
     # ── Phase A: Extract ALL images via mature module (handles neg/CMYK/SMask) ──
     temp_extract_dir = pre_extract_dir
     cleanup_temp = False
@@ -136,7 +104,8 @@ def extract_pdf_images(
                 pdf_path, 
                 temp_extract_dir, 
                 to_grayscale=False, 
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                target_pages=needed_pages,
             )
 
             if extracted_count == 0:
@@ -165,8 +134,6 @@ def extract_pdf_images(
         try:
             # Pre-index: for each page, collect all image xrefs and their rects
             # Only for pages that have image_blocks
-            needed_pages = set(blk["page_num"] for blk in image_blocks)
-
             # page_num (1-indexed) → list of (xref, Rect)
             page_image_rects: dict[int, list] = {}
             for page_num in needed_pages:
@@ -204,14 +171,14 @@ def extract_pdf_images(
                 pdf_w = page.rect.width
                 pdf_h = page.rect.height
 
-                # Scale bounding box from layout coords to PDF point coords
+                # Scale bounding box from layout coords to PDF point coords with cropbox offset
                 scale_x = pdf_w / page_w
                 scale_y = pdf_h / page_h
                 clip = fitz.Rect(
-                    bbox[0] * scale_x,
-                    bbox[1] * scale_y,
-                    bbox[2] * scale_x,
-                    bbox[3] * scale_y,
+                    page.rect.x0 + bbox[0] * scale_x,
+                    page.rect.y0 + bbox[1] * scale_y,
+                    page.rect.x0 + bbox[2] * scale_x,
+                    page.rect.y0 + bbox[3] * scale_y,
                 ).intersect(page.rect)
 
                 if not clip.is_valid or clip.width < 5 or clip.height < 5:
@@ -235,7 +202,14 @@ def extract_pdf_images(
                         continue
 
                     inter_area = (inter_x1 - inter_x0) * (inter_y1 - inter_y0)
-                    img_area = max((ix1 - ix0) * (iy1 - iy0), 1)
+                    img_area = max((ix1 - ix0) * (iy1 - iy0), 1.0)
+                    clip_area = max(clip.width * clip.height, 1.0)
+
+                    # 避免將整頁掃描底圖誤判為局部插圖
+                    is_full_page_scan = img_area >= 0.85 * (pdf_w * pdf_h)
+                    if is_full_page_scan and clip_area < 0.80 * img_area:
+                        continue
+
                     overlap_ratio = inter_area / img_area
 
                     if overlap_ratio >= 0.40 and overlap_ratio > best_overlap:

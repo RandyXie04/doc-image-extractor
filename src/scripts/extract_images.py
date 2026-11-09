@@ -8,7 +8,6 @@
 import io
 import os
 import posixpath
-import sys
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -234,10 +233,18 @@ def extract_from_docx(
     return count
 
 
-def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False, duplicate_policy: str = "every_occurrence", progress_callback=None) -> int:
+def extract_from_pdf(
+    pdf_path: str,
+    output_dir: str,
+    to_grayscale: bool = False,
+    duplicate_policy: str = "every_occurrence",
+    progress_callback=None,
+    target_pages: Optional[Set[int]] = None,
+) -> int:
     """
     從 PDF (.pdf) 文件中無損提取所有圖片，支援進階的遮罩(Mask)解析、去重複與透明度合成。
     支援 duplicate_policy: "unique" | "every_occurrence"。
+    可選 target_pages (1-indexed): 僅提取指定頁碼之圖片，大幅縮減記憶體與暫存磁碟開銷。
     """
     os.makedirs(output_dir, exist_ok=True)
     doc = fitz.open(pdf_path)
@@ -249,8 +256,12 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False,
     try:
         total_pages = len(doc)
         for page_index in range(total_pages):
+            page_num = page_index + 1
+            if target_pages is not None and page_num not in target_pages:
+                continue
+
             if progress_callback:
-                progress_callback(85, f"[INFO] 正在掃描並提取圖片 (第 {page_index+1}/{total_pages} 頁)...")
+                progress_callback(85, f"[INFO] 正在掃描並提取圖片 (第 {page_num}/{total_pages} 頁)...")
                 
             page = doc[page_index]
             image_list = page.get_images(full=True)
@@ -262,6 +273,9 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False,
                     continue
                 seen_xrefs.add(xref)
 
+                pix = None
+                pix_mask = None
+                pix_combined = None
                 try:
                     base_image = doc.extract_image(xref)
                     if not base_image:
@@ -298,7 +312,7 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False,
                         img_filename = f"page_{page_index+1:04d}_xref{xref}.tif"
                         img_filepath = os.path.join(output_dir, img_filename)
 
-                        mask_img = Image.frombytes("L", [pix.width, pix.height], pix.samples)
+                        mask_img = Image.frombytes("L", (pix.width, pix.height), pix.samples)
 
                         if CASE1_OUTPUT_MODE == "TRANSPARENT":
                             black_layer = Image.new("RGBA", mask_img.size, (0, 0, 0, 255))
@@ -331,7 +345,7 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False,
                             pix_combined = fitz.Pixmap(pix, pix_mask)
                             
                             if to_grayscale:
-                                img = Image.frombytes("RGBA", [pix_combined.width, pix_combined.height], pix_combined.samples)
+                                img = Image.frombytes("RGBA", (pix_combined.width, pix_combined.height), pix_combined.samples)
                                 img = convert_to_grayscale_helper(img, ".png")
                                 img.save(img_filepath, format="PNG")
                             else:
@@ -354,7 +368,7 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False,
                             
                         if to_grayscale:
                             mode = "RGBA" if pix.alpha else "RGB"
-                            img = Image.frombytes(mode, [pix.width, pix.height], pix.samples)
+                            img = Image.frombytes(mode, (pix.width, pix.height), pix.samples)
                             img = convert_to_grayscale_helper(img, ".png")
                             img.save(img_filepath, format="PNG")
                         else:
@@ -373,6 +387,10 @@ def extract_from_pdf(pdf_path: str, output_dir: str, to_grayscale: bool = False,
                 except Exception as e:
                     print(f"[Warning] 提取第 {page_index + 1} 頁圖片 xref {xref} 失敗: {e}")
                     continue
+                finally:
+                    pix = None
+                    pix_mask = None
+                    pix_combined = None
     finally:
         doc.close()
 

@@ -237,3 +237,39 @@ Accepted
 ### Related Bug
 
 BUG-013
+
+---
+
+## ADR-014 — 純 OCR 管線邏輯修復、CropBox 原點補償、全頁底圖隔離與顯式 VRAM 卸載架構
+
+### Status
+
+Accepted
+
+### Context
+
+在自動整稿流程之純 OCR 通道（`process_ocr.py`、`pdf_image_extractor.py`、`extract_images.py`）中，經全面工程審計發現 6 項邏輯陷阱與 4 項記憶體/顯存峰值問題：
+
+1. **偽腳注退回正文覆蓋整頁標題與樣式**：`process_page_footnotes` 先行對正文偵測標題並套用 Word 樣式後，若頁底有未匹配正文之條列區塊觸發 `blocks_to_restore`，會再次呼叫 `render_blocks` 重新從原始文字生成清單，將已套用之標題與 Word 樣式全數抹除歸零。
+2. **CropBox 原點偏移遺失**：視覺裁切設定 `set_cropbox` 後未加上 `page.rect.x0 / y0` 座標偏移，導致文字映射與插圖裁切錯位。
+3. **頁面置中標題以硬編碼 300px 判定**：真實頁寬 1000~1200px 下，置中標題無法識別，反將左對齊短句誤判為置中標題。
+4. **掃描版全頁底圖誤判為局部插圖**：掃描版 PDF 頁面底圖 Xref 與插圖區域判定重疊時，直接拷貝全頁掃描圖插入文件。
+5. **Surya 模型常駐 VRAM 且 Chunk 記憶體未即時回收**：Surya Layout 與 Rec 模型常駐顯存（~4GB），在 Chunk 迴圈中與 Ollama 邊界判定同時搶占 VRAM 達 8GB+，且 PIL 影像與 Tensor 未即時清理。
+
+### Decision
+
+1. **單次確定性正文渲染與後置標題樣式套用**：在 `process_page_footnotes` 中先執行腳注與退回區塊判定，將所有確認正文區塊按原始順序僅執行一次 `render_blocks` 並替換腳注錨點，隨後在此最終正文流上執行真實頁寬 `page_w` 之 `HeadingDetector` 與樣式包裹，徹底杜絕樣式被抹除。
+2. **全流程 CropBox 座標原點補償**：在文字映射矩形與圖片裁切時統一加上 `page.rect.x0` 與 `page.rect.y0`。
+3. **多行 OCR 切片 CJK 無縫拼接**：新增 `_join_ocr_line_slices`，在 CJK 漢字間平滑無縫接續，消除框內殘留 `\n`。
+4. **掃描底圖 Xref 隔離與目標頁面定向提取**：`extract_from_pdf` 支援 `target_pages` 僅提取含插圖之目標頁面；當檢測到全頁底圖時跳過原圖拷貝，改採 300 DPI 精準局部向量裁切。
+5. **純確定性段落接續與 Surya 模型即時顯存釋放**：移除 Chunk 內逐頁呼叫 Ollama，段落合併由標點與行距決定；Chunk 內顯式關閉 PIL 影像並釋放 GPU 快取；Chunk 迴圈完成後立即顯式卸載 Surya 模型與處理器，釋放全部顯存供後續管線使用。
+
+### Consequences
+
+- 徹底消除偽腳注區塊退回時抹除章節標題與 Word 樣式的嚴重回退缺陷。
+- 圖片提取從「全書無差別解碼」優化為「目標頁面定向提取」，大幅降低記憶體峰值與暫存磁碟 I/O。
+- Surya OCR 完成後即刻釋放 ~4GB VRAM，根本消除 GPU 顯存不足（OOM）與並行模型衝突風險。
+
+### Related Bug
+
+BUG-014

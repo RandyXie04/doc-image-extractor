@@ -549,3 +549,54 @@ ADR-013（字型級 AI 版面預判快取、結果持久化回寫 `fonts.json` �
   - 新增 `_sort_blocks_by_row_and_x` 對 `footnote_blocks` 進行 2D 水平行與 `x0` 排序，使頁底 `①`~`⑤` 標記與對應注釋精確配對。
 - `config/fonts.json`：更新 `FZS3K--GBK1-0 (13.0pt)` 為 `H2 -> heading 2`（`mapped_by="user"`）、`E-BZ (7.0pt)` 為 `正文 -> Normal`。
 - 實測與回歸驗證：450 頁《忽必烈》全書整稿耗時由 **15.5~50 分鐘** 降至 **10.79 秒**（提取 91 個標題、127 個腳注精確配對）；`tests/test_gemma_layout_assistant.py` 及關聯回歸測試套件共 45 項測試全數通過（45 PASSED, 1 SKIPPED, 0 FAILED）。
+
+---
+
+## BUG-014 — 純 OCR 管線偽腳注退回抹除標題樣式、CropBox 座標錯位、置中標題坐標系錯置與全頁掃描圖誤判為插圖
+
+### Bug Description
+
+在純 OCR 管線（`process_ocr.py`、`pdf_image_extractor.py`、`extract_images.py`）審計中發現 6 項邏輯陷阱與 4 項記憶體/顯存瓶頸：
+1. **偽腳注退回正文抹除標題與樣式（L1）**：`process_page_footnotes` 原先在套用標題偵測與 Word 樣式後，若發現頁底有無法匹配的偽腳注條列區塊放入 `blocks_to_restore`，會再次呼叫 `render_blocks(final_body_items)` 重新從原始文字生成輸出，導致該頁先前偵測出的 Markdown 標題（如 `# 第一章`）及 Word 樣式包裹（`::: {custom-style="..."}`）被徹底抹除歸零。
+2. **CropBox 偏移量遺失致文字與圖片座標錯位（L2）**：在文字映射矩形與圖片裁切時未補償 `page.rect.x0` 與 `page.rect.y0`，在經 CropBox 裁切的 PDF 上導致提取框錯位。
+3. **頁面置中標題使用硬編碼 300px 座標判定（L3）**：原程式以硬編碼 600px 頁寬與 300px 中心點判定標題置中，在高解析度掃描頁面（1000~1200px）下置中標題無法辨識，反將左對齊短句誤判為置中標題。
+4. **段落接續邊界逐頁呼叫 Ollama 且忽略括號堆疊（L4）**：在 Chunk 處理中逐頁呼叫 Ollama 判定換行邊界，不僅嚴重拖慢純 OCR 速度，且與 Surya 搶占 GPU 顯存。
+5. **多行 OCR 切片換行殘留破壞段落流（L5）**：Surya bbox 內的文字切片直接以 `\n` 連接，未考慮 CJK 漢字無空格平滑拼接，導致同一段落內出現大量多餘斷行。
+6. **掃描全頁底圖誤判為局部插圖拷貝（L6）**：全頁掃描版 PDF 中整頁底圖 Xref 覆蓋全頁，與插圖區域重疊時直接提取拷貝整頁掃描圖，而非局部高解析裁切。
+7. **Surya 模型常駐 VRAM 且 Chunk 迴圈記憶體累積（M1, M2, M3, M4）**：Surya Layout 與 Rec 模型常駐顯存（~4GB）；PIL 影像在 Chunk 內未顯式關閉；`extract_from_pdf` 無差別解碼整部 PDF（450 頁）所有掃描底圖至磁碟，造成磁碟與 RAM 暴增。
+
+### Status
+
+CLOSED
+
+### Root Cause
+
+1. `src/scripts/process_ocr.py`：`process_page_footnotes` 的渲染執行順序顛倒，在 `render_blocks` 重新提取 `surya_text` 後未重新執行標題與樣式套用。
+2. `src/scripts/process_ocr.py` 及 `src/scripts/pdf_image_extractor.py`：建立 `fitz.Rect` 時未加上 `page.rect.x0` 與 `page.rect.y0` 偏移。
+3. `src/scripts/process_ocr.py`：`detect_block_level` 傳入未縮放之 `page_width=600`，且置中標題以 `abs(center_x - 300)` 判定。
+4. `src/scripts/process_ocr.py`：`_merge_wrapping_paragraphs` 依賴逐頁 `review_uncertain_boundaries`，且未在 chunk 迴圈內釋放顯存。
+5. `src/scripts/extract_images.py`：`extract_from_pdf` 缺乏 `target_pages` 頁碼過濾機制。
+6. `src/scripts/pdf_image_extractor.py`：未隔離覆蓋率超過 85% 頁面面積之底圖 Xref。
+
+### Decision Gate
+
+ADR-014（純 OCR 管線邏輯修復、CropBox 原點補償、全頁底圖隔離與顯式 VRAM 卸載架構）。
+
+### Resolution
+
+- `src/scripts/process_ocr.py`：
+  - 重構 `process_page_footnotes`：先解析腳注與退回區塊，保證全頁僅調用一次 `render_blocks`，替換腳注錨點後才執行 `HeadingDetector` 與 `custom-style` 包裹，徹底解決標題被抹除問題。
+  - 將實際頁寬 `page_w = float(page_size[0])` 傳遞給 `HeadingDetector.detect_block_level`，並以 `abs(center_x - page_w / 2.0) <= page_w * 0.08` 進行動態置中判定。
+  - 加入 `_join_ocr_line_slices`，對 CJK 漢字間平滑無縫拼接，消除框內殘留 `\n`。
+  - 段落接續改採純幾何與標點語意確定性判定，移除逐頁 Ollama 調用。
+  - 補齊 `p_page.rect.x0` 與 `p_page.rect.y0` 偏移補償。
+  - 動態調整 Chunk 大小（CUDA=6, CPU=3），於 Chunk 迴圈內顯式關閉 PIL 影像並呼叫 `gc.collect()` 與 `torch.cuda.empty_cache()`；OCR 完成後立即顯式卸載 Surya 模型釋放 ~4GB VRAM。
+- `src/scripts/extract_images.py`：
+  - `extract_from_pdf` 增加 `target_pages: Optional[Set[int]]` 參數，僅解碼並儲存含有插圖之頁面底圖；顯式釋放 Pixmap 物件。
+- `src/scripts/pdf_image_extractor.py`：
+  - 先行計算插圖所在之 `needed_pages`，呼叫 `extract_from_pdf` 時傳入 `target_pages=needed_pages`。
+  - 增加底圖判定：若 Xref 面積大於等於頁面 85% 且裁剪區域小於底圖 80%，跳過原圖拷貝，改採 300 DPI 向量局部精確裁切。
+  - 補齊 `page.rect.x0 / y0` 座標偏移。
+- `tests/test_symbol_mapper_and_ocr_fixes.py`：
+  - 新增單元測試驗證多行 CJK 拼接平滑度、偽腳注退回標題不被抹除、實際頁寬動態置中標題判定、以及 `target_pages` 與掃描底圖排除機制（全數測試通過）。
+
