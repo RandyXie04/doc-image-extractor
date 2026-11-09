@@ -448,6 +448,7 @@ ADR-010（響應式設備適應與流體排版模組規範）：
 ### Bug Description
 
 在 POD Studio 執行樣式擴散推論（Batch 18/18）時，若選取本機離線模型 `qwen3.5:4b` 但本機 Ollama 服務離線或未下載該模型，系統發生以下異常：
+
 1. 控制台噴出 `[POD Studio AI] Batch 18/18 warning: 404 NOT_FOUND. {'error': {'code': 404, 'message': 'models/qwen3.5:4b is not found for API version v1beta...'}}`。
 2. 系統在模型未就緒時私自降級回退至 Gemini 雲端 API，導致將本機模型名稱錯誤傳入 Gemini 端點。
 3. 執行 `start_app.bat` 與 `start_app_dev.bat` 時未自動喚醒本機 `ollama serve`。
@@ -509,3 +510,42 @@ ADR-012（三層分工架構：PDF 行重組 `Paragraph Reconstruction` → 版�
   - 輸出完整的邊界證據鏈（`BoundaryEvidence`）與跨頁延續信心度分數（`continuation_confidence`）。
 - 新增單元測試 `tests/test_paragraph_reconstruction.py`（PR-01～PR-15 覆蓋 17 項驗收測試通過）。
 - 通過既有 17 項回歸測試與真實 PDF（Pages 21–25）驗證，於 Commit `f0d9b39` 正式完成 Phase 1 提交。
+
+---
+
+## BUG-013 — 全自動整稿逐頁重複呼叫 Ollama 致長篇書籍耗時過久、AI 字型預判未持久化、跨行斷句幻覺與頁底腳注錯位
+
+### Bug Description
+
+1. **長篇書籍（如 450 頁《忽必烈》）整稿耗時長達 15~50 分鐘**：即使使用者已完成 `config/fonts.json` 字型與 `.docx` 樣式綁定，`book_layout_extractor.py` 仍在每一頁重複呼叫本機 Ollama（`review_uncertain_layout` 與 `review_uncertain_boundaries`）。
+2. **`review_uncertain_layout` 結果未保留供人工審核轉存 `.docx` 樣式**：迴圈在檢查 `font_role_map` 與 Regex 前就將短句送進 `review_uncertain_layout`，推論結果在已綁定字型時被直接拋棄，且對未知字型推論出的角色結果未回寫至 `config/fonts.json` 供人工審核確認保留。
+3. **正常段落首行縮排觸發 AI 邊界幻覺導致句子腰斬**：每段首行縮排（`x0=137`）換至次行左對齊（`x0=117`）時因 `abs(dx) >= 10.0` 觸發 `review_uncertain_boundaries`，模型誤判 `should_break=True` 導致「準備進 / 攻南宋」、「才讓怯 / 薛長」等跨行句子被切斷為獨立段落。
+4. **章節前導編號西文字型遮蔽標題樣式與頁底腳注空值錯位**：如 `1　風雲突變` 因首 Span 為西文字型 `E-BZ (13.0pt)` 而遮蔽後方 `FZS3K--GBK1-0 (13.0pt)`；頁底腳注因 PDF 流順序將 `①`~`⑤` 排在所有注釋文字之前，導致 `[^p4_1]`~`[^p4_4]` 內容為空，全部注釋合併至 `[^p4_5]`。
+
+### Status
+
+CLOSED
+
+### Root Cause
+
+1. `src/scripts/book_layout_extractor.py` L923-L959 在收集 `ai_candidates` 時未先檢查 `font_role_map`、TOC 與章節 Regex，亦未按 `font_name (size_pt)` 進行跨頁快取去重，且未將推論結果持久化至 `config/fonts.json`。
+2. L983 將 `abs(current_bbox[0] - previous_bbox[0]) >= 10.0` 列為 `review_uncertain_boundaries` 觸發條件，使中文書籍 100% 正常首行縮排段落均呼叫 Ollama 並覆寫確定性接續邏輯。
+3. L1118 查找 `font_role_map` 時直接取區塊第一個 Span，未優先採用 CJK 漢字 Span。
+4. L737 解析 `footnote_blocks` 前未按 2D 水平行與 `x0` 座標排序。
+
+### Decision Gate
+
+ADR-013（字型級 AI 版面預判快取、結果持久化回寫 `fonts.json` 與人工審核確認直通架構）。
+
+### Resolution
+
+- `src/scripts/pdf_font_analyzer.py`：
+  - 新增 `save_ai_layout_suggestions_to_fonts_json(fonts_json_path, suggestions)`，將 `review_uncertain_layout` 對未綁定字型推論出的角色與 `.docx` 樣式以 `mapped_by="ai_layout"` 持久化寫入 `config/fonts.json`，且絕不覆蓋人工確認之 `mapped_by="user"` 項目。
+  - 更新 `analyze_pdf_for_ui` 回傳 `mapped_by`、`ai_layout_retained`、`ai_layout_confidence` 與 `ai_layout_reason`，讓使用者於前端「字體審查」介面審核確認後轉存為永久生效的 `mapped_by="user"`。
+- `src/scripts/book_layout_extractor.py`：
+  - 新增 `_extract_primary_font_key` 與 `_lookup_block_font_mapping`，優先採用含 CJK 漢字（`[\u4e00-\u9fff]`）之 Span，解決 `1　风云突变` 前導西文編號遮蔽標題字型的問題。
+  - 在呼叫 `review_uncertain_layout` 前預先過濾已人工確認字型（`mapped_by != "ai_layout"`）、TOC 與章節 Regex 命中行，並以 `ai_font_decision_cache` 按 `font_name (size_pt)` 跨頁去重快取；推論結果寫入 `audit_data["ai_layout"]["retained_font_suggestions"]` 並於 `process_book_vector_pdf` 結束時持久化回寫 `config/fonts.json`（保持 `_parse_pdf_layout_flow` 零磁碟 I/O 契約）。
+  - 移除逐頁 `review_uncertain_boundaries` 對正常首行縮排之過度攔截，根除跨行句子腰斬。
+  - 新增 `_sort_blocks_by_row_and_x` 對 `footnote_blocks` 進行 2D 水平行與 `x0` 排序，使頁底 `①`~`⑤` 標記與對應注釋精確配對。
+- `config/fonts.json`：更新 `FZS3K--GBK1-0 (13.0pt)` 為 `H2 -> heading 2`（`mapped_by="user"`）、`E-BZ (7.0pt)` 為 `正文 -> Normal`。
+- 實測與回歸驗證：450 頁《忽必烈》全書整稿耗時由 **15.5~50 分鐘** 降至 **10.79 秒**（提取 91 個標題、127 個腳注精確配對）；`tests/test_gemma_layout_assistant.py` 及關聯回歸測試套件共 45 項測試全數通過（45 PASSED, 1 SKIPPED, 0 FAILED）。

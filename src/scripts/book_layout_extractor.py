@@ -8,7 +8,6 @@
 # // ==============================================================================
 
 import os
-import sys
 import re
 import json
 from pathlib import Path
@@ -32,16 +31,6 @@ else:
             SectionAdapter = Any
             SectionUnit = Any
             ParagraphUnit = Any
-
-# Try to import project helpers
-try:
-    from src.founder_tools.core.heading_detector import HeadingDetector, _match_toc_entry
-except ImportError:
-    try:
-        from founder_tools.core.heading_detector import HeadingDetector, _match_toc_entry
-    except ImportError:
-        HeadingDetector = None
-        _match_toc_entry = None
 
 try:
     from src.founder_tools.core.toc_parser import (
@@ -539,6 +528,141 @@ def parse_footnote_marker(text):
         return num, marker_str, text[m.end():].strip()
     return None, None, text
 
+_CJK_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
+
+
+def _sort_blocks_by_row_and_x(blocks: List[Dict[str, Any]], y_tol: float = 5.0) -> List[Dict[str, Any]]:
+    """Cluster blocks into horizontal bands within y_tol and sort each band left-to-right."""
+    if len(blocks) <= 1:
+        return list(blocks)
+    by_y = sorted(
+        blocks,
+        key=lambda b: (
+            (b.get("bbox", [0, 0, 0, 0])[1] + b.get("bbox", [0, 0, 0, 0])[3]) / 2.0,
+            b.get("bbox", [0, 0, 0, 0])[0],
+        ),
+    )
+    rows: List[List[Dict[str, Any]]] = []
+    row_anchors: List[float] = []
+    for b in by_y:
+        bbox = b.get("bbox", [0, 0, 0, 0])
+        yc = (bbox[1] + bbox[3]) / 2.0
+        if rows and abs(yc - row_anchors[-1]) <= y_tol:
+            rows[-1].append(b)
+        else:
+            rows.append([b])
+            row_anchors.append(yc)
+    ordered: List[Dict[str, Any]] = []
+    for r in rows:
+        r.sort(key=lambda b: b.get("bbox", [0, 0, 0, 0])[0])
+        ordered.extend(r)
+    return ordered
+
+
+def _extract_primary_font_key(lines: List[Dict[str, Any]], default_size: float = 10.5) -> Tuple[str, str, float]:
+    """Return (font_key, clean_font_name, rounded_size) prioritizing CJK spans by character count."""
+    best_cjk_fn = ""
+    best_cjk_size = default_size
+    best_cjk_len = -1
+    best_any_fn = ""
+    best_any_size = default_size
+    best_any_len = -1
+    for ln in lines:
+        for sp in ln.get("spans", []):
+            txt = (sp.get("text") or "").strip()
+            raw_fn = (sp.get("font") or "").split("+", 1)[-1].strip()
+            if not raw_fn or not txt:
+                continue
+            sz = round(float(sp.get("size", default_size) or default_size) * 2) / 2
+            cjk_len = len(_CJK_CHAR_RE.findall(txt))
+            if cjk_len > best_cjk_len:
+                best_cjk_len = cjk_len
+                best_cjk_fn = raw_fn
+                best_cjk_size = sz
+            if len(txt) > best_any_len:
+                best_any_len = len(txt)
+                best_any_fn = raw_fn
+                best_any_size = sz
+    chosen_fn = best_cjk_fn if best_cjk_len > 0 else best_any_fn
+    chosen_sz = best_cjk_size if best_cjk_len > 0 else best_any_size
+    if not chosen_fn:
+        return "", "", default_size
+    return f"{chosen_fn} ({chosen_sz}pt)", chosen_fn, chosen_sz
+
+
+def _lookup_block_font_mapping(
+    lines: List[Dict[str, Any]],
+    font_role_map: Optional[Dict[str, Any]],
+    is_toc_line: bool = False,
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Lookup (role, docx_style, mapped_by) prioritizing CJK spans over leading ASCII digits."""
+    if not font_role_map or is_toc_line:
+        return None, None, None
+    ordered_spans = []
+    for idx_l, _line in enumerate(lines):
+        for idx_s, _span in enumerate(_line.get("spans", [])):
+            txt = (_span.get("text") or "").strip()
+            has_cjk = 1 if _CJK_CHAR_RE.search(txt) else 0
+            ordered_spans.append((has_cjk, len(txt), -idx_l, -idx_s, _span))
+    ordered_spans.sort(key=lambda item: (item[0], item[1], item[2], item[3]), reverse=True)
+
+    for _, _, _, _, _span in ordered_spans:
+        _raw_fn = (_span.get("font") or "").split("+", 1)[-1]
+        if not _raw_fn:
+            continue
+        _size = round(_span.get("size", 0) * 2) / 2
+        _candidates = [
+            f"{_raw_fn} ({_size}pt)",
+            f"{_raw_fn} ({_size:.1f}pt)",
+            f"{_raw_fn}_{_size}",
+            _raw_fn,
+        ]
+        for _cand in _candidates:
+            if _cand in font_role_map:
+                _entry = font_role_map[_cand]
+                _role = _entry.get("role")
+                _style = _entry.get("docx_style")
+                _mapped_by = _entry.get("mapped_by")
+                if _role or _style:
+                    return _role, _style, _mapped_by
+    return None, None, None
+
+
+def _map_ai_review_to_font_suggestion(
+    review: Dict[str, Any],
+    style_mapping: Dict[str, str],
+    sample_text: str,
+) -> Optional[Dict[str, Any]]:
+    """Convert a review_uncertain_layout decision into a persistable fonts.json suggestion."""
+    role = review.get("role")
+    level = review.get("level")
+    ui_role: Optional[str] = None
+    docx_style: Optional[str] = None
+    if role == "heading":
+        lvl = level if level in (1, 2, 3) else 2
+        ui_role = f"H{lvl}"
+        docx_style = style_mapping.get(f"h{lvl}") or f"heading {lvl}"
+    elif role == "quote":
+        ui_role = "楷體"
+        docx_style = style_mapping.get("kaiti") or None
+    elif role == "caption":
+        ui_role = "圖說"
+        docx_style = style_mapping.get("image_caption") or None
+    elif role == "body":
+        ui_role = "正文"
+        docx_style = style_mapping.get("body") or "Normal"
+    if not ui_role:
+        return None
+    return {
+        "role": ui_role,
+        "docx_style": docx_style,
+        "confidence": review.get("confidence"),
+        "reason": review.get("reason", ""),
+        "sample": sample_text[:60],
+        "mapped_by": "ai_layout",
+    }
+
+
 def _parse_pdf_layout_flow(
     doc: fitz.Document,
     pdf_name: str = "",
@@ -572,6 +696,37 @@ def _parse_pdf_layout_flow(
     if toc_index:
         print(f"[DocProfile] 成功建立標題索引共 {len(toc_index)} 筆 (原生書籤: {doc_profile.get('is_native_toc')})，正文基準: {body_size}pt / '{body_font}'")
 
+    retained_font_suggestions: Dict[str, Dict[str, Any]] = {}
+    ai_font_decision_cache: Dict[str, Dict[str, Any]] = {}
+    if font_role_map:
+        for _fk, _fval in font_role_map.items():
+            if isinstance(_fval, dict) and _fval.get("mapped_by") == "ai_layout":
+                _r = str(_fval.get("role") or "").upper()
+                if _r in ("H1", "H2", "H3"):
+                    ai_font_decision_cache[_fk] = {
+                        "role": "heading",
+                        "level": int(_r[1]),
+                        "confidence": _fval.get("confidence", 0.85),
+                        "reason": _fval.get("reason", "retained_ai_layout"),
+                        "source": "gemma",
+                    }
+                elif _r in ("楷體", "楷体", "KAITI", "QUOTE"):
+                    ai_font_decision_cache[_fk] = {
+                        "role": "quote",
+                        "level": None,
+                        "confidence": _fval.get("confidence", 0.85),
+                        "reason": _fval.get("reason", "retained_ai_layout"),
+                        "source": "gemma",
+                    }
+                elif _r in ("正文", "內文", "BODY"):
+                    ai_font_decision_cache[_fk] = {
+                        "role": "body",
+                        "level": None,
+                        "confidence": _fval.get("confidence", 0.85),
+                        "reason": _fval.get("reason", "retained_ai_layout"),
+                        "source": "gemma",
+                    }
+
     audit_data = {
         "pdf_name": pdf_name,
         "total_pages": total_pages,
@@ -586,6 +741,7 @@ def _parse_pdf_layout_flow(
             "model": DEFAULT_GEMMA_MODEL,
             "model_available": False,
             "confirmed_style_mapping": dict(style_mapping),
+            "retained_font_suggestions": retained_font_suggestions,
             "decisions": [],
         },
         "doc_profile": {
@@ -733,6 +889,7 @@ def _parse_pdf_layout_flow(
         # Step 2: Parse footnotes on this page
         page_footnotes = []  # list of {id, marker, content, matched}
         current_fn_entry = None
+        footnote_blocks = _sort_blocks_by_row_and_x(footnote_blocks, y_tol=5.0)
 
         for fb in footnote_blocks:
             fb_text = "".join(
@@ -915,28 +1072,75 @@ def _parse_pdf_layout_flow(
                 "data": rtbl,
             })
 
-        # Batch short structural candidates once per PDF page. The model is
-        # consulted only after deterministic rules fail later in this loop.
+        # Pre-filter by confirmed font_role_map and deduplicate AI review by font group.
         ai_heading_by_block: Dict[int, Dict[str, Any]] = {}
         ai_candidates = []
-        ai_candidate_blocks: Dict[str, int] = {}
+        ai_candidate_meta: Dict[str, Tuple[int, str, str]] = {}
+        page_blocks_by_font_key: Dict[str, List[int]] = {}
+        page_queued_font_keys = set()
+
         for candidate_idx, candidate in enumerate(body_blocks):
             candidate_lines = candidate.get("lines", [])
             candidate_text = "".join(
                 span.get("text", "") for candidate_line in candidate_lines
                 for span in candidate_line.get("spans", [])
             ).strip()
+            if not candidate_text or bool(_TOC_LINE_RE.search(candidate_text)):
+                continue
+
+            _c_role, _c_style, _c_mapped_by = _lookup_block_font_mapping(
+                candidate_lines, font_role_map, is_toc_line=False
+            )
+            if (_c_role or _c_style) and _c_mapped_by != "ai_layout":
+                continue
+
+            cand_font_key, cand_clean_fn, cand_sz = _extract_primary_font_key(candidate_lines, body_size)
+            if cand_font_key and cand_font_key in ai_font_decision_cache:
+                cached_res = ai_font_decision_cache[cand_font_key]
+                if cached_res.get("source") == "gemma":
+                    ai_heading_by_block[id(candidate)] = cached_res
+                continue
+
+            if (
+                _H1_PART_RE.match(candidate_text)
+                or _H1_SPECIAL_RE.match(candidate_text)
+                or _H1_CHAPTER_RE.match(candidate_text)
+                or _H2_SECTION_RE.match(candidate_text)
+                or _H2_DECIMAL_RE.match(candidate_text)
+                or _H3_DECIMAL_RE.match(candidate_text)
+                or _H2_INT_SPACE_RE.match(candidate_text)
+            ):
+                continue
+
             candidate_bbox = candidate.get("bbox", [0, 0, 0, 0])
             candidate_sizes = [span.get("size", 0.0) for ln in candidate_lines for span in ln.get("spans", [])]
             candidate_size = sum(candidate_sizes) / len(candidate_sizes) if candidate_sizes else body_size
             candidate_bold = any(span.get("flags", 0) & 16 for ln in candidate_lines for span in ln.get("spans", []))
             candidate_center = abs(((candidate_bbox[0] + candidate_bbox[2]) / 2.0) - page_w / 2.0) < page_w * 0.12
+
+            is_plain_body_font = bool(
+                cand_clean_fn
+                and body_font
+                and cand_clean_fn.lower() == body_font.lower()
+                and abs(cand_sz - body_size) < 0.5
+                and not candidate_bold
+                and not candidate_center
+            )
+            if is_plain_body_font:
+                continue
+
             candidate_is_heading_like = (
                 2 <= len(candidate_text) <= 55
                 and not re.search(r'[。！？；.]$', candidate_text)
                 and not re.match(r'^(?:表|圖|图|Table|Figure)\s*\d+', candidate_text, re.IGNORECASE)
             )
-            if candidate_is_heading_like and (candidate_bold or candidate_center or candidate_size >= body_size or len(candidate_text) <= 35):
+            has_distinct_font = bool(cand_clean_fn and body_font and cand_clean_fn.lower() != body_font.lower())
+            if candidate_is_heading_like and (candidate_bold or candidate_center or candidate_size > body_size + 0.3 or has_distinct_font):
+                if cand_font_key:
+                    page_blocks_by_font_key.setdefault(cand_font_key, []).append(id(candidate))
+                    if cand_font_key in page_queued_font_keys:
+                        continue
+                    page_queued_font_keys.add(cand_font_key)
                 paragraph_id = f"pdf-{page_num}-{candidate_idx}"
                 ai_candidates.append({
                     "paragraph_id": paragraph_id,
@@ -945,73 +1149,42 @@ def _parse_pdf_layout_flow(
                     "is_bold": bool(candidate_bold),
                     "is_centered": bool(candidate_center),
                 })
-                ai_candidate_blocks[paragraph_id] = id(candidate)
+                ai_candidate_meta[paragraph_id] = (id(candidate), cand_font_key, candidate_text)
+
         if ai_candidates:
             for result in review_uncertain_layout(ai_candidates[:12], model=DEFAULT_GEMMA_MODEL):
-                if result.get("source") == "gemma":
-                    ai_heading_by_block[ai_candidate_blocks[result["paragraph_id"]]] = result
-                elif result.get("ai_status") and result.get("ai_status") != "model_unavailable":
-                    audit_data["ai_layout"]["decisions"].append({
-                        "page": page_num,
-                        "type": "classification_status",
-                        "paragraph_id": result.get("paragraph_id"),
-                        "status": result["ai_status"],
-                    })
+                pid = str(result.get("paragraph_id") or "")
+                meta = ai_candidate_meta.get(pid)
+                if result.get("source") == "gemma" and meta:
+                    blk_id, f_key, s_txt = meta
+                    ai_heading_by_block[blk_id] = result
+                    if f_key:
+                        ai_font_decision_cache[f_key] = result
+                        for other_id in page_blocks_by_font_key.get(f_key, []):
+                            ai_heading_by_block[other_id] = result
+                        sug = _map_ai_review_to_font_suggestion(result, style_mapping, s_txt)
+                        if sug and f_key not in retained_font_suggestions:
+                            retained_font_suggestions[f_key] = sug
+                else:
+                    if meta and meta[1]:
+                        ai_font_decision_cache[meta[1]] = result
+                    if result.get("ai_status") and result.get("ai_status") != "model_unavailable":
+                        audit_data["ai_layout"]["decisions"].append({
+                            "page": page_num,
+                            "type": "classification_status",
+                            "paragraph_id": result.get("paragraph_id"),
+                            "status": result["ai_status"],
+                        })
 
         # Sort by top-to-bottom reading order (y0, then x0)
         flow_items.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
-
-        # Ask Gemma only about close, adjacent text blocks. Explicit heading,
-        # style, prefix, and delimiter rules still veto model boundary changes.
-        ai_boundary_by_item: Dict[str, bool] = {}
-        text_flow = [entry for entry in flow_items if entry["type"] == "text"]
-        boundary_candidates = []
-        for boundary_idx, (previous_item, current_item) in enumerate(zip(text_flow, text_flow[1:]), start=1):
-            previous_block = previous_item["data"]
-            current_block = current_item["data"]
-            previous_text = "".join(
-                span.get("text", "") for line in previous_block.get("lines", [])
-                for span in line.get("spans", [])
-            ).strip()
-            current_text = "".join(
-                span.get("text", "") for line in current_block.get("lines", [])
-                for span in line.get("spans", [])
-            ).strip()
-            previous_bbox, current_bbox = previous_item["bbox"], current_item["bbox"]
-            gap = current_bbox[1] - previous_bbox[3]
-            previous_tail = previous_text[-1] if previous_text else ""
-            indentation_change = abs(current_bbox[0] - previous_bbox[0]) >= 10.0
-            punctuation_conflict = previous_tail in {"，", ",", "：", ":", "；", ";", "…"}
-            near_gap_threshold = gap >= body_size * 1.5
-            if previous_text and current_text and 0 <= gap <= body_size * 2.2 and (indentation_change or punctuation_conflict or near_gap_threshold):
-                key = f"pdf-line-{page_num}-{boundary_idx}"
-                current_item["ai_boundary_key"] = key
-                boundary_candidates.append({
-                    "next_line_id": key,
-                    "previous_text": previous_text[:300],
-                    "next_text": current_text[:300],
-                    "vertical_gap": round(gap, 2),
-                    "indent_delta": round(current_bbox[0] - previous_bbox[0], 2),
-                })
-        if boundary_candidates:
-            try:
-                from src.scripts.gemma_layout_assistant import review_uncertain_boundaries
-                ai_boundary_by_item = review_uncertain_boundaries(boundary_candidates[:12])
-            except Exception:
-                ai_boundary_by_item = {}
-        ai_boundary_status = ai_boundary_by_item.pop("_status", None)
-        if ai_boundary_status and ai_boundary_status.get("status") != "ready":
-            audit_data["ai_layout"]["decisions"].append({
-                "page": page_num,
-                "type": "boundary_status",
-                **ai_boundary_status,
-            })
+        ai_boundary_by_item: Dict[str, Any] = {}
 
         for item in flow_items:
             itype = item["type"]
             if itype == "figure":
                 flush_current_para()
-                block_idx, fig_b = item["data"]
+                block_idx, _fig_b = item["data"]
                 fig_bbox = item["bbox"]
                 all_image_blocks.append({
                     "page_num": page_num,
@@ -1111,30 +1284,12 @@ def _parse_pdf_layout_flow(
             has_sentence_punct = bool(_SENTENCE_PUNCT_RE.search(clean_content))
             
             # ── Priority 0: 人工字體角色對應（優先權最高，直接覆蓋規則型判定）──
-            # 取此 block 第一個命中 font_role_map 的字體角色
-            _block_font_role = None
-            _block_docx_style = None
-            if font_role_map and not is_toc_line:
-                for _line in lines:
-                    for _span in _line.get('spans', []):
-                        _raw_fn = (_span.get('font') or '').split('+', 1)[-1]
-                        _size = round(_span.get('size', 0) * 2) / 2
-                        _candidates = [
-                            f"{_raw_fn} ({_size}pt)",
-                            f"{_raw_fn} ({_size:.1f}pt)",
-                            f"{_raw_fn}_{_size}",
-                            _raw_fn
-                        ]
-                        for _cand in _candidates:
-                            if _cand in font_role_map:
-                                _entry = font_role_map[_cand]
-                                _block_font_role = _entry.get('role')
-                                _block_docx_style = _entry.get('docx_style')
-                                break
-                        if _block_font_role or _block_docx_style:
-                            break
-                    if _block_font_role or _block_docx_style:
-                        break
+            _block_font_role, _block_docx_style, _block_mapped_by = _lookup_block_font_mapping(
+                lines, font_role_map, is_toc_line=is_toc_line
+            )
+            if _block_mapped_by == "ai_layout":
+                _block_font_role = None
+                _block_docx_style = None
 
             _is_ignored_font = bool(_block_font_role and str(_block_font_role).strip().lower() in ('忽略', 'ignore', 'none'))
             _has_font_mapping = bool((_block_font_role or _block_docx_style) and not _is_ignored_font)
@@ -1264,8 +1419,8 @@ def _parse_pdf_layout_flow(
                     "level": f"H{heading_level}",
                     "text": bb_text,
                     "source": "gemma" if ai_heading_applied else "deterministic",
-                    "confidence": ai_review.get("confidence") if ai_heading_applied else None,
-                    "reason": ai_review.get("reason", "") if ai_heading_applied else "",
+                    "confidence": ai_review.get("confidence") if (ai_heading_applied and ai_review) else None,
+                    "reason": ai_review.get("reason", "") if (ai_heading_applied and ai_review) else "",
                 })
                 # Custom style annotation: font mapping docx_style takes highest priority
                 custom_style = _block_docx_style or style_mapping.get(f"h{heading_level}")
@@ -1653,6 +1808,17 @@ def process_book_vector_pdf(
         )
     finally:
         doc.close()
+
+    retained_suggestions = audit_data.get("ai_layout", {}).get("retained_font_suggestions")
+    if retained_suggestions:
+        try:
+            from src.scripts.pdf_font_analyzer import save_ai_layout_suggestions_to_fonts_json
+            _fonts_json_out = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json'))
+            saved_cnt = save_ai_layout_suggestions_to_fonts_json(_fonts_json_out, retained_suggestions)
+            if saved_cnt > 0:
+                print(f"[FontMap] 已保留 {saved_cnt} 筆 AI 版面預判字型建議至 fonts.json 供人工審核")
+        except Exception:
+            pass
             
     # Write final Markdown file
     full_markdown = "\n\n".join(final_md_pages)
@@ -1943,7 +2109,7 @@ def extract_book_vector_ast(
 
     doc = fitz.open(pdf_path_str)
     try:
-        final_md_pages, all_image_blocks, audit_data, layout_records = _parse_pdf_layout_flow(
+        _final_md_pages, all_image_blocks, audit_data, layout_records = _parse_pdf_layout_flow(
             doc=doc,
             pdf_name=os.path.basename(pdf_path_str),
             style_mapping=style_mapping,

@@ -1,13 +1,11 @@
-import asyncio
 import json
 import os
 import tempfile
 from pathlib import Path
+from typing import Any
 from unittest.mock import patch
 
 import fitz
-import pytest
-from fastapi.testclient import TestClient
 
 from src.scripts.gemma_layout_assistant import (
     GEMMA_FONT_NUM_CTX,
@@ -16,13 +14,10 @@ from src.scripts.gemma_layout_assistant import (
     suggest_docx_style_mapping,
     suggest_pdf_font_group_mappings,
     validate_boundary_reviews,
-    validate_font_group_suggestions,
     validate_layout_reviews,
 )
 from src.scripts.pdf_font_analyzer import analyze_pdf_for_ui, scan_pdf_fonts
-from src.utils.ollama_client import OllamaConnectionError, OllamaTimeoutError
-from src.web.app import app
-from src.web.dependencies import get_gpu_semaphore
+from src.utils.ollama_client import OllamaTimeoutError
 
 
 def test_layout_reviews_keep_source_text_and_reject_low_confidence_decisions():
@@ -129,7 +124,7 @@ def test_scan_pdf_fonts_collects_frequency_pages_and_position_summary():
     """Verify PDF font scanner extracts occurrence count, page count, position distribution, and bounded samples."""
     with tempfile.TemporaryDirectory() as tmpdir:
         pdf_path = os.path.join(tmpdir, "layout_stats.pdf")
-        doc = fitz.open()
+        doc: Any = fitz.open()
         page1 = doc.new_page(width=500, height=800)
         page1.insert_text(fitz.Point(220, 60), "Running Header", fontname="helv", fontsize=9)
         page1.insert_text(fitz.Point(80, 400), "Body paragraph text on page one.", fontname="tiro", fontsize=12)
@@ -431,7 +426,7 @@ def test_fonts_json_compatibility_and_docx_style_output():
 
         # Create a test vector PDF and verify Markdown output preserves heading, body, and custom styles
         pdf_path = os.path.join(tmpdir, "sample.pdf")
-        doc = fitz.open()
+        doc: Any = fitz.open()
         page = doc.new_page(width=595, height=842)
         page.insert_text((72, 120), "第一章 緒論", fontsize=16, fontname="china-ts")
         page.insert_text((72, 180), "這是一段完整的內文測試段落，確認整稿輸出與樣式套用正常運作。", fontsize=10.5, fontname="china-ts")
@@ -464,6 +459,107 @@ def test_duplicate_style_mapping_gemma_endpoint_removed():
     """Confirm /api/suggest_ocr_style_mapping is removed so duplicate Gemma suggestions cannot occur."""
     from src.web.routers.formula_router import router as formula_r
     from src.web.routers.ocr_router import router as ocr_r
-    routes = [r.path for r in (*formula_r.routes, *ocr_r.routes)]
+    routes = [getattr(r, "path", "") for r in (*formula_r.routes, *ocr_r.routes)]
     assert "/api/suggest_ocr_style_mapping" not in routes
     assert "/api/suggest_font_mappings" in routes
+
+
+def test_ai_layout_font_group_cache_and_persistence_to_fonts_json():
+    """Verify ADR-013/BUG-013: user-confirmed fonts bypass Ollama, unmapped fonts cache per font group and persist as ai_layout."""
+    from src.scripts.book_layout_extractor import (
+        _extract_primary_font_key,
+        _lookup_block_font_mapping,
+        _sort_blocks_by_row_and_x,
+    )
+    from src.scripts.pdf_font_analyzer import (
+        load_fonts_json,
+        save_ai_layout_suggestions_to_fonts_json,
+        save_fonts_json,
+    )
+
+    # 1. Mixed-span heading (ASCII prefix in body font + CJK title in heading font) resolves CJK heading font
+    mixed_lines = [
+        {
+            "spans": [
+                {"text": "1　", "font": "E-BZ", "size": 13.0},
+                {"text": "风云突变", "font": "FZS3K--GBK1-0", "size": 13.0},
+            ]
+        }
+    ]
+    font_role_map = {
+        "E-BZ (13.0pt)": {"role": "正文", "docx_style": "Normal", "mapped_by": "user"},
+        "FZS3K--GBK1-0 (13.0pt)": {"role": "H2", "docx_style": "heading 2", "mapped_by": "user"},
+    }
+    assert _extract_primary_font_key(mixed_lines) == ("FZS3K--GBK1-0 (13.0pt)", "FZS3K--GBK1-0", 13.0)
+    role, docx_style, mapped_by = _lookup_block_font_mapping(mixed_lines, font_role_map)
+    assert role == "H2"
+    assert docx_style == "heading 2"
+    assert mapped_by == "user"
+
+    # 2. Footnote row+X sorting pairs left marker blocks with right text blocks on the same row
+    unsorted_fn_blocks = [
+        {"bbox": (147.4, 495.5, 421.8, 520.9), "text": "第一个脚注内容"},
+        {"bbox": (147.4, 525.5, 421.8, 535.9), "text": "第二个脚注内容"},
+        {"bbox": (132.4, 495.3, 139.9, 505.7), "text": "①"},
+        {"bbox": (132.4, 525.3, 139.9, 535.7), "text": "②"},
+    ]
+    sorted_fn = _sort_blocks_by_row_and_x(unsorted_fn_blocks)
+    assert [b["text"] for b in sorted_fn] == ["①", "第一个脚注内容", "②", "第二个脚注内容"]
+
+    # 3. AI layout suggestions persist with mapped_by="ai_layout", never overwrite mapped_by="user", and promote on UI save
+    with tempfile.TemporaryDirectory() as tmpdir:
+        fonts_json = os.path.join(tmpdir, "fonts.json")
+        save_fonts_json(
+            fonts_json,
+            {
+                "ConfirmedFont (13.0pt)": {
+                    "role": "H2",
+                    "docx_style": "heading 2",
+                    "mapped_by": "user",
+                    "sample_text": "1　风云突变",
+                }
+            },
+        )
+
+        # AI tries to suggest both the already-confirmed font and a new unmapped font
+        persisted = save_ai_layout_suggestions_to_fonts_json(
+            fonts_json,
+            {
+                "ConfirmedFont (13.0pt)": {
+                    "role": "正文",
+                    "docx_style": "Normal",
+                    "confidence": 0.99,
+                    "reason": "不應覆蓋人工確認結果",
+                },
+                "UnmappedHeadingFont (15.0pt)": {
+                    "role": "H1",
+                    "docx_style": "heading 1",
+                    "confidence": 0.91,
+                    "reason": "AI 版面預判為一級章標題",
+                    "sample_text": "第一卷　鄂州之战",
+                },
+            },
+        )
+        assert persisted == 1
+
+        loaded = load_fonts_json(fonts_json)
+        assert loaded["ConfirmedFont (13.0pt)"]["role"] == "H2"
+        assert loaded["ConfirmedFont (13.0pt)"]["mapped_by"] == "user"
+        assert loaded["UnmappedHeadingFont (15.0pt)"]["role"] == "H1"
+        assert loaded["UnmappedHeadingFont (15.0pt)"]["docx_style"] == "heading 1"
+        assert loaded["UnmappedHeadingFont (15.0pt)"]["mapped_by"] == "ai_layout"
+
+        # User reviews and confirms in Font Review UI -> promotes to mapped_by="user"
+        save_fonts_json(
+            fonts_json,
+            {
+                "UnmappedHeadingFont (15.0pt)": {
+                    "role": "H1",
+                    "docx_style": "heading 1",
+                    "mapped_by": "user",
+                }
+            },
+        )
+        loaded_after_confirm = load_fonts_json(fonts_json)
+        assert loaded_after_confirm["UnmappedHeadingFont (15.0pt)"]["mapped_by"] == "user"
+

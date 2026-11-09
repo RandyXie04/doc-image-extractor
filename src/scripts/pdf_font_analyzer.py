@@ -9,8 +9,7 @@ import os
 import json
 import zipfile
 import xml.etree.ElementTree as ET
-from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 # pyrefly: ignore [missing-import]
 import fitz
@@ -29,7 +28,7 @@ def scan_pdf_fonts(pdf_path: str, max_samples: int = 3, max_sample_len: int = 60
       - position_summary : 頁面位置分布（top/middle/bottom 比例與置中比例）
       - sample_texts : 最多 max_samples 句代表性文字
     """
-    doc = fitz.open(pdf_path)
+    doc: Any = fitz.open(pdf_path)
 
     font_data: dict[str, dict] = {}
 
@@ -202,6 +201,45 @@ def save_fonts_json(fonts_json_path: str, mapping: dict, remove_keys: Optional[l
         json.dump(existing, f, ensure_ascii=False, indent=2)
 
 
+def save_ai_layout_suggestions_to_fonts_json(fonts_json_path: str, suggestions: dict) -> int:
+    """Persist AI layout suggestions (mapped_by='ai_layout') without overwriting user-confirmed entries."""
+    if not suggestions or not isinstance(suggestions, dict):
+        return 0
+    existing = load_fonts_json(fonts_json_path)
+    updated = 0
+    for font_name, info in suggestions.items():
+        if not font_name or not isinstance(info, dict):
+            continue
+        prev = existing.get(font_name)
+        if isinstance(prev, dict) and prev.get("mapped_by") == "user" and (prev.get("role") or prev.get("docx_style")):
+            continue
+        role = info.get("role")
+        docx_style = info.get("docx_style")
+        if not role and not docx_style:
+            continue
+        merged_style = docx_style if docx_style is not None else (prev.get("docx_style") if isinstance(prev, dict) else None)
+        entry: dict = {
+            "role": role,
+            "docx_style": merged_style,
+            "mapped_by": info.get("mapped_by") or "ai_layout",
+        }
+        if info.get("confidence") is not None:
+            entry["confidence"] = info.get("confidence")
+        if info.get("reason"):
+            entry["reason"] = info.get("reason")
+        if info.get("sample"):
+            entry["sample"] = info.get("sample")
+        existing[font_name] = entry
+        updated += 1
+    if updated > 0:
+        parent_dir = os.path.dirname(os.path.abspath(fonts_json_path))
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+        with open(fonts_json_path, "w", encoding="utf-8") as f:
+            json.dump(existing, f, ensure_ascii=False, indent=2)
+    return updated
+
+
 def get_font_role_map(fonts_json_path: str) -> dict[str, dict]:
     """
     供 book_layout_extractor 呼叫：
@@ -305,11 +343,18 @@ def analyze_pdf_for_ui(pdf_path: str, template_path: Optional[str], fonts_json_p
             existing = existing_mapping[name]
             role = existing.get("role") if isinstance(existing, dict) else None
             docx_style = existing.get("docx_style") if isinstance(existing, dict) else None
+            mapped_by = existing.get("mapped_by") if isinstance(existing, dict) else None
             font["current_role"] = role if (role or docx_style) else "auto"
             font["current_docx_style"] = docx_style
+            font["mapped_by"] = mapped_by
+            if mapped_by == "ai_layout":
+                font["ai_layout_retained"] = True
+                font["ai_layout_confidence"] = existing.get("confidence")
+                font["ai_layout_reason"] = existing.get("reason")
         else:
             font["current_role"] = "auto"
             font["current_docx_style"] = None
+            font["mapped_by"] = None
         font_str = font["name"].lower()
         if any(k in font_str for k in ["kaiti", "kai_ti", "fzkt", "fzkai", "stkaiti", "kai", "楷"]):
             font["suggested_role"] = "楷體"
@@ -335,7 +380,6 @@ def analyze_pdf_for_ui(pdf_path: str, template_path: Optional[str], fonts_json_p
 
 
 if __name__ == "__main__":
-    import sys
     import argparse
 
     parser = argparse.ArgumentParser(description="掃描 PDF 字體並輸出 JSON")

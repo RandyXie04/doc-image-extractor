@@ -294,7 +294,7 @@
     "mapped_by": "user"
   },
   "FZSSK--GBK1-0 (9.5pt)": {
-    "role": null,
+    "role": "正文",
     "docx_style": "Normal",
     "mapped_by": "user"
   },
@@ -314,12 +314,12 @@
     "mapped_by": "user"
   },
   "E-BZ (9.5pt)": {
-    "role": null,
+    "role": "正文",
     "docx_style": "Normal",
     "mapped_by": "user"
   },
   "E-BX (9.5pt)": {
-    "role": null,
+    "role": "正文",
     "docx_style": "Normal",
     "mapped_by": "user"
   },
@@ -335,6 +335,86 @@
   },
   "FZFSK--GBK1-0 (10.0pt)": {
     "role": "楷體",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZBSK--GBK1-0 (15.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZSSJW--GB1-0 (15.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 1",
+    "mapped_by": "user"
+  },
+  "E-BZ (13.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZS3K--GBK1-0 (13.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "E-B3 (9.5pt)": {
+    "role": null,
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZBSK--GBK1-0 (9.5pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "E-B3 (9.0pt)": {
+    "role": null,
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZHTK--GBK1-0 (8.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "E-B3 (8.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "E-XT (8.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZBYKSK--GBK1-0 (7.5pt)": {
+    "role": null,
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "E-BZ (7.5pt)": {
+    "role": null,
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "E-BZ (7.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "E-BZ (5.0pt)": {
+    "role": "正文",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "E-B4 (5.0pt)": {
+    "role": "正文",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "E-FZ (5.0pt)": {
+    "role": "正文",
     "docx_style": null,
     "mapped_by": "user"
   }
