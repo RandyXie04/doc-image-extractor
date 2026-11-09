@@ -1,26 +1,26 @@
 ---
 name: publishing-subtool-development
-description: 開發出版社新專項子工具模組（Auxiliary Task / Core Proofreading）的標準全流程指南與架構規範。當需要新增出版子工具（如版權頁與 ISBN 校驗、目錄章節比對、生僻字校對、表格專項檢查等）時，請遵循此 Skill 進行模組註冊、API 契約定義、前端標準工作台建置與驗收測試。
+description: 開發出版社新專項子工具模組（Auxiliary Task）的標準全流程指南與架構規範。當需要新增出版子工具（如版權頁與 ISBN 校驗、目錄章節比對、生僻字校對、表格專項檢查等）時，請遵循此 Skill 進行模組註冊、API 契約定義、前端標準工作台建置與驗收測試。
 ---
 
 # 出版專項子工具模組開發標準工作流 (Publishing Sub-tool Development Workflow)
 
-本專案採用**「雙核心 + 可插拔專項工作任務底座」（Dual-Core + Pluggable Task Foundation）**架構。
-在開發任何新的出版社專項子工具或第二核心（輔助校對）功能時，**嚴禁**將子工具特定邏輯硬編碼塞入核心整稿管線（`book_layout_extractor.py`、`md_to_docx.py` 或 `ocr_router.py`）。所有新子工具必須作為獨立可插拔單元實作並註冊至 `TaskPluginRegistry`。
+本專案採用**「單核心 + 可插拔專項工作任務底座」（Single-Core + Pluggable Task Foundation）**架構。
+在開發任何新的出版社專項子工具功能時，**嚴禁**將子工具特定邏輯硬編碼塞入核心整稿管線（`book_layout_extractor.py`、`md_to_docx.py` 或 `ocr_router.py`）。所有新子工具必須作為獨立可插拔單元實作並註冊至 `TaskPluginRegistry`。
 
 ---
 
 ## 1. 系統架構定位與分類規範
 
-系統將所有功能嚴格劃分為三大類別（`TaskCategory`）：
+系統將所有功能嚴格劃分為兩大類別（`TaskCategory`）：
 
 | 類別識別碼 (`category`) | 定位與用途 | 側邊欄與首頁對應位置 | 現有模組範例 |
 | :--- | :--- | :--- | :--- |
-| `core_typesetting` | **第一核心：書稿排版與整稿管線** | 側邊欄 `Settings > 一般與工作流設定` & 首頁主流程卡片 | `ocr_pipeline`（全自動整稿）、`pod_studio`（POD 整稿） |
-| `core_proofreading` | **第二核心：輔助校對管線** | 預留之第二核心工作流入口 | `proofreading`（輔助校對錨點） |
+| `core_typesetting` | **核心引擎：書稿排版與整稿管線** | 側邊欄 `Settings > 一般與工作流設定` & 首頁主流程卡片 | `ocr_pipeline`（全自動整稿）、`pod_studio`（POD 整稿） |
 | `auxiliary_task` | **可插拔專項子工具** | 側邊欄 `Settings > OCR 與識別設定 > 輔助工具` & 首頁輔助工具清單 | `founder_repair`（方正修復）、`extract_images`（圖片提取）、`formula_extraction`（公式提取） |
 
 ### 核心架構鐵律（Architectural Invariants）
+
 1. **零侵入原則**：新增子工具時，不應修改 `sidebar.js` 的靜態陣列或 `index.html` 的硬編碼清單；前端會自動透過 `GET /api/system/plugins` 動態發現並渲染所有 `is_enabled=True` 的外掛。
 2. **GPU 資源互斥保護**：若新子工具涉及本地 VLM（Ollama）、YOLO 視覺偵測或高 VRAM 消耗運算，**必須**在執行區段使用 `async with get_gpu_semaphore():`（由 `src.web.dependencies` 匯入），防止 RTX 3060 12GB 環境發生 VRAM OOM 崩潰。
 3. **非同步生命週期與可取消性**：背景長耗時任務必須透過 `TaskQueue`（`src.utils.task_queue`）管理，並支援使用者中途取消與暫存檔自動清理。
@@ -34,7 +34,9 @@ description: 開發出版社新專項子工具模組（Auxiliary Task / Core Pro
 假設我們要開發一個新的專項子工具：**「版權頁與 ISBN 校驗器」（`isbn_checker`）**，請依序執行以下 6 個步驟：
 
 ### Step 1：建立核心領域運算模組
+
 在 `src/` 下建立獨立的領域套件（或在對應子目錄新增模組），確保核心演算法與 Web 框架（FastAPI）完全解耦，方便單獨進行單元測試：
+
 - 路徑範例：`src/isbn_checker/__init__.py`、`src/isbn_checker/core.py`
 - 規範：
   - 輸入與輸出應使用明確的 Python `dataclass` 或 `Path` 物件。
@@ -42,7 +44,9 @@ description: 開發出版社新專項子工具模組（Auxiliary Task / Core Pro
   - 若需呼叫本地 Ollama 或雲端 Gemini，統一透過 `src/utils/ollama_client.py` 進行呼叫，並遵守「零靜默降級政策」（當指定模型不可用時明確拋出錯誤，禁止私自降級）。
 
 ### Step 2：定義 Pydantic 嚴格契約並同步 TypeScript 型別
+
 1. 打開 `src/web/schemas.py`，新增該子工具的 Request / Response 契約模型：
+
    ```python
    class IsbnCheckResponse(StrictContractModel):
        """POST /api/isbn/check 回應契約"""
@@ -53,14 +57,17 @@ description: 開發出版社新專項子工具模組（Auxiliary Task / Core Pro
        download_url: Optional[str] = None
        message: str = ""
    ```
+
 2. 打開 `src/scripts/generate_ts_contracts.py`，將 `IsbnCheckResponse` 加入 `EXPORTED_MODELS` 清單。
 3. 執行契約同步腳本並驗證：
+
    ```bash
    python src/scripts/generate_ts_contracts.py
    python src/scripts/generate_ts_contracts.py --check
    ```
 
 ### Step 3：實作 `BaseTaskPlugin` 與 FastAPI Router
+
 在 `src/web/routers/` 建立路由模組（例如 `src/web/routers/isbn_router.py`），或在 `src/plugins/` 下定義外掛類別：
 
 ```python
@@ -121,15 +128,21 @@ class IsbnCheckerPlugin(BaseTaskPlugin):
 ```
 
 ### Step 4：註冊至 `TaskPluginRegistry` 與掛載路由
+
 1. 打開 `src/plugins/registry.py`，在 `_initialize_builtins()` 中註冊新外掛（或由 `app.py` 啟動時透過 `registry.get_routers()` 自動掛載）：
+
    ```python
    self.register(IsbnCheckerPlugin())
    ```
+
 2. 若該外掛附帶獨立的 `APIRouter`，確保在 `src/web/app.py` 中透過 `app.include_router(...)` 掛載，或在 `app.py` 迴圈掛載 `get_plugin_registry().get_routers()`。
 
 ### Step 5：建立前端標準工作台頁面（使用 `StandardTaskClient`）
+
 在 `src/web/static/` 下建立對應的 HTML 工作台頁面（例如 `src/web/static/isbn_checker.html`）：
+
 1. **引入共用基礎設施**：
+
    ```html
    <link rel="stylesheet" href="/static/sidebar.css">
    <link rel="stylesheet" href="/static/toolbox.css">
@@ -138,7 +151,9 @@ class IsbnCheckerPlugin(BaseTaskPlugin):
    <script src="/static/js/task_client.js"></script>
    <script src="/static/js/native_bridge.js"></script>
    ```
+
 2. **使用 `StandardTaskClient` 處理任務提交、SSE/輪詢進度與取消**：
+
    ```javascript
    const taskClient = new window.StandardTaskClient();
 
@@ -167,7 +182,9 @@ class IsbnCheckerPlugin(BaseTaskPlugin):
        }
    }
    ```
+
 3. **使用 `NativeBridge.saveOutputFile` 支援本機對話框與遠端下載雙模交付**：
+
    ```javascript
    await window.NativeBridge.saveOutputFile({
        sourcePath: result.output_path,
@@ -178,7 +195,9 @@ class IsbnCheckerPlugin(BaseTaskPlugin):
    ```
 
 ### Step 6：撰寫自動化測試與驗收
+
 在 `tests/` 目錄下新增或擴充測試（參考 `tests/test_plugin_task_architecture.py`）：
+
 1. **外掛規格與驗證測試**：確認 `registry.get("<plugin_id>")` 存在，且 `plugin.validate_input()` 正確攔截非法副檔名。
 2. **動態發現 API 測試**：呼叫 `GET /api/system/plugins?category=auxiliary_task`，確認新子工具出現在回傳清單中。
 3. **端到端功能與契約測試**：使用 `TestClient(app)` 測試上傳、處理與下載端點，確保回傳格式 100% 符合 `src/web/schemas.py` 定義。
