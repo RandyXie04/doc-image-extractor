@@ -915,8 +915,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Settings > 1.1 General Settings: 深淺色主題切換（整合於側邊欄 Settings 內）
-    const savedTheme = localStorage.getItem('app-theme') || 'light';
+    const urlTheme = new URLSearchParams(window.location.search).get('theme');
+    const savedTheme = (urlTheme === 'dark' || urlTheme === 'light') ? urlTheme : (localStorage.getItem('app-theme') || 'light');
     document.documentElement.setAttribute('data-theme', savedTheme);
+    if (urlTheme === 'dark' || urlTheme === 'light') {
+        localStorage.setItem('app-theme', urlTheme);
+    }
 
     const themeToggleBtn = document.getElementById('themeToggleBtn');
     const themeToggleIcon = document.getElementById('themeToggleIcon');

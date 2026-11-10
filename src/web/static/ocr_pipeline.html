@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>全自動整稿 - 轉檔工具箱</title>
+    <script>(function(){const u=new URLSearchParams(window.location.search).get('theme');const t=(u==='dark'||u==='light')?u:(localStorage.getItem('app-theme')||'light');document.documentElement.setAttribute('data-theme',t);})();</script>
     <link rel="stylesheet" href="/static/sidebar.css">
     <link rel="stylesheet" href="/static/toolbox.css">
 </head>
@@ -17,8 +18,8 @@
             </a>
             <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 8px;">
                 <div>
-                    <h1 style="font-size: 1.45rem; font-weight: 700; color: var(--f2-color-text-primary, #242424);">全自動整稿工作台</h1>
-                    <p class="page-lead" style="font-size: 0.88rem; color: var(--f2-color-text-secondary, #616161); margin-top: 2px;">
+                    <h1 style="font-size: 1.45rem; font-weight: 700; color: var(--f2-color-text-primary);">全自動整稿工作台</h1>
+                    <p class="page-lead" style="font-size: 0.88rem; color: var(--f2-color-text-secondary); margin-top: 2px;">
                         專業圖書版面解析與樣式對應工作站，自動生成結構化 Word (.docx) 與 Markdown (.md) 文件。
                     </p>
                 </div>
@@ -126,14 +127,14 @@
                         <div class="workbench-preview-wrapper" id="previewFrame" style="position: relative;">
                             <img id="previewImage" src="" alt="裁切預覽載入中" draggable="false">
                             <!-- 互動式視覺裁切遮罩 -->
-                            <div id="cropOverlayBox" style="position: absolute; pointer-events: none; border: 1.5px dashed var(--f2-color-primary, #0F6CBD); background: rgba(15, 108, 189, 0.08);">
+                            <div id="cropOverlayBox" style="position: absolute; pointer-events: none; border: 1.5px dashed var(--f2-color-primary); background: var(--accent-soft);">
                             </div>
                         </div>
                     </div>
                 </div>
 
                 <!-- 畫布底部色標圖例與即時裁切摘要 -->
-                <div class="crop-legend" style="padding: 8px 16px; background: var(--f2-color-surface, #ffffff); border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb); display: flex; justify-content: center; gap: 16px; font-size: 0.8rem; flex-wrap: wrap;">
+                <div class="crop-legend" style="padding: 8px 16px; background: var(--f2-color-surface); border-top: 1px solid var(--f2-color-border-subtle); display: flex; justify-content: center; gap: 16px; font-size: 0.8rem; flex-wrap: wrap;">
                     <span><span class="swatch swatch-top"></span>天頭 (上)：<strong id="headerVal" class="val-top">0.10</strong></span>
                     <span><span class="swatch swatch-bottom"></span>地腳 (下)：<strong id="footerVal" class="val-bottom">0.10</strong></span>
                     <span><span class="swatch swatch-side"></span>左側：<strong id="leftVal" class="val-side">0.00</strong></span>
@@ -160,9 +161,9 @@
                         </div>
 
                         <!-- 活躍檔案精巧資訊列 (已選擇 PDF 時展示) -->
-                        <div id="activeFileInfo" style="display: none; margin-bottom: 10px; padding: 6px 10px; background: var(--f2-color-surface-secondary, #f8fafc); border: 1px solid var(--f2-color-border-subtle, #e5e7eb); border-radius: 4px; align-items: center; justify-content: space-between;">
+                        <div id="activeFileInfo" style="display: none; margin-bottom: 10px; padding: 6px 10px; background: var(--f2-color-surface-secondary); border: 1px solid var(--f2-color-border-subtle); border-radius: 4px; align-items: center; justify-content: space-between;">
                             <div style="font-size: 0.83rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                                <strong id="activeFileNameText" style="color: var(--f2-color-text-primary, #242424);"></strong>
+                                <strong id="activeFileNameText" style="color: var(--f2-color-text-primary);"></strong>
                                 <span id="activeFileSizeText" class="hint" style="margin-left: 4px;"></span>
                             </div>
                             <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('fileInput').click()" style="padding: 2px 8px; font-size: 0.78rem;">更換檔案</button>
@@ -175,8 +176,8 @@
                                 <input type="file" id="templateInput" name="template" accept=".docx" style="display: none;">
                                 <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('templateInput').click()" style="padding: 2px 8px; font-size: 0.78rem;">更換範本</button>
                             </label>
-                            <div style="font-size: 0.82rem; color: var(--f2-color-text-secondary, #616161); display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; background: var(--f2-color-surface-secondary, #f8fafc); border-radius: 4px; border: 1px solid var(--f2-color-border-subtle, #e5e7eb);">
-                                <span>目前：<strong id="currentTemplateName" style="color: var(--f2-color-text-primary, #242424);">預設出版範本</strong></span>
+                            <div style="font-size: 0.82rem; color: var(--f2-color-text-secondary); display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; background: var(--f2-color-surface-secondary); border-radius: 4px; border: 1px solid var(--f2-color-border-subtle);">
+                                <span>目前：<strong id="currentTemplateName" style="color: var(--f2-color-text-primary);">預設出版範本</strong></span>
                                 <span id="templateUploadStatus" class="hint" style="font-size: 0.78rem;"></span>
                             </div>
                         </div>
@@ -218,7 +219,7 @@
                                         <span class="hint" style="font-size: 0.74rem;">(留空全文)</span>
                                     </div>
                                 </div>
-                                <div id="pageRangeError" class="hint" style="color: var(--f2-color-danger, #d13438); display: none; font-size: 0.75rem; margin-top: 4px;">起始頁不可大於結束頁。</div>
+                                <div id="pageRangeError" class="hint" style="color: var(--f2-color-danger); display: none; font-size: 0.75rem; margin-top: 4px;">起始頁不可大於結束頁。</div>
 
                                 <div class="field" style="margin: 8px 0 0 0;">
                                     <label class="check">
@@ -318,7 +319,7 @@
                             <h3 id="pipelineStatusTitle" style="margin: 0;">準備啟動轉檔任務…</h3>
                             <div style="display: flex; align-items: center; gap: 8px;">
                                 <span id="pipelinePercentBadge" class="percent-pill">0%</span>
-                                <button type="button" id="cancelTaskBtn" class="btn btn-secondary btn-xs" style="display: none; color: var(--f2-color-danger, #d13438); border-color: var(--f2-color-danger, #d13438); padding: 2px 8px; font-size: 0.75rem; cursor: pointer;">取消任務</button>
+                                <button type="button" id="cancelTaskBtn" class="btn btn-secondary btn-xs" style="display: none; color: var(--f2-color-danger); border-color: var(--f2-color-danger); padding: 2px 8px; font-size: 0.75rem; cursor: pointer;">取消任務</button>
                             </div>
                         </div>
 
@@ -327,9 +328,9 @@
                             <div id="progressBar" class="f2-progress-fill" style="width: 0%;"></div>
                         </div>
 
-                        <div class="progress-meta" style="margin-top: 6px; display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--f2-color-text-secondary, #616161);">
+                        <div class="progress-meta" style="margin-top: 6px; display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--f2-color-text-secondary);">
                             <span id="statusMessage">任務初始化中…</span>
-                            <span id="percentageText" style="font-weight: 600; color: var(--f2-color-primary, #0F6CBD);">0%</span>
+                            <span id="percentageText" style="font-weight: 600; color: var(--f2-color-primary);">0%</span>
                         </div>
 
                         <!-- 6 階段語意進度網格 -->
@@ -374,7 +375,7 @@
             <div class="modal" style="max-width: 980px; width: 95%;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 0.5rem;">
                     <div>
-                        <h2 id="fontModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary, #242424); margin: 0;">審閱 PDF 字體與編碼角色</h2>
+                        <h2 id="fontModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary); margin: 0;">審閱 PDF 字體與編碼角色</h2>
                         <p class="hint" style="margin: 4px 0 0 0; font-size: 0.84rem;">
                             以下為本 PDF 偵測到的字體群組摘要。您可按需點擊「Gemma 智慧建議」取得角色與 DOCX 範本樣式建議，覆核或調整後點擊「確認套用」儲存至 fonts.json。
                         </p>
@@ -385,7 +386,7 @@
                         </button>
                     </div>
                 </div>
-                <div id="gemmaFontSuggestBanner" class="hint" role="status" aria-live="polite" style="margin-bottom: 0.6rem; padding: 6px 10px; border-radius: 4px; background: var(--f2-color-surface-secondary, #f8fafc); border: 1px solid var(--f2-color-border-subtle, #e5e7eb); font-size: 0.82rem;">
+                <div id="gemmaFontSuggestBanner" class="hint" role="status" aria-live="polite" style="margin-bottom: 0.6rem; padding: 6px 10px; border-radius: 4px; background: var(--f2-color-surface-secondary); border: 1px solid var(--f2-color-border-subtle); font-size: 0.82rem;">
                     狀態：Gemma 尚未參與（目前顯示規則預選與既有設定，可點擊右上角按鈕按需執行建議）
                 </div>
                 <div class="modal-body" style="max-height: 58vh; overflow-y: auto;">
@@ -419,7 +420,7 @@
              ══════════════════════════════════════════════════════ -->
         <div class="modal-overlay" id="outlineModalOverlay" role="dialog" aria-modal="true" aria-labelledby="outlineModalTitle">
             <div class="modal" style="max-width: 720px; width: 90%;">
-                <h2 id="outlineModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary, #242424);">大綱階層微調 (Outline Editor)</h2>
+                <h2 id="outlineModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary);">大綱階層微調 (Outline Editor)</h2>
                 <p class="hint" style="margin: 0 0 0.75rem 0; font-size: 0.85rem;">
                     系統擷取出之章節標題如下。您可手動調整其層級 (H1/H2/H3) 或降為一般內文；完成後儲存即可重新產生 Word 文件。
                 </p>
@@ -1262,8 +1263,8 @@
 
             pipelineResultSummary.style.display = 'block';
             pipelineResultSummary.innerHTML = `
-                <div class="result" id="resultCard" style="background: var(--f2-color-surface, #fff); border: 1px solid var(--f2-color-border-subtle, #e5e7eb); border-radius: 8px;">
-                    <div class="result-head is-ok" style="background: var(--f2-color-primary-tint, #ebf3fc); color: var(--f2-color-primary, #0f6cbd); padding: 10px 14px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center;">
+                <div class="result" id="resultCard" style="background: var(--f2-color-surface); border: 1px solid var(--f2-color-border-subtle); border-radius: 8px;">
+                    <div class="result-head is-ok" style="background: var(--f2-color-primary-tint); color: var(--f2-color-primary); padding: 10px 14px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center;">
                         <span style="font-weight: 600;">全自動整稿成果清單</span>
                         <button type="button" class="btn btn-secondary btn-sm" id="openOutlineModalBtn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -1271,29 +1272,29 @@
                         </button>
                     </div>
                     <ul class="result-files" style="padding: 10px 14px; margin: 0; list-style: none;">
-                        <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--f2-color-border-subtle, #e5e7eb);">
+                        <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--f2-color-border-subtle);">
                             <div>
-                                <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary, #242424);">${toolbox.escape(docxName)}</span>
-                                <span class="file-desc" style="display: block; font-size: 0.8rem; color: var(--f2-color-text-secondary, #616161);">套用 Word 樣式範本之完稿排版文件</span>
+                                <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary);">${toolbox.escape(docxName)}</span>
+                                <span class="file-desc" style="display: block; font-size: 0.8rem; color: var(--f2-color-text-secondary);">套用 Word 樣式範本之完稿排版文件</span>
                             </div>
                             <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON || ''}另存 Word</button>
                         </li>
                         <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
                             <div>
-                                <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary, #242424);">${toolbox.escape(mdName)}</span>
-                                <span class="file-desc" style="display: block; font-size: 0.8rem; color: var(--f2-color-text-secondary, #616161);">標準結構化 Markdown 文件</span>
+                                <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary);">${toolbox.escape(mdName)}</span>
+                                <span class="file-desc" style="display: block; font-size: 0.8rem; color: var(--f2-color-text-secondary);">標準結構化 Markdown 文件</span>
                             </div>
                             <button type="button" class="btn btn-secondary btn-sm" id="saveMdBtn">${toolbox.DOWNLOAD_ICON || ''}另存 Markdown</button>
                         </li>
                     </ul>
-                    <div style="margin: 10px 14px; padding: 10px 12px; background: var(--f2-color-surface-secondary, #f8fafc); border: 1.5px solid var(--f2-color-primary, #0F6CBD); border-radius: 6px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div style="margin: 10px 14px; padding: 10px 12px; background: var(--f2-color-surface-secondary); border: 1.5px solid var(--f2-color-primary); border-radius: 6px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                         <div>
-                            <strong style="color: var(--f2-color-primary, #0F6CBD); display: block; font-size: 0.92rem;">銜接 POD 整稿工作區（人工預審與樣式擴散）</strong>
+                            <strong style="color: var(--f2-color-primary); display: block; font-size: 0.92rem;">銜接 POD 整稿工作區（人工預審與樣式擴散）</strong>
                             <span class="hint" style="margin: 0; display: block; font-size: 0.8rem;">直接攜帶此 DOCX 與 PDF 至 POD 工作區。</span>
                         </div>
                         <button type="button" class="btn btn-primary btn-sm" id="handoffPodBtn">接續 POD 整稿 &rarr;</button>
                     </div>
-                    <div style="padding: 10px 14px; background: var(--f2-color-surface-secondary, #f8fafc); border-top: 1px solid var(--f2-color-border-subtle, #e5e7eb); border-radius: 0 0 8px 8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; font-size: 0.82rem; color: var(--f2-color-text-secondary, #616161);">
+                    <div style="padding: 10px 14px; background: var(--f2-color-surface-secondary); border-top: 1px solid var(--f2-color-border-subtle); border-radius: 0 0 8px 8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; font-size: 0.82rem; color: var(--f2-color-text-secondary);">
                         <span>檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀</span>
                         <button type="button" class="btn btn-secondary btn-sm" id="openFolderBtn">在檔案總管中開啟</button>
                     </div>

@@ -8,6 +8,7 @@
     --border: #D1D1D1;
     --text: #242424;
     --text-muted: #616161;
+    --text-secondary: #616161;
 
     /* Fluent 2 Brand Primary (#0F6CBD). Contrast on white is 4.8:1 (WCAG AA compliant). */
     --accent: #0F6CBD;
@@ -16,10 +17,16 @@
     --accent-fg: #ffffff;
     --accent-soft: rgba(15, 108, 189, 0.08);
     --accent-ring: rgba(15, 108, 189, 0.28);
+    --accent-pink: #d946ef;
+    --accent-cyan: #0284c7;
 
     --success: #107C10;
+    --success-fg: #ffffff;
     --warning: #F7630C;
+    --warning-orange: #F7630C;
+    --warning-fg: #ffffff;
     --danger: #D13438;
+    --danger-fg: #ffffff;
     --success-soft: rgba(16, 124, 16, 0.08);
     --warning-soft: rgba(247, 99, 12, 0.09);
     --danger-soft: rgba(209, 52, 56, 0.07);
@@ -28,6 +35,8 @@
     --guide-top: #dc2626;
     --guide-bottom: #2563eb;
     --guide-side: #16a34a;
+
+    --overlay-processing: rgba(255, 255, 255, 0.65);
 
     --radius-sm: 4px;
     --radius-md: 6px;
@@ -118,28 +127,86 @@
 
 :root[data-theme="dark"] {
     color-scheme: dark;
-    --bg: #0f172a;
-    --surface: #1e293b;
-    --surface-2: #273449;
-    --border: rgba(255, 255, 255, 0.12);
-    --text: #f8fafc;
-    --text-muted: #a3b2c7;
 
-    --accent: #fb923c;
-    --accent-hover: #fdba74;
-    --accent-fg: #1c1917;
-    --accent-soft: rgba(251, 146, 60, 0.12);
-    --accent-ring: rgba(251, 146, 60, 0.35);
+    /* --- Dracula Official Base Surfaces --- */
+    --bg: #282a36;                              /* Dracula Background */
+    --surface: #343746;                          /* Elevated Panel / Card Background */
+    --surface-2: #44475a;                        /* Dracula Current Line / Nested Surfaces */
+    --surface-hover: #44475a;                    /* Dracula Current Line / Hover State */
+    --sidebar-bg: #21222c;                      /* Dracula Darker / Sidebar Navigation */
+    --sidebar-border: rgba(98, 114, 164, 0.45);  /* Dracula Comment (#6272a4) with alpha */
+    --border: rgba(98, 114, 164, 0.45);          /* Dracula Comment (#6272a4) with alpha */
+    --border-subtle: rgba(98, 114, 164, 0.25);
 
-    --success: #4ade80;
-    --warning: #fbbf24;
-    --danger: #f87171;
-    --success-soft: rgba(74, 222, 128, 0.1);
-    --warning-soft: rgba(251, 191, 36, 0.1);
-    --danger-soft: rgba(248, 113, 113, 0.1);
-    --shadow-modal: 0 20px 40px rgba(0, 0, 0, 0.5);
+    /* --- Dracula Official Typography & Text Hierarchy --- */
+    --text: #f8f8f2;                            /* Dracula Foreground (13.36:1 contrast) */
+    --text-muted: #6272a4;                      /* Dracula Comment (3.03:1 on bg - icons/borders) */
+    --text-secondary: #a4b1cd;                  /* Accessible Secondary Text (6.61:1 on bg) */
 
-    --sidebar-bg: #0b1120;
+    /* --- Dracula Official Primary & Secondary Accents --- */
+    --accent: #bd93f9;                          /* Dracula Purple (Primary Accent) */
+    --accent-hover: #caa9fa;                     /* Lightened Purple */
+    --accent-active: #a775f0;                    /* Deep Purple */
+    --accent-fg: #282a36;                       /* High Contrast Text on Purple (5.90:1 AA) */
+    --accent-soft: rgba(189, 147, 249, 0.15);    /* Purple Soft Tint */
+    --accent-ring: rgba(189, 147, 249, 0.45);    /* Focus Outline Ring */
+
+    --accent-pink: #ff79c6;                     /* Dracula Pink (Secondary Accent) */
+    --accent-cyan: #8be9fd;                     /* Dracula Cyan (Info / Guide Lines) */
+
+    /* --- Dracula Official Status & Feedback Colors --- */
+    --success: #50fa7b;                         /* Dracula Green (10.38:1 contrast) */
+    --success-fg: #282a36;                      /* Dark text on Green (10.38:1) */
+    --success-soft: rgba(80, 250, 123, 0.15);
+
+    --warning: #f1fa8c;                         /* Dracula Yellow (12.74:1 contrast) */
+    --warning-orange: #ffb86c;                  /* Dracula Orange (8.36:1 contrast) */
+    --warning-fg: #282a36;                      /* Dark text on Yellow (12.74:1) */
+    --warning-soft: rgba(241, 250, 140, 0.15);
+
+    --danger: #ff5555;                          /* Dracula Red (4.53:1 contrast) */
+    --danger-fg: #282a36;                       /* Dark text on Red (4.53:1) */
+    --danger-soft: rgba(255, 85, 85, 0.15);
+
+    /* --- Guide Lines & Elevation --- */
+    --guide-top: #ff5555;
+    --guide-bottom: #8be9fd;
+    --guide-side: #50fa7b;
+
+    --overlay-processing: rgba(40, 42, 54, 0.65);
+    --shadow-resting: 0 1px 3px rgba(0, 0, 0, 0.35);
+    --shadow-raised: 0 3px 8px rgba(0, 0, 0, 0.45);
+    --shadow-modal: 0 20px 48px rgba(0, 0, 0, 0.70);
+
+    /* --- Fluent 2 Token Overrides (Unified Token Mapping) --- */
+    --f2-color-primary: var(--accent);
+    --f2-color-primary-hover: var(--accent-hover);
+    --f2-color-primary-pressed: var(--accent-active);
+    --f2-color-primary-tint: var(--accent-soft);
+    --f2-color-bg: var(--bg);
+    --f2-color-surface: var(--surface);
+    --f2-color-surface-secondary: var(--surface-2);
+    --f2-color-surface-tertiary: #44475a;
+    --f2-color-border: var(--border);
+    --f2-color-border-subtle: var(--border-subtle);
+    --f2-color-text-primary: var(--text);
+    --f2-color-text-secondary: var(--text-secondary);
+    --f2-color-text-disabled: var(--text-muted);
+    --f2-color-success: var(--success);
+    --f2-color-warning: var(--warning-orange);
+    --f2-color-danger: var(--danger);
+
+    /* --- Legacy Compatibility Aliases --- */
+    --primary: var(--accent);
+    --primary-hover: var(--accent-hover);
+    --primary-color: var(--accent);
+    --bg-color: var(--bg);
+    --card: var(--surface);
+    --card-bg: var(--surface);
+    --bg-card: var(--surface);
+    --bg-hover: var(--surface-2);
+    --border-color: var(--border);
+    --text-main: var(--text);
 }
 
 * {

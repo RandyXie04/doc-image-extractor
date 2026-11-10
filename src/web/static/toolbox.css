@@ -789,7 +789,7 @@ details.disclosure summary {
 
 .workbench-canvas-body {
     position: relative;
-    background: #EAEFF5;
+    background: var(--bg);
     padding: 1.5rem;
     min-height: 520px;
     max-height: calc(100vh - 210px);
@@ -884,7 +884,7 @@ details.disclosure summary {
 }
 
 .f2-badge-success {
-    background: #DFF6DD;
+    background: var(--success-soft);
     color: var(--f2-color-success);
 }
 
@@ -1028,12 +1028,12 @@ details.disclosure summary {
 
 .step-item.active .step-badge {
     background: var(--f2-color-primary, #0F6CBD);
-    color: #ffffff;
+    color: var(--accent-fg, #ffffff);
 }
 
 .step-item.completed .step-badge {
     background: var(--f2-color-success, #107C41);
-    color: #ffffff;
+    color: var(--success-fg, #ffffff);
 }
 
 .step-text {
@@ -1320,13 +1320,13 @@ details.disclosure summary {
 }
 
 .style-badge.matched {
-    background: #DFF6DD;
+    background: var(--success-soft);
     color: var(--f2-color-success, #107C41);
 }
 
 .style-badge.custom {
-    background: #FFF4CE;
-    color: #795B00;
+    background: var(--warning-soft);
+    color: var(--warning, #795B00);
 }
 
 .btn-reset-row {
@@ -1356,15 +1356,17 @@ details.disclosure summary {
     gap: 6px;
     font-size: 0.78rem;
     padding: 6px 10px;
-    background: #FFF4CE;
-    color: #795B00;
+    background: var(--warning-soft);
+    color: var(--warning, #795B00);
+    border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
     border-radius: 4px;
     margin-bottom: 8px;
 }
 
 .precondition-hint.ready {
-    background: #DFF6DD;
+    background: var(--success-soft);
     color: var(--f2-color-success, #107C41);
+    border-color: var(--border-subtle, rgba(0, 0, 0, 0.08));
 }
 
 .status-dot {
@@ -1379,7 +1381,7 @@ details.disclosure summary {
     width: 100%;
     padding: 10px 16px;
     background: var(--f2-color-primary, #0F6CBD);
-    color: #ffffff;
+    color: var(--accent-fg, #ffffff);
     border: none;
     border-radius: var(--f2-radius-md, 6px);
     font-size: 0.95rem;
@@ -1395,7 +1397,8 @@ details.disclosure summary {
 .btn-primary-lg:disabled {
     opacity: 0.55;
     cursor: not-allowed;
-    background: #b0b9c3;
+    background: var(--surface-2);
+    color: var(--f2-color-text-disabled);
 }
 
 /* 6. Read-Only Processing State */
@@ -1412,7 +1415,7 @@ details.disclosure summary {
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(255, 255, 255, 0.45);
+    background: var(--overlay-processing, rgba(40, 42, 54, 0.55));
     display: flex;
     align-items: flex-start;
     justify-content: center;
@@ -1498,8 +1501,8 @@ details.disclosure summary {
 .pipeline-error-box {
     margin-top: 12px;
     padding: 12px;
-    background: #FDF3F4;
-    border: 1px solid #F4BFBF;
+    background: var(--danger-soft);
+    border: 1px solid var(--f2-color-danger, #d13438);
     border-radius: 4px;
 }
 
@@ -1512,13 +1515,13 @@ details.disclosure summary {
 
 .error-reason {
     font-size: 0.8rem;
-    color: #424242;
+    color: var(--f2-color-text-primary, #424242);
     margin: 4px 0;
 }
 
 .error-suggestion {
     font-size: 0.8rem;
-    color: #616161;
+    color: var(--f2-color-text-secondary, #616161);
     margin: 6px 0 10px 0;
 }
 
@@ -1531,8 +1534,8 @@ details.disclosure summary {
 .pipeline-result-summary {
     margin-top: 12px;
     padding: 14px;
-    background: #F3FAF5;
-    border: 1px solid #DFF6DD;
+    background: var(--success-soft);
+    border: 1px solid var(--f2-color-border-subtle, #DFF6DD);
     border-radius: 6px;
 }
 
@@ -1570,7 +1573,7 @@ details.disclosure summary {
     align-items: center;
     gap: 6px;
     background: var(--f2-color-success, #107C41);
-    color: #ffffff;
+    color: var(--success-fg, #ffffff);
     text-decoration: none;
     padding: 8px 16px;
     border-radius: 4px;
@@ -1579,14 +1582,14 @@ details.disclosure summary {
 }
 
 .btn-success-md:hover {
-    background: #0b5a2f;
+    filter: brightness(0.92);
 }
 
 .btn-outline-md {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    background: #ffffff;
+    background: var(--f2-color-surface, #ffffff);
     color: var(--f2-color-text-primary, #242424);
     border: 1px solid var(--f2-color-border, #d1d5db);
     text-decoration: none;
