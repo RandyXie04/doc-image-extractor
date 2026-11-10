@@ -20,7 +20,7 @@ import docx
 import pytest
 from fastapi.testclient import TestClient
 
-from config import PATHS
+from config import PATHS, CFG
 from src.scripts.book_layout_extractor import _PAGE_HEADER_PATTERNS
 from src.utils.ollama_client import normalize_gemini_model_name
 from src.utils.task_queue import (
@@ -33,22 +33,26 @@ from src.web.app import app
 from src.web.routers.ocr_router import ocr_progress_dict
 
 
-client = TestClient(app)
+auth_headers = {"X-API-Key": CFG.auth_password} if CFG.auth_enabled else {}
+client = TestClient(app, headers=auth_headers)
 
 
 class TestWave1FileDeliveryAndFounderDownload:
     """Wave 1.1: File delivery closed-loop & LAN guard (AUD-02, AUD-25)."""
 
     def test_native_save_file_with_suggested_filename_and_destination(self, tmp_path):
-        src_file = PATHS.output_dir / f"wave1_test_{uuid.uuid4().hex[:8]}.docx"
-        PATHS.output_dir.mkdir(parents=True, exist_ok=True)
+        orig_root = PATHS.root
+        object.__setattr__(PATHS, "root", tmp_path)
+        out_dir = tmp_path / "data" / "03_output"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        src_file = out_dir / f"wave1_test_{uuid.uuid4().hex[:8]}.docx"
         src_file.write_bytes(b"PK\x03\x04dummy-docx-content")
         try:
             # 1. Payload with suggested_filename (sent by toolbox.js)
             resp = client.post(
                 "/api/native_save_file",
                 json={
-                    "source_path": str(src_file),
+                    "source_path": f"data/03_output/{src_file.name}",
                     "suggested_filename": "saved_output.docx",
                 },
             )
@@ -61,7 +65,7 @@ class TestWave1FileDeliveryAndFounderDownload:
             resp2 = client.post(
                 "/api/native_save_file",
                 json={
-                    "source_path": str(src_file),
+                    "source_path": f"data/03_output/{src_file.name}",
                     "destination_path": str(dest_file),
                 },
             )
@@ -69,12 +73,12 @@ class TestWave1FileDeliveryAndFounderDownload:
             assert resp2.json()["status"] == "success"
             assert dest_file.exists()
         finally:
+            object.__setattr__(PATHS, "root", orig_root)
             if src_file.exists():
                 src_file.unlink()
 
-    def test_open_file_folder_accepts_both_file_path_and_path(self):
-        src_file = PATHS.output_dir / f"wave1_folder_{uuid.uuid4().hex[:8]}.md"
-        PATHS.output_dir.mkdir(parents=True, exist_ok=True)
+    def test_open_file_folder_accepts_both_file_path_and_path(self, tmp_path):
+        src_file = tmp_path / f"wave1_folder_{uuid.uuid4().hex[:8]}.md"
         src_file.write_text("# Test", encoding="utf-8")
         try:
             resp_file_path = client.post(
@@ -94,18 +98,24 @@ class TestWave1FileDeliveryAndFounderDownload:
             if src_file.exists():
                 src_file.unlink()
 
-    def test_founder_repair_download_endpoint(self):
-        PATHS.output_dir.mkdir(parents=True, exist_ok=True)
+    def test_founder_repair_download_endpoint(self, tmp_path):
+        orig_root = PATHS.root
+        fake_root = tmp_path / "fake_root"
+        fake_output_dir = fake_root / "data" / "03_output"
+        fake_output_dir.mkdir(parents=True, exist_ok=True)
         fname = f"wave1_repaired_{uuid.uuid4().hex[:8]}.docx"
-        repaired_file = PATHS.output_dir / fname
+        repaired_file = fake_output_dir / fname
         doc = docx.Document()
         doc.add_paragraph("方正測試修復段落")
         doc.save(str(repaired_file))
+
+        object.__setattr__(PATHS, "root", fake_root)
         try:
             resp = client.get(f"/api/founder/download/{fname}")
             assert resp.status_code == 200
             assert len(resp.content) > 100
         finally:
+            object.__setattr__(PATHS, "root", orig_root)
             if repaired_file.exists():
                 repaired_file.unlink()
 

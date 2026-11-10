@@ -78,6 +78,10 @@ except ImportError:
     except ImportError:
         update_delimiter_stack = None
 
+_fonts_json: Optional[str] = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json')
+)
+
 CIRCLED_MAP = {
     '①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5,
     '⑥': 6, '⑦': 7, '⑧': 8, '⑨': 9, '⑩': 10,
@@ -1731,6 +1735,7 @@ def process_book_vector_pdf(
     ai_kaiti_threshold=None,
     enable_footnotes: bool = True,
     isolate_images_by_stem: Optional[bool] = None,
+    fonts_json_path: Optional[str] = None,
 ):
     """
     Extract vector PDF with:
@@ -1757,15 +1762,17 @@ def process_book_vector_pdf(
     # 優先順序高於規則型 regex，讓使用者的手動設定生效。
     try:
         from src.scripts.pdf_font_analyzer import get_font_role_map
-        _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json')
-        _fonts_json = os.path.normpath(_fonts_json)
-        font_role_map = get_font_role_map(_fonts_json)
+        _active_fonts = fonts_json_path if fonts_json_path is not None else _fonts_json
+        if _active_fonts is None:
+            _active_fonts = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json'))
+        font_role_map = get_font_role_map(_active_fonts)
     except Exception:
         try:
             from scripts.pdf_font_analyzer import get_font_role_map
-            _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json')
-            _fonts_json = os.path.normpath(_fonts_json)
-            font_role_map = get_font_role_map(_fonts_json)
+            _active_fonts = fonts_json_path if fonts_json_path is not None else _fonts_json
+            if _active_fonts is None:
+                _active_fonts = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json'))
+            font_role_map = get_font_role_map(_active_fonts)
         except Exception:
             font_role_map = {}
     if font_role_map:
@@ -1813,8 +1820,10 @@ def process_book_vector_pdf(
     if retained_suggestions:
         try:
             from src.scripts.pdf_font_analyzer import save_ai_layout_suggestions_to_fonts_json
-            _fonts_json_out = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json'))
-            saved_cnt = save_ai_layout_suggestions_to_fonts_json(_fonts_json_out, retained_suggestions)
+            _active_fonts_out = fonts_json_path if fonts_json_path is not None else _fonts_json
+            if _active_fonts_out is None:
+                _active_fonts_out = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json'))
+            saved_cnt = save_ai_layout_suggestions_to_fonts_json(_active_fonts_out, retained_suggestions)
             if saved_cnt > 0:
                 print(f"[FontMap] 已保留 {saved_cnt} 筆 AI 版面預判字型建議至 fonts.json 供人工審核")
         except Exception:
@@ -2050,6 +2059,7 @@ def extract_book_vector_ast(
     enable_footnotes: bool = True,
     split_level: int = 2,
     page_range: Optional[Tuple[int, int]] = None,
+    fonts_json_path: Optional[str] = None,
 ) -> BookAST:
     """
     Extracts vector PDF into a structured BookAST in pure memory.
@@ -2080,15 +2090,17 @@ def extract_book_vector_ast(
     font_role_map = {}
     try:
         from src.scripts.pdf_font_analyzer import get_font_role_map
-        _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json')
-        _fonts_json = os.path.normpath(_fonts_json)
-        font_role_map = get_font_role_map(_fonts_json)
+        _active_fonts = fonts_json_path if fonts_json_path is not None else _fonts_json
+        if _active_fonts is None:
+            _active_fonts = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json'))
+        font_role_map = get_font_role_map(_active_fonts)
     except Exception:
         try:
             from scripts.pdf_font_analyzer import get_font_role_map
-            _fonts_json = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json')
-            _fonts_json = os.path.normpath(_fonts_json)
-            font_role_map = get_font_role_map(_fonts_json)
+            _active_fonts = fonts_json_path if fonts_json_path is not None else _fonts_json
+            if _active_fonts is None:
+                _active_fonts = os.path.normpath(os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json'))
+            font_role_map = get_font_role_map(_active_fonts)
         except Exception:
             font_role_map = {}
 

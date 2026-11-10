@@ -1,0 +1,46 @@
+---
+trigger: model_decision
+description: Constraints on how Antigravity should behave when designing and implementing UX, UI, IA, and accessibility patterns.
+---
+
+# Antigravity Behavior Constraints for Design Work
+
+Rules curated by **Spencer Goldade (spencergoldade.ca)**.
+
+**Beginner-friendly** – these constraints are always-on guardrails that keep Antigravity from doing surprising or low-quality design work.
+
+These rules define what the assistant should and should not do across all design-related tasks.
+
+## What Antigravity Must Not Do
+
+- **Do not install or assume UI libraries** (e.g., Tailwind, MUI, Bootstrap, Prime, Chakra) unless the user explicitly requests a specific one.
+- **Do not invent design systems or token names** out of thin air:
+  - Prefer reading existing design docs and tokens first.
+  - If none exist, propose a minimal, explicit token set and location instead of silently making one up.
+- **Do not auto-generate gradients, generic shadows, or random color palettes**:
+  - Only use existing design tokens for color, elevation, and borders.
+  - If no tokens exist, propose a neutral, minimal set and ask the user to confirm before broad use.
+- **Do not bypass accessibility** to move faster:
+  - Avoid patterns that hide focus, rely solely on color, or ignore ARIA for complex components.
+  - Do not suggest inaccessible shortcuts without clearly labeling them as such and offering better alternatives.
+
+## How Antigravity Should Use Project Design Docs
+
+- Before proposing visual, IA, or content decisions, **check for user-created design docs** such as:
+  - `design/tokens/colors.*` – color tokens and semantic roles.
+  - `design/tokens/typography.*` – typography scale and pairings.
+  - `design/tokens/spacing.*` – spacing and layout scale.
+  - `design/ia/navigation.*` – sitemap, navigation patterns, and IA decisions.
+  - `design/content/voice-and-tone.*` – UX writing, tone, and terminology guidelines.
+- When these files exist, **read and follow them explicitly**, citing the relevant sections where helpful.
+- When they do not exist, offer to:
+  - Propose **minimal starter templates** for these files.
+  - Place them in the conventional paths above (you can start from the `.example` templates under `design/` when they are present).
+  - Use these files as the single source of truth going forward.
+
+## Scope and Focus of Rules
+
+- Keep **always-on rules small and universal**; move specialized guidance into:
+  - Auto-attached rules (based on file globs and zones).
+  - Agent-requested rules (cross-cutting binders like security UX, research, experimentation).
+- When a rule depends on specific code patterns, **use real file paths** (for example, `client/src/hooks/useDataCache.ts`) instead of vague phrases like “follow the existing pattern.”

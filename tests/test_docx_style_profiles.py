@@ -1,11 +1,10 @@
 import zipfile
 from pathlib import Path
-from tempfile import TemporaryDirectory
 
 from src.utils.docx_style_profiles import read_docx_style_profiles
 
 
-def test_template_style_profiles_expose_properties_needed_for_role_suggestions():
+def test_template_style_profiles_expose_properties_needed_for_role_suggestions(tmp_path: Path):
     styles_xml = '''<?xml version="1.0" encoding="UTF-8"?>
     <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
       <w:style w:type="paragraph" w:styleId="Heading1">
@@ -17,12 +16,11 @@ def test_template_style_profiles_expose_properties_needed_for_role_suggestions()
       </w:style>
       <w:style w:type="character" w:styleId="Emphasis"><w:name w:val="強調"/></w:style>
     </w:styles>'''
-    with TemporaryDirectory(dir=Path.cwd() / "scratch") as workdir:
-        template = Path(workdir) / "styles.docx"
-        with zipfile.ZipFile(template, "w") as archive:
-            archive.writestr("word/styles.xml", styles_xml)
+    template = tmp_path / "styles.docx"
+    with zipfile.ZipFile(template, "w") as archive:
+        archive.writestr("word/styles.xml", styles_xml)
 
-        profiles = read_docx_style_profiles(template)
+    profiles = read_docx_style_profiles(template)
 
     assert profiles == [
         {"name": "章標題", "outline_level": 0, "font_size_pt": 18.0, "bold": True},

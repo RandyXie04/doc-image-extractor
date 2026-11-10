@@ -12,6 +12,7 @@ Comprehensive test suite verifying the Pluggable Task Foundation:
 import pytest
 from fastapi.testclient import TestClient
 
+from config import CFG
 from src.plugins.base import BaseTaskPlugin, TaskPluginSpec
 from src.plugins.registry import TaskPluginRegistry, get_plugin_registry
 from src.web.app import app
@@ -19,7 +20,8 @@ from src.web.app import app
 
 @pytest.fixture
 def client():
-    return TestClient(app)
+    headers = {"X-API-Key": CFG.auth_password} if CFG.auth_enabled else {}
+    return TestClient(app, headers=headers)
 
 
 def test_01_spec_validation():

@@ -1,8 +1,11 @@
+from __future__ import annotations
 import os
 import glob
 import sys
 import re
 import datetime
+import json
+from typing import TYPE_CHECKING, Any, Optional, Dict, List, Tuple
 if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding='utf-8')
 from pathlib import Path
@@ -12,27 +15,38 @@ root_dir = Path(__file__).parent.parent.parent.absolute()
 if str(root_dir) not in sys.path:
     sys.path.insert(0, str(root_dir))
 
-# Dynamic Hardware Accelerator Configuration (CPU <-> CUDA)
-try:
-    from src.scripts.hardware_probe import get_ocr_accelerator_config
-    _device, _rec_batch, _det_batch = get_ocr_accelerator_config()
-except Exception:
-    import torch
-    if torch.cuda.is_available():
-        _device, _rec_batch, _det_batch = "cuda", 16, 16
-    else:
-        _device, _rec_batch, _det_batch = "cpu", 2, 2
-
-os.environ["TORCH_DEVICE"] = _device
-os.environ["RECOGNITION_BATCH_SIZE"] = str(_rec_batch)
-os.environ["DETECTOR_BATCH_SIZE"] = str(_det_batch)
-
 from config import PATHS
-from src.scripts.gemma_layout_assistant import (
-    DEFAULT_GEMMA_MODEL,
-    gemma_available,
-    review_uncertain_layout,
-)
+
+# Dynamic Hardware Accelerator Configuration (CPU <-> CUDA) — Lazy Loaded
+_device: str = "cpu"
+_rec_batch: int = 2
+_det_batch: int = 2
+_ACCELERATOR_CONFIGURED = False
+
+def _ensure_accelerator_configured() -> tuple[str, int, int]:
+    global _device, _rec_batch, _det_batch, _ACCELERATOR_CONFIGURED
+    if _ACCELERATOR_CONFIGURED:
+        return _device, _rec_batch, _det_batch
+    try:
+        from src.scripts.hardware_probe import get_ocr_accelerator_config
+        _device, _rec_batch, _det_batch = get_ocr_accelerator_config()
+    except Exception:
+        try:
+            import torch
+            if torch.cuda.is_available():
+                _device, _rec_batch, _det_batch = "cuda", 16, 16
+            else:
+                _device, _rec_batch, _det_batch = "cpu", 2, 2
+        except Exception:
+            _device, _rec_batch, _det_batch = "cpu", 2, 2
+
+    os.environ["TORCH_DEVICE"] = _device
+    os.environ["RECOGNITION_BATCH_SIZE"] = str(_rec_batch)
+    os.environ["DETECTOR_BATCH_SIZE"] = str(_det_batch)
+    _ACCELERATOR_CONFIGURED = True
+    return _device, _rec_batch, _det_batch
+
+DEFAULT_GEMMA_MODEL = os.getenv("AI_LAYOUT_MODEL", "gemma4:e4b")
 
 _HALLUCINATION_REPEAT_RE = re.compile(r'([^\n]{1,10}?)\1{5,}')
 _FOOTNOTE_PREFIX_RE = re.compile(
@@ -55,50 +69,85 @@ def _clean_hallucinations(text: str) -> str:
             return ""
     return text
 
-from typing import Any
-from PIL import Image
-import fitz
-import urllib.request
+if TYPE_CHECKING:
+    # Lazy-loaded Surya OCR symbols (type annotations for static analysis; not in __dict__ at runtime per PEP 562)
+    batch_layout_detection: Any
+    load_rec_model: Any
+    load_rec_processor: Any
+    load_layout_model: Any
+    load_layout_processor: Any
+    settings: Any
+    SURYA_AVAILABLE: bool
 
-batch_layout_detection: Any = None
-load_rec_model: Any = None
-load_rec_processor: Any = None
-load_layout_model: Any = None
-load_layout_processor: Any = None
-settings: Any = None
+def _ensure_surya_loaded() -> bool:
+    global batch_layout_detection, load_rec_model, load_rec_processor
+    global load_layout_model, load_layout_processor, settings, SURYA_AVAILABLE
+    if globals().get("SURYA_AVAILABLE") is not None:
+        return globals()["SURYA_AVAILABLE"]
 
-try:
-    from surya.layout import batch_layout_detection
-    from surya.model.recognition.model import load_model as load_rec_model
-    from surya.model.recognition.processor import load_processor as load_rec_processor
-    from surya.model.layout.model import load_model as load_layout_model
-    from surya.model.layout.processor import load_processor as load_layout_processor
-    from surya.settings import settings
-    SURYA_AVAILABLE = True
-except Exception as e:
-    import traceback
-    traceback.print_exc()
-    print(f"Surya OCR (<0.7.0) not installed yet. Error: {e}")
-    SURYA_AVAILABLE = False
+    _ensure_accelerator_configured()
+    try:
+        from surya.layout import batch_layout_detection
+        from surya.model.recognition.model import load_model as load_rec_model
+        from surya.model.recognition.processor import load_processor as load_rec_processor
+        from surya.model.layout.model import load_model as load_layout_model
+        from surya.model.layout.processor import load_processor as load_layout_processor
+        from surya.settings import settings
+        globals()["batch_layout_detection"] = batch_layout_detection
+        globals()["load_rec_model"] = load_rec_model
+        globals()["load_rec_processor"] = load_rec_processor
+        globals()["load_layout_model"] = load_layout_model
+        globals()["load_layout_processor"] = load_layout_processor
+        globals()["settings"] = settings
+        globals()["SURYA_AVAILABLE"] = True
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Surya OCR (<0.7.0) not installed yet. Error: {e}")
+        globals()["batch_layout_detection"] = None
+        globals()["load_rec_model"] = None
+        globals()["load_rec_processor"] = None
+        globals()["load_layout_model"] = None
+        globals()["load_layout_processor"] = None
+        globals()["settings"] = None
+        globals()["SURYA_AVAILABLE"] = False
+    return globals()["SURYA_AVAILABLE"]
 
 def check_internet():
     try:
+        import urllib.request
         urllib.request.urlopen('https://huggingface.co', timeout=3)
         return True
-    except:
+    except Exception:
         return False
 
-import numpy as np
+if TYPE_CHECKING:
+    # Lazy-loaded Founder tools detectors (type annotations for static analysis; not in __dict__ at runtime per PEP 562)
+    HeadingDetector: Any
+    MarkerDetector: Any
 
-try:
-    from src.founder_tools.core.marker_detector import MarkerDetector
-except ImportError:
-    MarkerDetector = None
+_DETECTORS_LOADED = False
 
-try:
-    from src.founder_tools.core.heading_detector import HeadingDetector
-except ImportError:
-    HeadingDetector = None
+def _ensure_detectors_loaded():
+    global HeadingDetector, MarkerDetector, _DETECTORS_LOADED
+    if _DETECTORS_LOADED:
+        return
+    try:
+        from src.founder_tools.core.marker_detector import MarkerDetector as _MD
+        globals()["MarkerDetector"] = _MD
+        MarkerDetector = _MD
+    except ImportError:
+        globals()["MarkerDetector"] = None
+        MarkerDetector = None
+
+    try:
+        from src.founder_tools.core.heading_detector import HeadingDetector as _HD
+        globals()["HeadingDetector"] = _HD
+        HeadingDetector = _HD
+    except ImportError:
+        globals()["HeadingDetector"] = None
+        HeadingDetector = None
+    _DETECTORS_LOADED = True
 
 
 def _join_ocr_line_slices(lines: list[str]) -> str:
@@ -127,8 +176,9 @@ def _join_ocr_line_slices(lines: list[str]) -> str:
     return joined
 
 
-def _slice_box_into_lines(box_img: Image.Image, min_line_h: int = 10) -> list[Image.Image]:
+def _slice_box_into_lines(box_img: Any, min_line_h: int = 10) -> list[Any]:
     """Slice a multi-line box image into horizontal line image slices using projection profile."""
+    import numpy as np
     img_gray = box_img.convert("L")
     arr = np.array(img_gray)
     binary = (arr < 185).astype(np.uint8)
@@ -164,6 +214,7 @@ def _is_heading_like(txt: str, block: dict, page_w: float) -> bool:
         return False
     if re.match(r'^(?:第[一二三四五六七八九十\d]+[章节回集卷篇]|(?:[（(]?[一二三四五六七八九十\d]+[)）]?[.、\s]?))', clean):
         return True
+    _ensure_detectors_loaded()
     if HeadingDetector:
         dummy = {"surya_text": clean, "bbox": block.get("bbox", [0, 0, 0, 0])}
         if HeadingDetector.detect_block_level(dummy, page_width=page_w) > 0:
@@ -306,6 +357,7 @@ def parse_footnote_entries(text):
         content = text[start:end].strip()
 
         num_val = 1
+        _ensure_detectors_loaded()
         if MarkerDetector:
             if marker_str and marker_str[0] in MarkerDetector.CIRCLED_NUMBERS:
                 num_val = MarkerDetector.CIRCLED_NUMBERS.index(marker_str[0]) + 1
@@ -452,6 +504,7 @@ def process_page_footnotes(
     if style_mapping is None:
         style_mapping = {}
 
+    _ensure_detectors_loaded()
     page_size = page_info.get("page_size", [1000, 1000])
     page_w = float(page_size[0]) if len(page_size) >= 1 else 1000.0
     page_h = float(page_size[1]) if len(page_size) >= 2 else 1000.0
@@ -675,6 +728,10 @@ def process_page_footnotes(
         pass
 
     if ai_candidate_items:
+        try:
+            from src.scripts.gemma_layout_assistant import review_uncertain_layout
+        except ImportError:
+            review_uncertain_layout = lambda items: []
         ai_by_id = {item["paragraph_id"]: item for item in review_uncertain_layout(ai_candidate_items[:12])}
         for item in rendered_body:
             review = ai_by_id.get(f"ocr-{page_num}-{item['orig_idx']}")
@@ -853,6 +910,8 @@ def build_ocr_layout_contracts(pages_data: list[dict[str, Any]]) -> list[Any]:
 def main(args=None):
     import argparse
     import json
+    import fitz
+    from PIL import Image
     if args is None:
         parser = argparse.ArgumentParser()
         parser.add_argument("--file", type=str, help="Specific PDF file to process")
@@ -880,7 +939,8 @@ def main(args=None):
         except Exception:
             pass
 
-    if not SURYA_AVAILABLE:
+    _ensure_accelerator_configured()
+    if not _ensure_surya_loaded():
         print(json.dumps({"progress": 0, "message": "[ERROR] Surya OCR is not installed. Please run: pip install 'surya-ocr<0.7.0' pymupdf"}))
         sys.stdout.flush()
         sys.exit(1)
@@ -1175,7 +1235,11 @@ def main(args=None):
 
             all_page_contents = []
             audit_records = []
-            _gemma_available = gemma_available(DEFAULT_GEMMA_MODEL)
+            try:
+                from src.scripts.gemma_layout_assistant import gemma_available
+                _gemma_available = gemma_available(DEFAULT_GEMMA_MODEL)
+            except Exception:
+                _gemma_available = False
             audit_records.append({
                 "type": "AI_LAYOUT_CONFIG",
                 "model": DEFAULT_GEMMA_MODEL,
@@ -1353,6 +1417,70 @@ def main(args=None):
 
     print(json.dumps({"progress": 100, "message": "[INFO] 批次處理結束"}))
     sys.stdout.flush()
+
+
+def __getattr__(name: str) -> Any:
+    if name == "SURYA_AVAILABLE":
+        return _ensure_surya_loaded()
+    if name in (
+        "batch_layout_detection",
+        "load_rec_model",
+        "load_rec_processor",
+        "load_layout_model",
+        "load_layout_processor",
+        "settings",
+    ):
+        _ensure_surya_loaded()
+        return globals().get(name)
+    if name in ("HeadingDetector", "MarkerDetector"):
+        _ensure_detectors_loaded()
+        return globals().get(name)
+    if name in ("review_uncertain_layout", "gemma_available"):
+        import src.scripts.gemma_layout_assistant as _gla
+        val = getattr(_gla, name)
+        globals()[name] = val
+        return val
+    if name in ("np", "numpy"):
+        import numpy as np
+        globals()["np"] = np
+        globals()["numpy"] = np
+        return np
+    if name == "fitz":
+        import fitz
+        globals()["fitz"] = fitz
+        return fitz
+    if name == "Image":
+        from PIL import Image
+        globals()["Image"] = Image
+        return Image
+    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
+
+
+def __dir__() -> list[str]:
+    return sorted(
+        set(globals().keys())
+        | {
+            "SURYA_AVAILABLE",
+            "batch_layout_detection",
+            "load_rec_model",
+            "load_rec_processor",
+            "load_layout_model",
+            "load_layout_processor",
+            "settings",
+            "HeadingDetector",
+            "MarkerDetector",
+            "review_uncertain_layout",
+            "gemma_available",
+            "np",
+            "numpy",
+            "fitz",
+            "Image",
+        }
+    )
+
+
+run_ocr = main
+
 
 if __name__ == '__main__':
     try:

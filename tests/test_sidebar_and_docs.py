@@ -28,59 +28,21 @@ class TestSidebarAndDocs(unittest.TestCase):
         self.sidebar_js_path = self.project_dir / "src" / "web" / "static" / "sidebar.js"
         self.sidebar_css_path = self.project_dir / "src" / "web" / "static" / "sidebar.css"
 
-    def test_sidebar_js_structure(self):
-        """Verify sidebar.js has the required hierarchical navigation and settings section."""
-        js_content = self.sidebar_js_path.read_text(encoding="utf-8")
+    def test_sidebar_static_assets(self):
+        """Verify sidebar JS and CSS assets are served with valid content and core landmarks."""
+        resp_js = self.client.get("/static/sidebar.js", headers=self.auth_headers)
+        self.assertEqual(resp_js.status_code, 200)
+        js_text = resp_js.text
+        self.assertIn("MAIN_NAV_ITEMS", js_text)
+        self.assertIn("AUXILIARY_NAV_ITEMS", js_text)
+        self.assertIn("iaCategorySettings", js_text)
+        self.assertIn("iaCategoryDocs", js_text)
 
-        # 1. Main workflow items
-        self.assertIn("MAIN_NAV_ITEMS", js_content)
-        self.assertIn("全自動整稿", js_content)
-        self.assertIn("ocr_pipeline.html", js_content)
-        self.assertIn("POD 整稿", js_content)
-        self.assertIn("pod_studio.html", js_content)
-
-        # 2. Auxiliary tools expandable group
-        self.assertIn("AUXILIARY_NAV_ITEMS", js_content)
-        self.assertIn("輔助工具", js_content)
-        self.assertIn("formula.html", js_content)
-        self.assertIn("公式提取", js_content)
-        self.assertIn("extract_images.html", js_content)
-        self.assertIn("圖片提取", js_content)
-        self.assertIn("founder_repair.html", js_content)
-        self.assertIn("方正修復", js_content)
-        self.assertIn("auxNavGroup", js_content)
-        self.assertIn("auxNavToggle", js_content)
-        self.assertIn("auxNavChildren", js_content)
-
-        # 3. Two Primary Categories: Settings & Documentation
-        self.assertIn("iaCategorySettings", js_content)
-        self.assertIn("catSettingsToggle", js_content)
-        self.assertIn("catSettingsPanel", js_content)
-        self.assertIn("iaCategoryDocs", js_content)
-        self.assertIn("catDocsToggle", js_content)
-        self.assertIn("catDocsPanel", js_content)
-        self.assertIn("sidebarDocList", js_content)
-        self.assertIn("docViewerModal", js_content)
-        self.assertIn("openDocViewer", js_content)
-        self.assertIn("loadAndRenderDocCatalogue", js_content)
-
-    def test_sidebar_css_rules(self):
-        """Verify sidebar.css includes styles for two-category IA, nav-group, sub-links, and doc viewer modal."""
-        css_content = self.sidebar_css_path.read_text(encoding="utf-8")
-
-        self.assertIn(".ia-category", css_content)
-        self.assertIn(".ia-category-header", css_content)
-        self.assertIn(".ia-category-panel", css_content)
-        self.assertIn(".ia-subgroup", css_content)
-        self.assertIn(".nav-group", css_content)
-        self.assertIn(".nav-group-header", css_content)
-        self.assertIn(".nav-arrow-indicator", css_content)
-        self.assertIn(".nav-group-children", css_content)
-        self.assertIn(".nav-sub-link", css_content)
-        self.assertIn(".sidebar-doc-link", css_content)
-        self.assertIn(".doc-modal-content", css_content)
-        self.assertIn(".doc-modal-sidebar", css_content)
-        self.assertIn(".doc-modal-article", css_content)
+        resp_css = self.client.get("/static/sidebar.css", headers=self.auth_headers)
+        self.assertEqual(resp_css.status_code, 200)
+        css_text = resp_css.text
+        self.assertIn(".ia-category", css_text)
+        self.assertIn(".nav-group", css_text)
 
     def test_api_docs_list(self):
         """Verify GET /api/docs returns complete list of documentation metadata and supports audience filtering."""

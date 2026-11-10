@@ -9,6 +9,7 @@ import asyncio
 import unittest
 import tempfile
 from pathlib import Path
+from unittest.mock import AsyncMock, patch
 import docx
 import fitz
 
@@ -136,15 +137,21 @@ class TestVLMContinuation(unittest.TestCase):
 
         session_workspace = t3 / "test_session_123"
 
-        result = asyncio.run(
-            engine.execute_continuation(
-                pdf_path=pdf_path,
-                raw_ast_path=ast_path,
-                seed_docx_path=seed_docx,
-                target_session_dir=session_workspace,
-                model_name="mock_test_model",
+        mock_vlm_response = "## 第2節 排版原理\n排版原理與自動化規格修復內容。"
+        with patch(
+            "src.utils.ollama_client.async_ollama_chat",
+            new_callable=AsyncMock,
+            return_value=mock_vlm_response,
+        ):
+            result = asyncio.run(
+                engine.execute_continuation(
+                    pdf_path=pdf_path,
+                    raw_ast_path=ast_path,
+                    seed_docx_path=seed_docx,
+                    target_session_dir=session_workspace,
+                    model_name="mock_test_model",
+                )
             )
-        )
 
         self.assertEqual(result.session_id, "test_session_123")
         self.assertEqual(result.total_sections, 2)

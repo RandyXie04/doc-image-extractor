@@ -78,38 +78,29 @@ class TestFontAnalyzerIgnore(unittest.TestCase):
         self.assertIn("#", content_1)
 
         # Case 2: Map 'Helvetica' to '忽略'
-        real_config_fonts = Path("config/fonts.json")
-        backup_content = None
-        if real_config_fonts.exists():
-            backup_content = real_config_fonts.read_text(encoding="utf-8")
+        test_mapping = {
+            "Helvetica": {"role": "忽略", "docx_style": None, "mapped_by": "user"},
+            "Helvetica (14.0pt)": {"role": "忽略", "docx_style": None, "mapped_by": "user"},
+            "Helvetica_14.0": {"role": "忽略", "docx_style": None, "mapped_by": "user"},
+        }
+        with open(self.fonts_json, "w", encoding="utf-8") as f:
+            json.dump(test_mapping, f, ensure_ascii=False)
 
-        try:
-            test_mapping = {
-                "Helvetica": {"role": "忽略", "docx_style": None, "mapped_by": "user"},
-                "Helvetica (14.0pt)": {"role": "忽略", "docx_style": None, "mapped_by": "user"},
-                "Helvetica_14.0": {"role": "忽略", "docx_style": None, "mapped_by": "user"},
-            }
-            real_config_fonts.write_text(json.dumps(test_mapping, ensure_ascii=False), encoding="utf-8")
+        # Normal extractor
+        out_dir_2 = os.path.join(self.temp_dir, "out2")
+        md_path_2, audit_2 = process_normal(pdf_path, out_dir_2, fonts_json_path=str(self.fonts_json))
+        with open(md_path_2, "r", encoding="utf-8") as f:
+            content_2 = f.read()
 
-            # Normal extractor
-            out_dir_2 = os.path.join(self.temp_dir, "out2")
-            md_path_2, audit_2 = process_normal(pdf_path, out_dir_2)
-            with open(md_path_2, "r", encoding="utf-8") as f:
-                content_2 = f.read()
+        self.assertNotIn("#", content_2)
 
-            self.assertNotIn("#", content_2)
+        # No-footnote extractor
+        out_dir_3 = os.path.join(self.temp_dir, "out3")
+        md_path_3, audit_3 = process_no_fn(pdf_path, out_dir_3, fonts_json_path=str(self.fonts_json))
+        with open(md_path_3, "r", encoding="utf-8") as f:
+            content_3 = f.read()
 
-            # No-footnote extractor
-            out_dir_3 = os.path.join(self.temp_dir, "out3")
-            md_path_3, audit_3 = process_no_fn(pdf_path, out_dir_3)
-            with open(md_path_3, "r", encoding="utf-8") as f:
-                content_3 = f.read()
-
-            self.assertNotIn("#", content_3)
-
-        finally:
-            if backup_content is not None:
-                real_config_fonts.write_text(backup_content, encoding="utf-8")
+        self.assertNotIn("#", content_3)
 
     def test_kaiti_custom_style_not_intercepted_by_heading_heuristic(self):
         """測試字體分析指定楷體樣式 (如 '楷體（小標）') 時，不會被 MD 標題啟發式規則誤判為 H2，且精確套用指定 Word 樣式"""
@@ -121,43 +112,34 @@ class TestFontAnalyzerIgnore(unittest.TestCase):
         doc.save(pdf_path)
         doc.close()
 
-        real_config_fonts = Path("config/fonts.json")
-        backup_content = None
-        if real_config_fonts.exists():
-            backup_content = real_config_fonts.read_text(encoding="utf-8")
+        # Map Helvetica 14pt to KaiTi with custom docx_style "楷體（小標）"
+        test_mapping = {
+            "Helvetica": {"role": "楷體", "docx_style": "楷體（小標）", "mapped_by": "user"},
+            "Helvetica (14.0pt)": {"role": "楷體", "docx_style": "楷體（小標）", "mapped_by": "user"},
+        }
+        with open(self.fonts_json, "w", encoding="utf-8") as f:
+            json.dump(test_mapping, f, ensure_ascii=False)
 
-        try:
-            # Map Helvetica 14pt to KaiTi with custom docx_style "楷體（小標）"
-            test_mapping = {
-                "Helvetica": {"role": "楷體", "docx_style": "楷體（小標）", "mapped_by": "user"},
-                "Helvetica (14.0pt)": {"role": "楷體", "docx_style": "楷體（小標）", "mapped_by": "user"},
-            }
-            real_config_fonts.write_text(json.dumps(test_mapping, ensure_ascii=False), encoding="utf-8")
+        # Normal extractor
+        out_dir = os.path.join(self.temp_dir, "out_kaiti_normal")
+        md_path, _ = process_normal(pdf_path, out_dir, fonts_json_path=str(self.fonts_json))
+        with open(md_path, "r", encoding="utf-8") as f:
+            content = f.read()
 
-            # Normal extractor
-            out_dir = os.path.join(self.temp_dir, "out_kaiti_normal")
-            md_path, _ = process_normal(pdf_path, out_dir)
-            with open(md_path, "r", encoding="utf-8") as f:
-                content = f.read()
+        # Must NOT be formatted as heading
+        self.assertNotIn("#", content)
+        # Must be formatted with custom-style="楷體（小標）"
+        self.assertIn('::: {custom-style="楷體（小標）"}', content)
+        self.assertIn("Short Section Title", content)
 
-            # Must NOT be formatted as heading
-            self.assertNotIn("#", content)
-            # Must be formatted with custom-style="楷體（小標）"
-            self.assertIn('::: {custom-style="楷體（小標）"}', content)
-            self.assertIn("Short Section Title", content)
+        # No-footnote extractor
+        out_dir_no_fn = os.path.join(self.temp_dir, "out_kaiti_no_fn")
+        md_path_no_fn, _ = process_no_fn(pdf_path, out_dir_no_fn, fonts_json_path=str(self.fonts_json))
+        with open(md_path_no_fn, "r", encoding="utf-8") as f:
+            content_no_fn = f.read()
 
-            # No-footnote extractor
-            out_dir_no_fn = os.path.join(self.temp_dir, "out_kaiti_no_fn")
-            md_path_no_fn, _ = process_no_fn(pdf_path, out_dir_no_fn)
-            with open(md_path_no_fn, "r", encoding="utf-8") as f:
-                content_no_fn = f.read()
-
-            self.assertNotIn("#", content_no_fn)
-            self.assertIn('::: {custom-style="楷體（小標）"}', content_no_fn)
-
-        finally:
-            if backup_content is not None:
-                real_config_fonts.write_text(backup_content, encoding="utf-8")
+        self.assertNotIn("#", content_no_fn)
+        self.assertIn('::: {custom-style="楷體（小標）"}', content_no_fn)
 
     def test_arbitrary_docx_style_for_paragraph(self):
         """測試字體分析指定的任意 Word 樣式 (例如 '屬名') 在正文段落中正確套用"""
@@ -168,28 +150,19 @@ class TestFontAnalyzerIgnore(unittest.TestCase):
         doc.save(pdf_path)
         doc.close()
 
-        real_config_fonts = Path("config/fonts.json")
-        backup_content = None
-        if real_config_fonts.exists():
-            backup_content = real_config_fonts.read_text(encoding="utf-8")
+        test_mapping = {
+            "Helvetica (11.0pt)": {"role": None, "docx_style": "屬名", "mapped_by": "user"},
+        }
+        with open(self.fonts_json, "w", encoding="utf-8") as f:
+            json.dump(test_mapping, f, ensure_ascii=False)
 
-        try:
-            test_mapping = {
-                "Helvetica (11.0pt)": {"role": None, "docx_style": "屬名", "mapped_by": "user"},
-            }
-            real_config_fonts.write_text(json.dumps(test_mapping, ensure_ascii=False), encoding="utf-8")
+        out_dir = os.path.join(self.temp_dir, "out_custom_normal")
+        md_path, _ = process_normal(pdf_path, out_dir, fonts_json_path=str(self.fonts_json))
+        with open(md_path, "r", encoding="utf-8") as f:
+            content = f.read()
 
-            out_dir = os.path.join(self.temp_dir, "out_custom_normal")
-            md_path, _ = process_normal(pdf_path, out_dir)
-            with open(md_path, "r", encoding="utf-8") as f:
-                content = f.read()
-
-            self.assertIn('::: {custom-style="屬名"}', content)
-            self.assertIn("Author Byline Text Here", content)
-
-        finally:
-            if backup_content is not None:
-                real_config_fonts.write_text(backup_content, encoding="utf-8")
+        self.assertIn('::: {custom-style="屬名"}', content)
+        self.assertIn("Author Byline Text Here", content)
 
 
 if __name__ == "__main__":

@@ -14,3 +14,11 @@ pypandoc
 fastapi
 uvicorn
 python-multipart
+pydantic>=2.0.0
+nest_asyncio>=1.5.0
+
+# Models & Heavy OCR dependencies
+ultralytics>=8.0.0
+huggingface_hub>=0.20.0
+torch>=2.0.0
+surya-ocr>=0.7.0
