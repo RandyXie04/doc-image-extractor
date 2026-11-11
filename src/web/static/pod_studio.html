@@ -673,12 +673,12 @@
                 currentSessionId = sessId;
                 const containerEl = document.querySelector('.container');
                 const noticeEl = document.createElement('div');
-                noticeEl.className = 'panel';
-                noticeEl.style.cssText = 'border-left: 4px solid var(--accent); background: var(--accent-soft); margin-bottom: 1.25rem; padding: 0.85rem 1.2rem;';
+                noticeEl.className = 'notice-box';
+                noticeEl.style.cssText = 'margin-bottom: 1.25rem; padding: 0.85rem 1.2rem; display: block; border-left: 4px solid var(--accent-cyan);';
                 noticeEl.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
                         <div style="flex: 1; min-width: 280px;">
-                            <strong style="color: var(--accent); font-size:0.98rem; display:block; margin-bottom: 4px;">🚀 已成功載入全自動整稿初稿《${toolbox.escape(stem || sessId)}》</strong>
+                            <strong style="color: var(--accent-cyan); font-size:0.98rem; display:block; margin-bottom: 4px;">🚀 已成功載入全自動整稿初稿《${toolbox.escape(stem || sessId)}》</strong>
                             <p class="hint" style="margin: 0 0 6px 0; color: var(--text-secondary); font-size:0.84rem; line-height: 1.5;">
                                 原始 PDF (source_book.pdf) 與未套樣式之生稿 (Book_seed.docx) 已移轉至工作區。<br>
                                 <strong style="color: var(--text);">💡 推薦三步驟整稿指引：</strong><br>

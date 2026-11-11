@@ -79,8 +79,8 @@
     "mapped_by": "user"
   },
   "FZLTZHK--GBK1-0 (14.0pt)": {
-    "role": "H1",
-    "docx_style": "heading 1",
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZXBSK--GBK1-0 (12.0pt)": {
@@ -229,7 +229,7 @@
     "mapped_by": "user"
   },
   "FZKTK--GBK1-0 (8.5pt)": {
-    "role": null,
+    "role": "楷體",
     "docx_style": "導言",
     "mapped_by": "user"
   },
@@ -335,7 +335,7 @@
   },
   "FZFSK--GBK1-0 (10.0pt)": {
     "role": "楷體",
-    "docx_style": null,
+    "docx_style": "楷體2",
     "mapped_by": "user"
   },
   "FZBSK--GBK1-0 (15.0pt)": {
@@ -416,6 +416,206 @@
   "E-FZ (5.0pt)": {
     "role": "正文",
     "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZLTTHK--GBK1-0 (71.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTHProGlobal-Extrabold (70.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "Impact (40.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 1",
+    "mapped_by": "user"
+  },
+  "FZLTZCHK--GBK1-0 (25.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTZHK--GBK1-0 (24.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZLTZHUNHK--GBK1-0 (18.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTZHK--GBK1-0 (16.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "TimesNewRomanPSMT (16.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "Impact (14.0pt)": {
+    "role": "忽略",
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (14.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTKHK--GBK1-0 (14.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "TimesNewRomanPS-BoldMT (13.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTKHK--GBK1-0 (12.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTZHUNHK--GBK1-0 (12.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZHTK--GBK1-0 (12.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTZCHK--GBK1-0 (11.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZHTK--GBK1-0 (11.0pt)": {
+    "role": "正文",
+    "docx_style": "標粗",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTHK--GBK1-0 (10.0pt)": {
+    "role": "忽略",
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZLTKHK--GBK1-0 (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "Impact (10.0pt)": {
+    "role": "忽略",
+    "docx_style": "header",
+    "mapped_by": "user"
+  },
+  "TimesNewRomanPSMT (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SourceHanSerifCN-Regular (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "AdobeSongStd-Light (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZKTK--GBK1-0 (10.0pt)": {
+    "role": "楷體",
+    "docx_style": "屬名",
+    "mapped_by": "user"
+  },
+  "FZLTZHK--GBK1-0 (9.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "Helvetica-Light (9.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTKHK--GBK1-0 (9.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "RopeSequenceNumberST-R (9.0pt)": {
+    "role": "忽略",
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZKTK--GBK1-0 (9.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTKHK--GBK1-0 (8.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "TimesNewRomanPSMT (8.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "TimesNewRomanPSMT (7.0pt)": {
+    "role": "忽略",
+    "docx_style": "header",
+    "mapped_by": "user"
+  },
+  "FZLTHK--GBK1-0 (6.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (6.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTKHK--GBK1-0 (6.0pt)": {
+    "role": "忽略",
+    "docx_style": "header",
+    "mapped_by": "user"
+  },
+  "RopeSequenceNumberST-R (6.0pt)": {
+    "role": "忽略",
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "TimesNewRomanPSMT (6.0pt)": {
+    "role": "忽略",
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZLTKHK--GBK1-0 (4.5pt)": {
+    "role": "忽略",
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "RopeSequenceNumberST-R (4.5pt)": {
+    "role": "忽略",
+    "docx_style": "footer",
     "mapped_by": "user"
   }
 }

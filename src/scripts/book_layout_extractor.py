@@ -92,13 +92,23 @@ CIRCLED_MAP = {
 
 # Regex pattern matching any recognised footnote marker (circled / bracketed / numbered-dot / bare number with space)
 # Added expanded unicode ranges for circled numbers > 10 and dingbats.
-# Extended to support [1], ［1］, 〔1〕, 【1】, [ 1 ], (1), （1）, 1., 1、, and Unicode superscripts ⁰¹²³⁴⁵⁶⁷⁸⁹
-FN_MARKER_PATTERN = r'([\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|[\[［〔【]\s*\d+\s*[\]］〕】]|[\(（]\s*\d+\s*[\)）]|[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|\d+[.、])'
+# Extended to support [1], ［1］, 〔1〕, 【1】, [ 1 ], (1), （1）, 1., 1、, Unicode superscripts ⁰¹²³⁴⁵⁶⁷⁸⁹,
+# and alphabet markers [a-jA-J][.、\s]
+FN_MARKER_PATTERN = (
+    r'('
+    r'[\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|'
+    r'[\[［〔【]\s*(?:\d+|[a-jA-J])\s*[\]］〕】]|'
+    r'[\(（]\s*(?:\d+|[a-jA-J])\s*[\)）]|'
+    r'[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|'
+    r'(?<!\d)(?!(?:18|19|20)\d{2}[.、])\d{1,3}[.、]|'
+    r'[a-jA-J][.、\s]'
+    r')'
+)
 _WEAK_MARKER_RE = re.compile(r'^[\d.、\s()（）]+$')
 _DIGITS_RE = re.compile(r'\d+')
 _FN_MARKER_SPLIT_RE = re.compile(FN_MARKER_PATTERN)
 _STARTS_WITH_FN_MARKER_RE = re.compile(r'^\s*(' + FN_MARKER_PATTERN + r')\s*')
-_FN_MARKER_PARSE_RE = re.compile(r'^\s*([①-⑩\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|[\[［〔【]\s*\d+\s*[\]］〕】]|[\(（]\s*\d+\s*[\)）]|[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|\d+[.、])\s*')
+_FN_MARKER_PARSE_RE = re.compile(r'^\s*' + FN_MARKER_PATTERN + r'\s*')
 
 _PAGE_HEADER_PATTERNS = [
     re.compile(r'^[上下中]篇[:：|｜]'),
@@ -389,14 +399,37 @@ _SUPERSCRIPT_CHAR_MAP = {
     '⁵': 5, '⁶': 6, '⁷': 7, '⁸': 8, '⁹': 9
 }
 
+def is_strong_citation_text(text: str) -> bool:
+    """Check if text exhibits characteristics of a formal literature citation."""
+    if not text:
+        return False
+    citation_patterns = [
+        r'《[^》]+》',
+        r'\[[A-Z]\]',
+        r'(?:出版社|出版|Press)',
+        r'(?:\d{4}\s*年\s*版|\d{4}\s*年)',
+        r'(?:第\s*\d+\s*页|[Pp]\.?\s*\d+)',
+        r'(?:参阅|参见|转引自|译|主编)',
+    ]
+    for pat in citation_patterns:
+        if re.search(pat, text):
+            return True
+    return False
+
 def _circled_to_int(marker_str: str) -> int:
     """Convert any footnote marker string to its integer index."""
+    if not marker_str:
+        return 1
     if marker_str in CIRCLED_MAP:
         return CIRCLED_MAP[marker_str]
     if any(c in _SUPERSCRIPT_CHAR_MAP for c in marker_str):
         digits = "".join(str(_SUPERSCRIPT_CHAR_MAP[c]) for c in marker_str if c in _SUPERSCRIPT_CHAR_MAP)
         if digits:
             return int(digits)
+    # Support letter markers 'a'..'z' / 'A'..'Z' mapped to 1..26
+    alpha_m = re.search(r'[a-zA-Z]', marker_str)
+    if alpha_m:
+        return ord(alpha_m.group(0).lower()) - ord('a') + 1
     digs = _DIGITS_RE.findall(marker_str)
     return int(digs[0]) if digs else 1
 
@@ -412,9 +445,22 @@ def _replace_fn_markers_in_text(text: str, page_footnotes: list, page_num: int) 
         fn_tag = f"[^p{page_num}_{fn_id}]"
 
         matched = False
+        is_alpha_marker = bool(m_str and re.search(r'^[a-zA-Z][.、\s)）]?$', m_str.strip()))
         # 1. 優先嘗試原始標記完全匹配
         if m_str:
-            if _WEAK_MARKER_RE.match(m_str):
+            if is_alpha_marker:
+                alpha_char = re.search(r'[a-zA-Z]', m_str).group(0)
+                alpha_pat = re.compile(
+                    r'(?<=[。，；！？、”’」』）)\]】\u4e00-\u9fff])(?<![a-zA-Z0-9])'
+                    + re.escape(alpha_char)
+                    + r'(?![a-zA-Z0-9])(?=[。，；！？、”’」』）)\]】\s\n]|$)'
+                )
+                new_text, n_subs = alpha_pat.subn(fn_tag, text, count=1)
+                if n_subs > 0:
+                    text = new_text
+                    fn['matched'] = True
+                    matched = True
+            elif _WEAK_MARKER_RE.match(m_str):
                 # 針對弱標記（如 '1.' 或 '(1)'），要求前後不能是數字以防止誤傷小數點（如 31.5%）或正文數值
                 safe_pat = re.compile(r'(?<!\d)' + re.escape(m_str) + r'(?!\d)')
                 new_text, n_subs = safe_pat.subn(fn_tag, text, count=1)
@@ -446,6 +492,24 @@ def _replace_fn_markers_in_text(text: str, page_footnotes: list, page_num: int) 
                 if var in text:
                     text = text.replace(var, fn_tag, 1)
                     fn['matched'] = True
+                    matched = True
+                    break
+
+        # 3. 第三優先：若標準標記未命中且 1 <= fn_id <= 26，檢查字母上標變體（如 'a' 對應 1, 'b' 對應 2）
+        if not matched and fn_id is not None and 1 <= fn_id <= 26:
+            alpha_lower = chr(ord('a') + fn_id - 1)
+            alpha_upper = chr(ord('A') + fn_id - 1)
+            for alpha_char in [alpha_lower, alpha_upper]:
+                alpha_pat = re.compile(
+                    r'(?<=[。，；！？、”’」』）)\]】\u4e00-\u9fff])(?<![a-zA-Z0-9])'
+                    + re.escape(alpha_char)
+                    + r'(?![a-zA-Z0-9])(?=[。，；！？、”’」』）)\]】\s\n]|$)'
+                )
+                new_text, n_subs = alpha_pat.subn(fn_tag, text, count=1)
+                if n_subs > 0:
+                    text = new_text
+                    fn['matched'] = True
+                    matched = True
                     break
     return text
 
@@ -492,6 +556,18 @@ def clean_span_duplicates(spans):
             clean.append(s)
     return clean
 
+def _normalize_symbol_font_spans(spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Map single alphabet letters in sequence symbol fonts (e.g. RopeSequenceNumber)
+    to standard Unicode circled numbers ①..⑩ without breaking text flow."""
+    for s in spans:
+        font_name = (s.get("font") or "").lower()
+        if any(kw in font_name for kw in ("ropesequencenumber", "sequencenumber", "circlednumber")):
+            txt = s.get("text", "")
+            if len(txt) == 1 and ('a' <= txt <= 'j' or 'A' <= txt <= 'J'):
+                num = ord(txt.lower()) - ord('a') + 1
+                s["text"] = chr(0x2460 + num - 1)
+    return spans
+
 def is_page_header(block, page_h, page_w):
     bbox = block.get('bbox', [0, 0, 0, 0])
     # Headers are strictly in top 13% of the page
@@ -525,10 +601,9 @@ def parse_footnote_marker(text):
     m = _FN_MARKER_PARSE_RE.match(text)
     if m:
         marker_str = m.group(1).strip()
-        num = CIRCLED_MAP.get(marker_str)
-        if not num:
-            digs = _DIGITS_RE.findall(marker_str)
-            num = int(digs[0]) if digs else 1
+        num = _circled_to_int(marker_str)
+        if 1800 <= num <= 2100 and re.match(r'^\d{4}[.、]', marker_str):
+            return None, None, text
         return num, marker_str, text[m.end():].strip()
     return None, None, text
 
@@ -847,9 +922,10 @@ def _parse_pdf_layout_flow(
             if block_type != 0:
                 continue
 
-            # Clean duplicate spans within lines
+            # Clean duplicate spans within lines and normalize sequence symbol font spans
             for line in b.get("lines", []):
-                line["spans"] = clean_span_duplicates(line.get("spans", []))
+                cleaned_spans = clean_span_duplicates(line.get("spans", []))
+                line["spans"] = _normalize_symbol_font_spans(cleaned_spans)
 
             block_text = "".join(s.get("text", "") for l in b.get("lines", []) for s in l.get("spans", [])).strip()
             if not block_text:
@@ -879,7 +955,7 @@ def _parse_pdf_layout_flow(
             if enable_footnotes:
                 starts_with_fn_marker = bool(_STARTS_WITH_FN_MARKER_RE.match(block_text))
                 if bbox[1] >= page_h * 0.65 and avg_size < body_size:
-                    if starts_with_fn_marker and not _H3_DECIMAL_RE.match(block_text) and not _H2_DECIMAL_RE.match(block_text):
+                    if (starts_with_fn_marker or is_strong_citation_text(block_text)) and not _H3_DECIMAL_RE.match(block_text) and not _H2_DECIMAL_RE.match(block_text):
                         is_fn = True
                     elif footnote_blocks and avg_size <= 10.0:
                         # Immediate subsequent block below a footnote block with small font
@@ -927,6 +1003,11 @@ def _parse_pdf_layout_flow(
                 content_str = parts[i + 1].strip() if (i + 1) < len(parts) else ""
 
                 num = _circled_to_int(marker_str)
+                if 1800 <= num <= 2100 and re.match(r'^\d{4}[.、]', marker_str):
+                    # Prevent publication year (e.g. 2009.) from being parsed as phantom footnote
+                    if current_fn_entry:
+                        current_fn_entry["content"] = (current_fn_entry["content"] + " " + marker_str + (" " + content_str if content_str else "")).strip()
+                    continue
 
                 if current_fn_entry:
                     page_footnotes.append(current_fn_entry)
@@ -1683,7 +1764,22 @@ def _parse_pdf_layout_flow(
             if not fn.get("matched", False):
                 # Safely anchor footnote to last paragraph on page
                 if page_paragraphs:
-                    page_paragraphs[-1] += fn_tag
+                    last_p = page_paragraphs[-1]
+                    handled = False
+                    if 1 <= fn_id <= 26:
+                        for alpha_char in [chr(ord('a') + fn_id - 1), chr(ord('A') + fn_id - 1)]:
+                            alpha_pat = re.compile(
+                                r'(?<=[。，；！？、”’」』）)\]】\u4e00-\u9fff])(?<![a-zA-Z0-9])'
+                                + re.escape(alpha_char)
+                                + r'(?![a-zA-Z0-9])(?=[。，；！？、”’」』）)\]】\s\n]|$)'
+                            )
+                            new_p, n_subs = alpha_pat.subn(fn_tag, last_p, count=1)
+                            if n_subs > 0:
+                                page_paragraphs[-1] = new_p
+                                handled = True
+                                break
+                    if not handled:
+                        page_paragraphs[-1] += fn_tag
                 else:
                     page_paragraphs.append(fn_tag)
                 audit_data["footnotes_fallback"] += 1

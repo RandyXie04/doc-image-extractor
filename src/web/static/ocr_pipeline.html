@@ -207,32 +207,25 @@
                         </button>
 
                         <div id="tierAdvancedContent" class="accordion-content" hidden>
-                            <!-- 2A. 頁碼範圍與純內文控制 -->
+                            <!-- 2A. 頁碼範圍與純內文控制 (緊湊單行整合) -->
                             <fieldset class="sub-panel">
                                 <legend class="sub-panel-title">處理頁碼與腳注</legend>
-                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-                                    <label class="field-label" style="margin: 0; font-size: 0.82rem;">轉檔頁碼：</label>
-                                    <div style="display: flex; align-items: center; gap: 6px;">
-                                        <input type="number" id="startPageInput" name="start_page" min="1" placeholder="首頁" class="input input-narrow" style="width: 58px; padding: 3px 6px; font-size: 0.82rem; text-align: center;">
-                                        <span class="hint">至</span>
-                                        <input type="number" id="endPageInput" name="end_page" min="1" placeholder="末頁" class="input input-narrow" style="width: 58px; padding: 3px 6px; font-size: 0.82rem; text-align: center;">
-                                        <span class="hint" style="font-size: 0.74rem;">(留空全文)</span>
+                                <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
+                                    <div style="display: flex; align-items: center; gap: 4px;">
+                                        <label for="startPageInput" class="field-label" style="margin: 0; font-size: 0.8rem; white-space: nowrap;">頁碼：</label>
+                                        <input type="number" id="startPageInput" name="start_page" min="1" placeholder="首頁" class="input input-narrow" style="width: 52px; padding: 2px 4px; font-size: 0.8rem; text-align: center;">
+                                        <span class="hint" style="margin: 0 1px;">-</span>
+                                        <input type="number" id="endPageInput" name="end_page" min="1" placeholder="末頁" class="input input-narrow" style="width: 52px; padding: 2px 4px; font-size: 0.8rem; text-align: center;">
                                     </div>
-                                </div>
-                                <div id="pageRangeError" class="hint" style="color: var(--f2-color-danger); display: none; font-size: 0.75rem; margin-top: 4px;">起始頁不可大於結束頁。</div>
-
-                                <div class="field" style="margin: 8px 0 0 0;">
-                                    <label class="check">
-                                        <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true" checked>
-                                        <span>
-                                            <span class="check-title" style="font-size: 0.82rem;">無腳注純內文模式</span>
-                                            <span class="hint" style="display: block; font-size: 0.74rem;">避免正文圓圈數字被誤判為腳注。</span>
-                                        </span>
+                                    <label class="check" style="margin: 0; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
+                                        <input type="checkbox" name="no_footnote" id="noFootnoteToggle" value="true" checked style="margin: 0;">
+                                        <span class="check-title" style="font-size: 0.8rem;" title="避免正文圓圈數字被誤判為腳注">無腳注純內文</span>
                                     </label>
                                 </div>
+                                <div id="pageRangeError" class="hint" style="color: var(--f2-color-danger); display: none; font-size: 0.75rem; margin-top: 4px;">起始頁不可大於結束頁。</div>
                             </fieldset>
 
-                            <!-- 2B. 版面邊界裁切 (SSOT 數值與滑桿雙向同步) -->
+                            <!-- 2B. 版面邊界裁切 (SSOT 數值與滑桿雙向同步，人體工學 2x2 成對網格) -->
                             <fieldset class="sub-panel">
                                 <legend class="sub-panel-title">
                                     <span>版面裁切邊距 (%)</span>
@@ -246,36 +239,48 @@
                                 <span id="rightValLabel" class="val-side" style="display: none;">0.00</span>
 
                                 <div class="crop-control-grid">
+                                    <!-- Col 1, Row 1: 頂部天頭 (Y 軸) -->
                                     <div class="crop-control-row">
-                                        <label for="headerSlider" class="crop-control-label">
-                                            <span class="swatch swatch-top"></span>頂部天頭
-                                        </label>
+                                        <div class="crop-control-row-head">
+                                            <label for="headerSlider" class="crop-control-label">
+                                                <span class="swatch swatch-top"></span>頂部天頭
+                                            </label>
+                                            <input type="number" id="headerNumInput" name="header_ratio" class="crop-num-input" min="0" max="0.45" step="0.01" value="0.10" data-dir="top" aria-label="頂部天頭裁切比率">
+                                        </div>
                                         <input type="range" id="headerSlider" min="0" max="0.45" step="0.01" value="0.10" data-dir="top">
-                                        <input type="number" id="headerNumInput" name="header_ratio" class="crop-num-input" min="0" max="0.45" step="0.01" value="0.10" data-dir="top" aria-label="頂部天頭裁切比率">
                                     </div>
 
+                                    <!-- Col 2, Row 1: 左側邊距 (X 軸) -->
                                     <div class="crop-control-row">
-                                        <label for="footerSlider" class="crop-control-label">
-                                            <span class="swatch swatch-bottom"></span>底部地腳
-                                        </label>
-                                        <input type="range" id="footerSlider" min="0" max="0.45" step="0.01" value="0.10" data-dir="bottom">
-                                        <input type="number" id="footerNumInput" name="footer_ratio" class="crop-num-input" min="0" max="0.45" step="0.01" value="0.10" data-dir="bottom" aria-label="底部地腳裁切比率">
-                                    </div>
-
-                                    <div class="crop-control-row">
-                                        <label for="leftSlider" class="crop-control-label">
-                                            <span class="swatch swatch-side"></span>左側邊距
-                                        </label>
+                                        <div class="crop-control-row-head">
+                                            <label for="leftSlider" class="crop-control-label">
+                                                <span class="swatch swatch-side"></span>左側邊距
+                                            </label>
+                                            <input type="number" id="leftNumInput" name="left_ratio" class="crop-num-input" min="0" max="0.30" step="0.01" value="0.00" data-dir="left" aria-label="左側邊距比率">
+                                        </div>
                                         <input type="range" id="leftSlider" min="0" max="0.30" step="0.01" value="0.00" data-dir="left">
-                                        <input type="number" id="leftNumInput" name="left_ratio" class="crop-num-input" min="0" max="0.30" step="0.01" value="0.00" data-dir="left" aria-label="左側邊距比率">
                                     </div>
 
+                                    <!-- Col 1, Row 2: 底部地腳 (Y 軸) -->
                                     <div class="crop-control-row">
-                                        <label for="rightSlider" class="crop-control-label">
-                                            <span class="swatch swatch-side"></span>右側邊距
-                                        </label>
+                                        <div class="crop-control-row-head">
+                                            <label for="footerSlider" class="crop-control-label">
+                                                <span class="swatch swatch-bottom"></span>底部地腳
+                                            </label>
+                                            <input type="number" id="footerNumInput" name="footer_ratio" class="crop-num-input" min="0" max="0.45" step="0.01" value="0.10" data-dir="bottom" aria-label="底部地腳裁切比率">
+                                        </div>
+                                        <input type="range" id="footerSlider" min="0" max="0.45" step="0.01" value="0.10" data-dir="bottom">
+                                    </div>
+
+                                    <!-- Col 2, Row 2: 右側邊距 (X 軸) -->
+                                    <div class="crop-control-row">
+                                        <div class="crop-control-row-head">
+                                            <label for="rightSlider" class="crop-control-label">
+                                                <span class="swatch swatch-side"></span>右側邊距
+                                            </label>
+                                            <input type="number" id="rightNumInput" name="right_ratio" class="crop-num-input" min="0" max="0.30" step="0.01" value="0.00" data-dir="right" aria-label="右側邊距比率">
+                                        </div>
                                         <input type="range" id="rightSlider" min="0" max="0.30" step="0.01" value="0.00" data-dir="right">
-                                        <input type="number" id="rightNumInput" name="right_ratio" class="crop-num-input" min="0" max="0.30" step="0.01" value="0.00" data-dir="right" aria-label="右側邊距比率">
                                     </div>
                                 </div>
                             </fieldset>
@@ -588,6 +593,17 @@
         setupAccordion('tierAdvancedTrigger', 'tierAdvancedContent', 'tierAdvancedAccordion');
         setupAccordion('tierEngineerTrigger', 'tierEngineerContent', 'tierEngineerAccordion');
 
+        function collapseAccordion(triggerId, contentId, containerId) {
+            const trigger = document.getElementById(triggerId);
+            const content = document.getElementById(contentId);
+            const container = document.getElementById(containerId);
+            if (!trigger || !content || !container) return;
+            trigger.setAttribute('aria-expanded', 'false');
+            container.classList.remove('is-expanded');
+            content.setAttribute('hidden', '');
+            content.style.display = 'none';
+        }
+
         // 本機開發者預設開啟工程師模式檢查與即時切換監聽
         function setEngineerAccordionState(isDev) {
             const engTrigger = document.getElementById('tierEngineerTrigger');
@@ -665,11 +681,11 @@
                     if (leftSlider && source !== 'leftSlider') leftSlider.value = clean.left;
                     if (rightSlider && source !== 'rightSlider') rightSlider.value = clean.right;
 
-                    // 同步數值輸入框
-                    if (headerNumInput && source !== 'headerNumInput') headerNumInput.value = clean.top.toFixed(2);
-                    if (footerNumInput && source !== 'footerNumInput') footerNumInput.value = clean.bottom.toFixed(2);
-                    if (leftNumInput && source !== 'leftNumInput') leftNumInput.value = clean.left.toFixed(2);
-                    if (rightNumInput && source !== 'rightNumInput') rightNumInput.value = clean.right.toFixed(2);
+                    // 同步數值輸入框 (若為其他來源觸發，或數值輸入越界/經 sanitize 截斷校正，均強制回寫同步)
+                    if (headerNumInput && (source !== 'headerNumInput' || headerNumInput.value !== clean.top.toFixed(2))) headerNumInput.value = clean.top.toFixed(2);
+                    if (footerNumInput && (source !== 'footerNumInput' || footerNumInput.value !== clean.bottom.toFixed(2))) footerNumInput.value = clean.bottom.toFixed(2);
+                    if (leftNumInput && (source !== 'leftNumInput' || leftNumInput.value !== clean.left.toFixed(2))) leftNumInput.value = clean.left.toFixed(2);
+                    if (rightNumInput && (source !== 'rightNumInput' || rightNumInput.value !== clean.right.toFixed(2))) rightNumInput.value = clean.right.toFixed(2);
 
                     // 同步圖例標籤
                     if (headerVal) headerVal.textContent = clean.top.toFixed(2);
@@ -733,6 +749,10 @@
                 footerNumInput.onchange = (e) => onNumChange(e, 'bottom');
                 leftNumInput.onchange = (e) => onNumChange(e, 'left');
                 rightNumInput.onchange = (e) => onNumChange(e, 'right');
+                headerNumInput.onblur = (e) => onNumChange(e, 'top');
+                footerNumInput.onblur = (e) => onNumChange(e, 'bottom');
+                leftNumInput.onblur = (e) => onNumChange(e, 'left');
+                rightNumInput.onblur = (e) => onNumChange(e, 'right');
 
                 if (resetCropBtn) {
                     resetCropBtn.onclick = () => {
@@ -1037,7 +1057,8 @@
         function setInspectorReadonly(isReadonly) {
             if (isReadonly) {
                 workbenchInspectorPane.classList.add('is-processing');
-                uploadForm.querySelectorAll('input, select, button').forEach(el => el.disabled = true);
+                // Lock settings form controls while leaving feedback panel controls interactive
+                uploadForm.querySelectorAll('.inspector-section input, .inspector-section select, .inspector-section button, .inspector-accordion input, .inspector-accordion select, .inspector-accordion button').forEach(el => el.disabled = true);
             } else {
                 workbenchInspectorPane.classList.remove('is-processing');
                 uploadForm.querySelectorAll('input, select, button').forEach(el => el.disabled = false);
@@ -1057,6 +1078,10 @@
                 toolbox.notify('請修正頁碼範圍後再行整稿', 'warning');
                 return;
             }
+
+            // 自動收折 Tier 2 與 Tier 3 手風琴，使進度面板與成果清單於第一屏立即可見
+            collapseAccordion('tierAdvancedTrigger', 'tierAdvancedContent', 'tierAdvancedAccordion');
+            collapseAccordion('tierEngineerTrigger', 'tierEngineerContent', 'tierEngineerAccordion');
 
             // 進入唯讀處理狀態
             setInspectorReadonly(true);
@@ -1264,7 +1289,7 @@
             pipelineResultSummary.style.display = 'block';
             pipelineResultSummary.innerHTML = `
                 <div class="result" id="resultCard" style="background: var(--f2-color-surface); border: 1px solid var(--f2-color-border-subtle); border-radius: 8px;">
-                    <div class="result-head is-ok" style="background: var(--f2-color-primary-tint); color: var(--f2-color-primary); padding: 10px 14px; border-radius: 8px 8px 0 0; display: flex; justify-content: space-between; align-items: center;">
+                    <div class="result-head is-ok">
                         <span style="font-weight: 600;">全自動整稿成果清單</span>
                         <button type="button" class="btn btn-secondary btn-sm" id="openOutlineModalBtn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
@@ -1275,21 +1300,21 @@
                         <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--f2-color-border-subtle);">
                             <div>
                                 <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary);">${toolbox.escape(docxName)}</span>
-                                <span class="file-desc" style="display: block; font-size: 0.8rem; color: var(--f2-color-text-secondary);">套用 Word 樣式範本之完稿排版文件</span>
+                                <span class="file-desc" style="display: block; font-size: 0.8rem;">套用 Word 樣式範本之完稿排版文件</span>
                             </div>
                             <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON || ''}另存 Word</button>
                         </li>
                         <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
                             <div>
                                 <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary);">${toolbox.escape(mdName)}</span>
-                                <span class="file-desc" style="display: block; font-size: 0.8rem; color: var(--f2-color-text-secondary);">標準結構化 Markdown 文件</span>
+                                <span class="file-desc" style="display: block; font-size: 0.8rem;">標準結構化 Markdown 文件</span>
                             </div>
                             <button type="button" class="btn btn-secondary btn-sm" id="saveMdBtn">${toolbox.DOWNLOAD_ICON || ''}另存 Markdown</button>
                         </li>
                     </ul>
-                    <div style="margin: 10px 14px; padding: 10px 12px; background: var(--f2-color-surface-secondary); border: 1.5px solid var(--f2-color-primary); border-radius: 6px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+                    <div class="notice-box">
                         <div>
-                            <strong style="color: var(--f2-color-primary); display: block; font-size: 0.92rem;">銜接 POD 整稿工作區（人工預審與樣式擴散）</strong>
+                            <strong>銜接 POD 整稿工作區（人工預審與樣式擴散）</strong>
                             <span class="hint" style="margin: 0; display: block; font-size: 0.8rem;">直接攜帶此 DOCX 與 PDF 至 POD 工作區。</span>
                         </div>
                         <button type="button" class="btn btn-primary btn-sm" id="handoffPodBtn">接續 POD 整稿 &rarr;</button>

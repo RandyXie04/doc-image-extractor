@@ -19,6 +19,9 @@
     --accent-ring: rgba(15, 108, 189, 0.28);
     --accent-pink: #d946ef;
     --accent-cyan: #0284c7;
+    --accent-cyan-soft: rgba(2, 132, 199, 0.08);
+    --accent-cyan-border: rgba(2, 132, 199, 0.35);
+    --text-hint: #616161;
 
     --success: #107C10;
     --success-fg: #ffffff;
@@ -142,6 +145,7 @@
     --text: #f8f8f2;                            /* Dracula Foreground (13.36:1 contrast) */
     --text-muted: #6272a4;                      /* Dracula Comment (3.03:1 on bg - icons/borders) */
     --text-secondary: #a4b1cd;                  /* Accessible Secondary Text (6.61:1 on bg) */
+    --text-hint: #b8c0d9;                       /* High-contrast secondary/hint text (> 5:1 on surface-2, > 6.5:1 on surface) */
 
     /* --- Dracula Official Primary & Secondary Accents --- */
     --accent: #bd93f9;                          /* Dracula Purple (Primary Accent) */
@@ -153,6 +157,8 @@
 
     --accent-pink: #ff79c6;                     /* Dracula Pink (Secondary Accent) */
     --accent-cyan: #8be9fd;                     /* Dracula Cyan (Info / Guide Lines) */
+    --accent-cyan-soft: rgba(139, 233, 253, 0.14);  /* Info badge / notice tint */
+    --accent-cyan-border: rgba(139, 233, 253, 0.45);/* Info border */
 
     /* --- Dracula Official Status & Feedback Colors --- */
     --success: #50fa7b;                         /* Dracula Green (10.38:1 contrast) */

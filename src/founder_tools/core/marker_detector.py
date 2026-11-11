@@ -25,12 +25,13 @@ class MarkerDetector:
     def detect(cls, text: str, marker_type: str = "auto", para_idx: int = -1, sec_idx: int = -1) -> List[MarkerMatch]:
         matches = []
         if marker_type == "auto":
-            # 偵測所有高信賴標記：圓圈數字、上標數字、方括號、中文/六角括號
+            # 偵測所有高信賴標記：圓圈數字、上標數字、方括號、中文/六角括號、字母注標
             matches = []
             matches.extend(cls.detect(text, "circled_number", para_idx, sec_idx))
             matches.extend(cls.detect(text, "superscript", para_idx, sec_idx))
             matches.extend(cls.detect(text, "square_bracket", para_idx, sec_idx))
             matches.extend(cls.detect(text, "chinese_bracket", para_idx, sec_idx))
+            matches.extend(cls.detect(text, "alpha_callout", para_idx, sec_idx))
             matches.sort(key=lambda m: m.start_char)
             return matches
 
@@ -78,6 +79,19 @@ class MarkerDetector:
                 matches.append(MarkerMatch(
                     text=m.group(0), number=int(m.group(0)),
                     start_char=m.start(), end_char=m.end(),
+                    paragraph_idx=para_idx, section_idx=sec_idx
+                ))
+
+        elif marker_type == "alpha_callout":
+            pattern = re.compile(
+                r'(?<=[。，；！？、”’」』）)\]】\u4e00-\u9fff])(?<![a-zA-Z0-9])([a-jA-J])(?![a-zA-Z0-9])(?=[。，；！？、”’」』）)\]】\s\n]|$)'
+            )
+            for m in pattern.finditer(text):
+                raw_char = m.group(1)
+                num = ord(raw_char.lower()) - ord('a') + 1
+                matches.append(MarkerMatch(
+                    text=raw_char, number=num,
+                    start_char=m.start(1), end_char=m.end(1),
                     paragraph_idx=para_idx, section_idx=sec_idx
                 ))
                 

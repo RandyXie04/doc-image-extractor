@@ -50,7 +50,14 @@ DEFAULT_GEMMA_MODEL = os.getenv("AI_LAYOUT_MODEL", "gemma4:e4b")
 
 _HALLUCINATION_REPEAT_RE = re.compile(r'([^\n]{1,10}?)\1{5,}')
 _FOOTNOTE_PREFIX_RE = re.compile(
-    r'^\s*(?:[\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|[\[［〔【]\s*\d+\s*[\]］〕】]|[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|\u6ce8\s*\d+|[（(]?\s*\d+\s*[)）]?\s*[\u4e00-\u9fff])'
+    r'^\s*(?:'
+    r'[\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|'
+    r'[\[［〔【]\s*(?:\d+|[a-jA-J])\s*[\]］〕】]|'
+    r'[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|'
+    r'\u6ce8\s*\d+|'
+    r'[（(]?\s*(?:\d+|[a-jA-J])\s*[)）]?\s*[\u4e00-\u9fff]|'
+    r'[a-jA-J][.、\s)）]'
+    r')'
 )
 _WEAK_MARKER_CHECK_RE = re.compile(r'^[\d.、\s()（）]+$')
 
@@ -329,7 +336,15 @@ def parse_footnote_entries(text):
         return []
 
     pattern = re.compile(
-        r'(?:^|\n)\s*([①-⑩\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|[\[［〔【]\s*\d+\s*[\]］〕】]|[⁰¹²³⁴⁵⁶⁷⁸⁹]+|注\s*\d+[:：.]?|[（(]?\s*\d+\s*[)）][.、]?|\d+[.、\s])\s*'
+        r'(?:^|\n)\s*('
+        r'[①-⑩\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|'
+        r'[\[［〔【]\s*(?:\d+|[a-jA-J])\s*[\]］〕】]|'
+        r'[⁰¹²³⁴⁵⁶⁷⁸⁹]+|'
+        r'注\s*\d+[:：.]?|'
+        r'[（(]?\s*(?:\d+|[a-jA-J])\s*[)）][.、]?|'
+        r'(?!(?:18|19|20)\d{2}[.、])\d+[.、\s]|'
+        r'[a-jA-J][.、\s)）]'
+        r')\s*'
     )
 
     all_matches = list(pattern.finditer(text))
@@ -344,6 +359,7 @@ def parse_footnote_entries(text):
         if re.match(r'^[⁰¹²³⁴⁵⁶⁷⁸⁹]', m_str): return "superscript"
         if m_str.startswith('注'): return "zhu"
         if m_str.startswith('(') or m_str.startswith('（'): return "paren"
+        if re.match(r'^[a-jA-J]', m_str): return "alpha"
         return "dot"
 
     first_type = get_marker_type(all_matches[0].group(1))
@@ -363,14 +379,23 @@ def parse_footnote_entries(text):
                 num_val = MarkerDetector.CIRCLED_NUMBERS.index(marker_str[0]) + 1
             elif all(c in MarkerDetector.SUPERSCRIPT_DIGITS for c in marker_str if c):
                 num_val = int("".join(str(MarkerDetector.SUPERSCRIPT_DIGITS.index(c)) for c in marker_str))
+            elif re.search(r'[a-zA-Z]', marker_str):
+                num_val = ord(re.search(r'[a-zA-Z]', marker_str).group(0).lower()) - ord('a') + 1
             else:
                 digits = re.findall(r'\d+', marker_str)
                 if digits:
                     num_val = int(digits[0])
         else:
-            digits = re.findall(r'\d+', marker_str)
-            if digits:
-                num_val = int(digits[0])
+            if re.search(r'[a-zA-Z]', marker_str):
+                num_val = ord(re.search(r'[a-zA-Z]', marker_str).group(0).lower()) - ord('a') + 1
+            else:
+                digits = re.findall(r'\d+', marker_str)
+                if digits:
+                    num_val = int(digits[0])
+
+        if 1800 <= num_val <= 2100 and re.match(r'^\d{4}[.、]', marker_str):
+            # Ignore publication year mistaken as footnote marker
+            continue
 
         entries.append({
             "id": num_val,
@@ -523,7 +548,7 @@ def process_page_footnotes(
             is_fn = orig_label in ["footnote", "vision_footnote"]
             if not is_fn and y0 > (page_h * 0.72) and b_type not in ["Title", "Table", "Figure"]:
                 blk_txt = extract_block_text(block)
-                if _FOOTNOTE_PREFIX_RE.search(blk_txt):
+                if _FOOTNOTE_PREFIX_RE.search(blk_txt) or is_strong_citation_text(blk_txt):
                     is_fn = True
 
         indexed_blocks.append({
@@ -599,14 +624,26 @@ def process_page_footnotes(
 
             matched = False
             is_weak_marker = bool(not marker_str or re.fullmatch(r'[\d.、\s()]+', marker_str))
+            is_alpha_marker = bool(marker_str and re.search(r'^[a-zA-Z][.、\s)）]?$', marker_str.strip()))
             for b_txt in initial_body_texts:
-                if not is_weak_marker and marker_str and marker_str in b_txt:
+                if is_alpha_marker:
+                    alpha_char = re.search(r'[a-zA-Z]', marker_str).group(0)
+                    alpha_pat = re.compile(
+                        r'(?<=[。，；！？、”’」』）)\]】\u4e00-\u9fff])(?<![a-zA-Z0-9])'
+                        + re.escape(alpha_char)
+                        + r'(?![a-zA-Z0-9])(?=[。，；！？、”’」』）)\]】\s\n]|$)'
+                    )
+                    if alpha_pat.search(b_txt):
+                        matched = True
+                        break
+                elif not is_weak_marker and marker_str and marker_str in b_txt:
                     idx = b_txt.find(marker_str)
                     if idx == 0 and not is_strong_citation_text(b_txt):
                         continue
                     matched = True
                     break
-                elif MarkerDetector:
+
+                if not matched and MarkerDetector:
                     detected = MarkerDetector.detect(b_txt, "auto")
                     for d in detected:
                         if d.number == fn_id:
@@ -651,9 +688,22 @@ def process_page_footnotes(
         marker_str = fn["raw_marker"]
         fn_ref_tag = f"[^p{page_num}_{fn_id}]"
         is_weak_marker = bool(not marker_str or _WEAK_MARKER_CHECK_RE.fullmatch(marker_str))
+        is_alpha_marker = bool(marker_str and re.search(r'^[a-zA-Z][.、\s)）]?$', marker_str.strip()))
         replaced = False
         for p_item in rendered_body:
-            if not is_weak_marker and marker_str and marker_str in p_item["md"]:
+            if is_alpha_marker:
+                alpha_char = re.search(r'[a-zA-Z]', marker_str).group(0)
+                alpha_pat = re.compile(
+                    r'(?<=[。，；！？、”’」』）)\]】\u4e00-\u9fff])(?<![a-zA-Z0-9])'
+                    + re.escape(alpha_char)
+                    + r'(?![a-zA-Z0-9])(?=[。，；！？、”’」』）)\]】\s\n]|$)'
+                )
+                new_text, n_subs = alpha_pat.subn(fn_ref_tag, p_item["md"], count=1)
+                if n_subs > 0:
+                    p_item["md"] = new_text
+                    replaced = True
+                    break
+            elif not is_weak_marker and marker_str and marker_str in p_item["md"]:
                 idx = p_item["md"].find(marker_str)
                 if idx == 0 and not is_strong_citation_text(p_item["md"]):
                     continue
@@ -667,7 +717,8 @@ def process_page_footnotes(
                     p_item["md"] = new_text
                     replaced = True
                     break
-            elif MarkerDetector:
+
+            if not replaced and MarkerDetector:
                 detected = MarkerDetector.detect(p_item["md"], "auto")
                 for d in detected:
                     if d.number == fn_id:
@@ -684,7 +735,22 @@ def process_page_footnotes(
                     target_p_idx = idx
                     break
             if target_p_idx >= 0:
-                rendered_body[target_p_idx]["md"] = rendered_body[target_p_idx]["md"].rstrip() + fn_ref_tag
+                target_md = rendered_body[target_p_idx]["md"]
+                # If target paragraph ends with an unconverted alphabet marker matching this fn_id, strip/replace it
+                if 1 <= fn_id <= 26:
+                    for cand_ch in [chr(ord('a') + fn_id - 1), chr(ord('A') + fn_id - 1)]:
+                        cand_pat = re.compile(
+                            r'(?<=[。，；！？、”’」』）)\]】\u4e00-\u9fff])(?<![a-zA-Z0-9])'
+                            + re.escape(cand_ch)
+                            + r'(?![a-zA-Z0-9])(?=[。，；！？、”’」』）)\]】\s\n]|$)'
+                        )
+                        target_md, n_subs = cand_pat.subn(fn_ref_tag, target_md, count=1)
+                        if n_subs > 0:
+                            replaced = True
+                            rendered_body[target_p_idx]["md"] = target_md
+                            break
+                if not replaced:
+                    rendered_body[target_p_idx]["md"] = target_md.rstrip() + fn_ref_tag
             else:
                 rendered_body.append({"orig_idx": -1, "block": {}, "md": fn_ref_tag})
 

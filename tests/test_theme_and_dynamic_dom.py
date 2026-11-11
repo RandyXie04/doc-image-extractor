@@ -261,12 +261,44 @@ class TestDynamicDomDraculaStyling(unittest.TestCase):
                 f"Found unstyled light hex '{forbidden}' in pipelineResultSummary template literal!",
             )
 
-        # Confirm all backgrounds and texts reference CSS variables
+        # Confirm all backgrounds and texts reference CSS variables or semantic classes
         self.assertIn("var(--f2-color-surface)", template_content)
-        self.assertIn("var(--f2-color-primary-tint)", template_content)
+        self.assertIn('class="result-head is-ok"', template_content)
+        self.assertIn('class="notice-box"', template_content)
         self.assertIn("var(--f2-color-text-primary)", template_content)
         self.assertIn("var(--f2-color-text-secondary)", template_content)
         self.assertIn("var(--f2-color-surface-secondary)", template_content)
+        self.assertIn(".result-head.is-ok", self.toolbox_css)
+        self.assertIn(".notice-box", self.toolbox_css)
+
+        # Confirm no inline color override on .file-desc
+        self.assertNotIn('class="file-desc" style="display: block; font-size: 0.8rem; color:', template_content)
+        self.assertIn('class="file-desc" style="display: block; font-size: 0.8rem;"', template_content)
+
+    def test_dark_theme_hint_and_secondary_typography_coverage(self):
+        """Verify that .dropzone-sub and .file-desc are included in [data-theme='dark'] text-hint override rule."""
+        dark_text_rule = re.search(
+            r'\[data-theme="dark"\]\s*([^\{]+)\{\s*color:\s*var\(--text-hint[^;]*\);?\s*\}',
+            self.toolbox_css
+        )
+        self.assertIsNotNone(dark_text_rule, "Dark theme hint rule not found in toolbox.css")
+        selector_group = dark_text_rule.group(1)
+        self.assertIn(".dropzone-sub", selector_group)
+        self.assertIn(".file-desc", selector_group)
+
+    def test_ocr_pipeline_compact_inspector_and_crop_grid(self):
+        """Verify inspector pane is sticky and crop-control-grid is 2x2 in toolbox.css."""
+        inspector_match = re.search(r'\.workbench-inspector-pane\s*\{([^}]+)\}', self.toolbox_css)
+        self.assertIsNotNone(inspector_match, "Missing .workbench-inspector-pane in toolbox.css")
+        inspector_css = inspector_match.group(1)
+        self.assertIn("position: sticky", inspector_css)
+        self.assertIn("overflow-y: auto", inspector_css)
+        self.assertIn("max-height: calc(100vh - 140px)", inspector_css)
+
+        crop_grid_match = re.search(r'\.crop-control-grid\s*\{([^}]+)\}', self.toolbox_css)
+        self.assertIsNotNone(crop_grid_match, "Missing .crop-control-grid in toolbox.css")
+        crop_css = crop_grid_match.group(1)
+        self.assertIn("grid-template-columns: 1fr 1fr", crop_css)
 
     def test_pod_studio_dynamic_audit_visualizer_and_handoff_banner(self):
         """Adversarially verify pod_studio.html audit visualizer and OCR handoff banner under dark mode."""
@@ -282,9 +314,15 @@ class TestDynamicDomDraculaStyling(unittest.TestCase):
         self.assertNotIn("#fff", handoff_content.lower())
         self.assertNotIn("#f0fdf4", handoff_content.lower())
         self.assertNotIn("#fff7ed", handoff_content.lower())
-        self.assertIn("var(--accent)", handoff_content)
+        self.assertIn("var(--accent-cyan)", handoff_content)
         self.assertIn("var(--text-secondary)", handoff_content)
         self.assertIn("var(--surface-2)", handoff_content)
+        # Ensure noticeEl uses notice-box semantic class and Dracula Cyan tokens, eliminating purple-on-purple
+        self.assertIn("noticeEl.className = 'notice-box';", pod_html)
+        notice_style_match = re.search(r"noticeEl\.style\.cssText\s*=\s*'([^']+)'", pod_html)
+        self.assertIsNotNone(notice_style_match)
+        self.assertNotIn("var(--accent-soft)", notice_style_match.group(1))
+        self.assertIn("var(--accent-cyan)", notice_style_match.group(1))
 
         # 2. Audit Visualizer buildAuditVisualizerHtml
         audit_idx = pod_html.find("function buildAuditVisualizerHtml(")
@@ -386,6 +424,7 @@ class TestWcagContrastRatios(unittest.TestCase):
         sidebar_bg = "#21222c"
         text = "#f8f8f2"
         text_sec = "#a4b1cd"
+        text_hint = "#b8c0d9"
         accent = "#bd93f9"
         accent_fg = "#282a36"
         success = "#50fa7b"
@@ -401,6 +440,9 @@ class TestWcagContrastRatios(unittest.TestCase):
             ("Text on Sidebar BG", text, sidebar_bg, 7.0, "AAA"),
             ("Secondary Text on Background", text_sec, bg, 4.5, "AA"),
             ("Secondary Text on Surface", text_sec, surface, 4.5, "AA"),
+            ("Hint Text on Surface-2", text_hint, surface2, 5.0, "AA"),
+            ("Hint Text on Surface", text_hint, surface, 6.5, "AA"),
+            ("Dracula Cyan on Surface-2", cyan, surface2, 6.0, "AA"),
             ("Button Text on Purple Accent", accent_fg, accent, 4.5, "AA"),
             ("Button Text on Green Success", accent_fg, success, 7.0, "AAA"),
             ("Button Text on Yellow Warning", accent_fg, warning, 7.0, "AAA"),
