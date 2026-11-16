@@ -12,10 +12,9 @@ Encapsulates all OpenXML / python-docx assembly complexity:
 
 from __future__ import annotations
 
-import os
 import re
 from pathlib import Path
-from typing import List, Optional, Sequence
+from typing import Optional, Sequence
 import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT

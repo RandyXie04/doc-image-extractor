@@ -98,15 +98,6 @@ LayoutRecordContract = Annotated[
 _LAYOUT_RECORD_ADAPTER: TypeAdapter[LayoutRecordContract] = TypeAdapter(LayoutRecordContract)
 
 
-def validate_layout_record(record: Dict[str, Any]) -> LayoutRecordContract:
-    """
-    Validates a raw layout record dict against the discriminated `LayoutRecordContract`.
-    Raises `pydantic.ValidationError` if any undeclared/hallucinated key is present
-    or required field is missing.
-    """
-    return _LAYOUT_RECORD_ADAPTER.validate_python(record)
-
-
 def validate_layout_records(records: List[Dict[str, Any]]) -> List[LayoutRecordContract]:
     """Batch-validates layout records from `_parse_pdf_layout_flow`."""
     return [_LAYOUT_RECORD_ADAPTER.validate_python(r) for r in records]

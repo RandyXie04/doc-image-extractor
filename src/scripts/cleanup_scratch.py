@@ -1,7 +1,6 @@
 import os
 import shutil
 import datetime
-from pathlib import Path
 
 # // 清理根目錄 scratch 資料夾內之暫存快取 (每月 1 號執行完全刪除)
 def cleanup_scratch(force: bool = False, log_fn=print) -> bool:

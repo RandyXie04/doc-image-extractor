@@ -18,7 +18,7 @@ import uuid
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 import fitz  # PyMuPDF
 from fastapi import APIRouter, BackgroundTasks, File, Form, HTTPException, UploadFile
@@ -26,7 +26,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from PIL import Image, ImageDraw
 
 from src.core_agent import PDFConversionAgent
-from src.utils.task_queue import TaskRecord, TaskStatus, get_event_broadcaster, get_task_queue
+from src.utils.task_queue import TaskRecord, TaskStatus, get_task_queue
 from src.web.dependencies import (
     CFG,
     PATHS,

@@ -10,7 +10,6 @@ import re
 import json
 import base64
 import shutil
-import threading
 import subprocess
 import time
 import urllib.request

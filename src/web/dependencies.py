@@ -9,12 +9,32 @@ and utility guards to prevent circular imports between FastAPI routers and app.p
 from __future__ import annotations
 
 import asyncio
-from typing import Optional, Set
-from pathlib import Path
+from typing import Set
 
 from config import PATHS, CFG, AI, VERSION
 from src.utils.file_guard import save_upload_file_safely, purge_expired_files, purge_in_memory_records
 from src.utils.task_queue import get_task_queue, BaseTaskQueue
+
+__all__ = [
+    # Configuration re-exports
+    "PATHS",
+    "CFG",
+    "AI",
+    "VERSION",
+    # File guard re-exports
+    "save_upload_file_safely",
+    "purge_expired_files",
+    "purge_in_memory_records",
+    # Task queue re-exports
+    "get_task_queue",
+    "BaseTaskQueue",
+    # Concurrency locks and helpers
+    "_GPU_SEMAPHORE",
+    "_OCR_SEMAPHORE",
+    "_BACKGROUND_TASKS",
+    "get_gpu_semaphore",
+    "track_background_task",
+]
 
 # Global Concurrency Locks
 # Limits concurrent heavy AI / OCR / VLM operations to 1 on RTX 3060 (12GB VRAM)

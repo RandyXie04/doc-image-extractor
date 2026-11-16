@@ -15,16 +15,13 @@ PDF 智慧轉換與 AI 公式萃取全功能工作站 (PDFConversionAgent Pipeli
 import os
 import sys
 import io
-import glob
 import re
 import uuid
 import zipfile
-import threading
-from pathlib import Path
-from typing import Optional, Callable, Any
+from typing import Optional, Any
 
 # 集中設定中心：路徑由 pathlib 動態計算，API 金鑰/設定值由 .env 載入
-from config import PATHS, AI, CFG
+from config import PATHS, CFG
 
 import warnings
 warnings.filterwarnings("ignore", message=".*The `fitz` API is deprecated.*")
@@ -32,7 +29,6 @@ warnings.filterwarnings("ignore", message=".*The `fitz` API is deprecated.*")
 import pymupdf as fitz  # type: ignore
 import cv2
 import numpy as np
-from tqdm import tqdm  # type: ignore
 
 # Windows 終端 UTF-8 輸出相容性設定
 if sys.platform == 'win32':
@@ -107,7 +103,6 @@ def _init_mfd_worker(use_gpu=False):
     global _onnx_session, _onnx_input_name, _engine_type, _pt_model, _pt_device
     if _onnx_session is None and _engine_type is None:
         try:
-            import os
             from src.scripts.model_manager import ensure_model_ready
             
             model_info = ensure_model_ready()
@@ -141,7 +136,6 @@ def _init_mfd_worker(use_gpu=False):
             _engine_type = "none"
 
 def _process_single_page(args):
-    import traceback
     if len(args) >= 6:
         page_idx, input_pdf, formula_dir, dpi, max_safe_width, extract_inline = args[:6]
     else:

@@ -9,15 +9,13 @@ and text transformation rules) via deterministic LCS Diff Alignment without doma
 
 from __future__ import annotations
 import re
-import json
-import difflib
 import argparse
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Set
+from typing import Dict, List, Optional, Tuple, Set
 import docx
 
 from .blueprint_schema import BookBlueprint, StyleTriggerRule, ValidationConfig
-from .section_ast import SectionAST, SectionUnit
+from .section_ast import SectionAST
 
 
 class DiffAligner:

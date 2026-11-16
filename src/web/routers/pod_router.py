@@ -41,11 +41,6 @@ from src.web.schemas import (
 router = APIRouter(tags=["pod_studio"])
 
 
-def _get_web_deps():
-    """Backward-compatibility shim for older test fixtures."""
-    return PATHS, CFG, save_upload_file_safely
-
-
 @router.post("/api/pod/handoff_from_ocr", response_model=PodHandoffResponse)
 async def pod_handoff_from_ocr(
     filename_stem: str = Form(...),

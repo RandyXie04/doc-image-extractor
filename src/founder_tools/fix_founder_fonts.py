@@ -33,7 +33,6 @@ import sys
 import io
 import re
 import glob
-import unicodedata
 
 # Windows UTF-8 相容性
 if sys.platform == 'win32':
@@ -185,16 +184,13 @@ def repair_pdf_file(input_path: str, output_txt: str = None, output_docx: str = 
     if not output_docx:
         output_docx = f"{base}_修復文字稿.docx"
 
-    doc = fitz.open(input_path)
     full_cleaned_pages = []
-
-    print(f"[INFO] 正在讀取並修復 PDF: '{os.path.basename(input_path)}' (共 {len(doc)} 頁)...")
-    for page_idx, page in enumerate(doc):
-        raw_text = page.get_text()
-        cleaned_text = clean_founder_text(raw_text)
-        full_cleaned_pages.append(cleaned_text)
-
-    doc.close()
+    with fitz.open(input_path) as doc:
+        print(f"[INFO] 正在讀取並修復 PDF: '{os.path.basename(input_path)}' (共 {len(doc)} 頁)...")
+        for page_idx, page in enumerate(doc):
+            raw_text = page.get_text()
+            cleaned_text = clean_founder_text(raw_text)
+            full_cleaned_pages.append(cleaned_text)
 
     with open(output_txt, 'w', encoding='utf-8') as f:
         for pno, ptext in enumerate(full_cleaned_pages, start=1):
@@ -204,16 +200,18 @@ def repair_pdf_file(input_path: str, output_txt: str = None, output_docx: str = 
 
     try:
         import docx
-        docx_doc = docx.Document()
-        for pno, ptext in enumerate(full_cleaned_pages, start=1):
-            docx_doc.add_heading(f"第 {pno} 頁", level=2)
-            for line in ptext.splitlines():
-                if line.strip():
-                    docx_doc.add_paragraph(line)
-        docx_doc.save(output_docx)
-        print(f"[SUCCESS] 已產出修復後 Word 檔：\n  -> {output_docx}")
     except ImportError:
-        pass
+        print("[ERROR] 未安裝 python-docx 套件，跳過 DOCX 檔案產出。請執行: pip install python-docx")
+        return output_txt, None
+
+    docx_doc = docx.Document()
+    for pno, ptext in enumerate(full_cleaned_pages, start=1):
+        docx_doc.add_heading(f"第 {pno} 頁", level=2)
+        for line in ptext.splitlines():
+            if line.strip():
+                docx_doc.add_paragraph(line)
+    docx_doc.save(output_docx)
+    print(f"[SUCCESS] 已產出修復後 Word 檔：\n  -> {output_docx}")
 
     return output_txt, output_docx
 

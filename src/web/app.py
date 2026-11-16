@@ -14,10 +14,9 @@ import json
 import os
 import secrets
 import socket
-import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,18 +28,11 @@ from src.utils.file_guard import (
     MaxBodySizeMiddleware,
     purge_expired_files,
     purge_in_memory_records,
-    save_upload_file_safely,
 )
 from src.scripts.cleanup_scratch import cleanup_scratch
 from src.utils.path_helper import get_static_dir
-from src.utils.task_queue import TaskRecord, TaskStatus, get_event_broadcaster, get_task_queue
-from src.web.dependencies import (
-    _BACKGROUND_TASKS,
-    _GPU_SEMAPHORE,
-    _OCR_SEMAPHORE,
-    get_gpu_semaphore,
-    track_background_task,
-)
+from src.utils.task_queue import get_event_broadcaster, get_task_queue
+from src.web.dependencies import track_background_task
 from src.web.schemas import QueueTaskItem, QueueTasksResponse
 from src.web.routers.formula_router import (
     formula_tasks,
@@ -48,7 +40,6 @@ from src.web.routers.formula_router import (
     router as formula_router,
 )
 from src.web.routers.ocr_router import (
-    is_meaningful_progress_line,
     ocr_progress_dict,
     router as ocr_router,
 )

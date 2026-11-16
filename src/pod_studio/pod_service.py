@@ -11,7 +11,6 @@ Encapsulates the 3-stage POD automated styling and verification pipeline:
 from __future__ import annotations
 import re
 import json
-import uuid
 import os
 import shutil
 from pathlib import Path
@@ -20,14 +19,12 @@ import fitz
 import docx
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.shared import Inches
 
-from .blueprint_schema import BookBlueprint, StyleTriggerRule, ValidationConfig
-from .section_ast import SectionAST, SectionUnit, ParagraphUnit, BookAST, SectionAdapter
-from .exemplar_learner import ExemplarLearner, DiffAligner
+from .blueprint_schema import BookBlueprint
+from .section_ast import SectionAST, SectionUnit, ParagraphUnit, SectionAdapter
+from .exemplar_learner import ExemplarLearner
 from .propagation_engine import PropagationEngine
 from .pod_validator import PodValidator, ValidationReport
-from .cjk_validator import PODIntegrityValidator
 from .visual_fallback_repair import repair_corrupted_section_with_vlm
 from .docx_writer import DocxSerializer
 

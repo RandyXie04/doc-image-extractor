@@ -33,11 +33,6 @@ from src.plugins.registry import get_plugin_registry
 router = APIRouter(tags=["system"])
 
 
-def _get_web_deps():
-    """Backward-compatibility shim for older test fixtures."""
-    return PATHS, CFG, save_upload_file_safely
-
-
 def _cleanup_temp_files(*file_paths: str) -> None:
     """背景清理暫存檔，防止磁碟洩漏"""
     for p in file_paths:

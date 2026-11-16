@@ -21,7 +21,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 
 from src.web.dependencies import CFG, PATHS, save_upload_file_safely
 from src.web.schemas import ExtractImagesResponse

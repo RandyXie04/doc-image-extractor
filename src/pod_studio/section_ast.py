@@ -13,7 +13,7 @@ import json
 import argparse
 from pathlib import Path
 from dataclasses import dataclass, field, asdict
-from typing import List, Dict, Any, Optional, Sequence
+from typing import List, Dict, Any, Optional
 
 
 @dataclass

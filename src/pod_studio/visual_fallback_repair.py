@@ -10,10 +10,9 @@ enabling targeted multimodal VLM repair without full-book OCR overhead.
 from __future__ import annotations
 import fitz
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Sequence
+from typing import Dict, List, Any, Optional, Sequence
 
 from .blueprint_schema import BookBlueprint
-from .section_ast import ParagraphUnit, SectionUnit
 
 
 def render_page_crop(

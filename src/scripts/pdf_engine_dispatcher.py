@@ -2,7 +2,6 @@ import sys
 import argparse
 import os
 import json
-import subprocess
 from pathlib import Path
 import fitz
 
@@ -25,18 +24,18 @@ def is_vector_pdf(pdf_path, text_threshold=100):
     Check if a PDF is primarily vector/text-based by sampling the first few pages.
     """
     try:
-        doc = fitz.open(pdf_path)
-        total_text_length = 0
-        pages_to_check = min(5, len(doc))
-        if pages_to_check == 0:
-            return False
-            
-        for i in range(pages_to_check):
-            page = doc[i]
-            text = getattr(page, "get_text")("text")
-            total_text_length += len(text.strip())
-            
-        return (total_text_length / pages_to_check) > text_threshold
+        with fitz.open(pdf_path) as doc:
+            total_text_length = 0
+            pages_to_check = min(5, len(doc))
+            if pages_to_check == 0:
+                return False
+                
+            for i in range(pages_to_check):
+                page = doc[i]
+                text = getattr(page, "get_text")("text")
+                total_text_length += len(text.strip())
+                
+            return (total_text_length / pages_to_check) > text_threshold
     except Exception as e:
         print(f"Error checking PDF type: {e}")
         return False

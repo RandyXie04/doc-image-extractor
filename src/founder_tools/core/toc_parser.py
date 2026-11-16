@@ -9,53 +9,6 @@ import re
 from typing import Optional
 
 
-def find_toc_pages_ocr(pages_data: list) -> tuple:
-    """
-    在 OCR 管線的 pages_data 中定位目錄頁範圍。
-    pages_data: list of dicts, each with "page_num", "para_blocks" from layout/OCR parser.
-
-    Returns:
-        (toc_start_page, toc_end_page) — 1-indexed page numbers.
-        若未找到目錄頁，回傳 (None, None)。
-    """
-    toc_keywords = re.compile(r'^(?:目\s*錄|目\s*录|CONTENTS|Table\s+of\s+Contents)\s*$',
-                              re.IGNORECASE)
-    toc_start = None
-    toc_end = None
-
-    for page_info in pages_data:
-        page_num = page_info.get("page_idx", page_info.get("page_num", 0))
-        if isinstance(page_num, int) and page_num < 1:
-            page_num += 1  # convert 0-indexed to 1-indexed
-
-        para_blocks = page_info.get("para_blocks", [])
-
-        for block in para_blocks:
-            text = _extract_block_text_ocr(block).strip()
-            if toc_keywords.match(text):
-                toc_start = page_num
-                break
-
-        # If we've started the TOC, keep going until we find a non-TOC page
-        if toc_start and toc_start != page_num:
-            # Check if this page still looks like TOC
-            has_toc_entry = False
-            for block in para_blocks:
-                text = _extract_block_text_ocr(block).strip()
-                if _is_toc_entry_line(text):
-                    has_toc_entry = True
-                    break
-            if has_toc_entry:
-                toc_end = page_num
-            else:
-                break
-
-    if toc_start and not toc_end:
-        toc_end = toc_start
-
-    return (toc_start, toc_end)
-
-
 def find_toc_pages_vector(doc, max_search_pages: int = 20) -> tuple:
     """
     在向量 PDF (PyMuPDF fitz.Document) 中定位目錄頁範圍。
@@ -159,23 +112,6 @@ def parse_toc_entries_from_text(toc_text_lines: list, base_x0_values: list = Non
             })
 
     return entries
-
-
-def parse_toc_entries_from_blocks_ocr(para_blocks: list) -> list:
-    """
-    從 OCR 管線的 para_blocks 中解析目錄條目。
-    """
-    lines = []
-    x0_values = []
-    for block in para_blocks:
-        text = _extract_block_text_ocr(block)
-        if text.strip():
-            bbox = block.get("bbox", [0, 0, 0, 0])
-            for sub_line in text.split('\n'):
-                if sub_line.strip():
-                    lines.append(sub_line.strip())
-                    x0_values.append(bbox[0] if len(bbox) >= 1 else 0)
-    return parse_toc_entries_from_text(lines, x0_values)
 
 
 def parse_toc_entries_from_blocks_vector(blocks: list) -> list:

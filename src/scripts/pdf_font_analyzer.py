@@ -28,69 +28,66 @@ def scan_pdf_fonts(pdf_path: str, max_samples: int = 3, max_sample_len: int = 60
       - position_summary : 頁面位置分布（top/middle/bottom 比例與置中比例）
       - sample_texts : 最多 max_samples 句代表性文字
     """
-    doc: Any = fitz.open(pdf_path)
-
     font_data: dict[str, dict] = {}
 
-    for page_idx, page in enumerate(doc):
-        page_h = max(1.0, float(page.rect.height))
-        page_w = max(1.0, float(page.rect.width))
-        blocks = page.get_text("dict").get("blocks", [])
-        for block in blocks:
-            if block.get("type") != 0:
-                continue
-            for line in block.get("lines", []):
-                line_bbox = line.get("bbox", block.get("bbox", [0, 0, 0, 0]))
-                for span in line.get("spans", []):
-                    raw_font = span.get("font", "") or ""
-                    text = (span.get("text") or "").strip()
-                    size = round(span.get("size", 0) * 2) / 2  # round to nearest 0.5
+    with fitz.open(pdf_path) as doc:
+        for page_idx, page in enumerate(doc):
+            page_h = max(1.0, float(page.rect.height))
+            page_w = max(1.0, float(page.rect.width))
+            blocks = page.get_text("dict").get("blocks", [])
+            for block in blocks:
+                if block.get("type") != 0:
+                    continue
+                for line in block.get("lines", []):
+                    line_bbox = line.get("bbox", block.get("bbox", [0, 0, 0, 0]))
+                    for span in line.get("spans", []):
+                        raw_font = span.get("font", "") or ""
+                        text = (span.get("text") or "").strip()
+                        size = round(span.get("size", 0) * 2) / 2  # round to nearest 0.5
 
-                    if not raw_font or not text:
-                        continue
+                        if not raw_font or not text:
+                            continue
 
-                    # 去掉 PDF 子集前綴（格式：XXXXXX+FontName）
-                    clean_name = raw_font.split("+", 1)[-1] if "+" in raw_font else raw_font
+                        # 去掉 PDF 子集前綴（格式：XXXXXX+FontName）
+                        clean_name = raw_font.split("+", 1)[-1] if "+" in raw_font else raw_font
 
-                    font_key = f"{clean_name}_{size}"
+                        font_key = f"{clean_name}_{size}"
 
-                    if font_key not in font_data:
-                        font_data[font_key] = {
-                            "clean_name": clean_name,
-                            "full_name": raw_font,
-                            "size": size,
-                            "texts": [],
-                            "occurrence_count": 0,
-                            "pages": set(),
-                            "pos_counts": {"top": 0, "middle": 0, "bottom": 0},
-                            "centered_count": 0,
-                        }
+                        if font_key not in font_data:
+                            font_data[font_key] = {
+                                "clean_name": clean_name,
+                                "full_name": raw_font,
+                                "size": size,
+                                "texts": [],
+                                "occurrence_count": 0,
+                                "pages": set(),
+                                "pos_counts": {"top": 0, "middle": 0, "bottom": 0},
+                                "centered_count": 0,
+                            }
 
-                    entry = font_data[font_key]
-                    entry["occurrence_count"] += 1
-                    entry["pages"].add(page_idx + 1)
+                        entry = font_data[font_key]
+                        entry["occurrence_count"] += 1
+                        entry["pages"].add(page_idx + 1)
 
-                    span_bbox = span.get("bbox") or line_bbox
-                    if span_bbox and len(span_bbox) >= 4:
-                        y_center = (float(span_bbox[1]) + float(span_bbox[3])) / 2.0
-                        x_center = (float(span_bbox[0]) + float(span_bbox[2])) / 2.0
-                        y_ratio = y_center / page_h
-                        if y_ratio < 0.25:
-                            entry["pos_counts"]["top"] += 1
-                        elif y_ratio > 0.75:
-                            entry["pos_counts"]["bottom"] += 1
+                        span_bbox = span.get("bbox") or line_bbox
+                        if span_bbox and len(span_bbox) >= 4:
+                            y_center = (float(span_bbox[1]) + float(span_bbox[3])) / 2.0
+                            x_center = (float(span_bbox[0]) + float(span_bbox[2])) / 2.0
+                            y_ratio = y_center / page_h
+                            if y_ratio < 0.25:
+                                entry["pos_counts"]["top"] += 1
+                            elif y_ratio > 0.75:
+                                entry["pos_counts"]["bottom"] += 1
+                            else:
+                                entry["pos_counts"]["middle"] += 1
+                            if abs(x_center - (page_w / 2.0)) < (page_w * 0.12):
+                                entry["centered_count"] += 1
                         else:
                             entry["pos_counts"]["middle"] += 1
-                        if abs(x_center - (page_w / 2.0)) < (page_w * 0.12):
-                            entry["centered_count"] += 1
-                    else:
-                        entry["pos_counts"]["middle"] += 1
 
-                    # 積累非重複的樣本句子
-                    if text not in entry["texts"] and len(text) >= 2:
-                        entry["texts"].append(text)
-
-    doc.close()
+                        # 積累非重複的樣本句子
+                        if text not in entry["texts"] and len(text) >= 2:
+                            entry["texts"].append(text)
 
     result = []
     for font_key, data in font_data.items():

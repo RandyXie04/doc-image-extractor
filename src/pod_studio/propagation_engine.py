@@ -13,8 +13,8 @@ import argparse
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Union, Sequence, Tuple
 
-from .blueprint_schema import BookBlueprint, StyleTriggerRule, IndexTaggingInstruction
-from .section_ast import SectionUnit, SectionAST, ParagraphUnit
+from .blueprint_schema import BookBlueprint, IndexTaggingInstruction
+from .section_ast import SectionUnit, SectionAST
 
 
 class PropagationEngine:

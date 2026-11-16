@@ -12,7 +12,6 @@ OCR 生僻字後處理與可疑字元偵測模組
 """
 
 import os
-import re
 import json
 import datetime
 import unicodedata

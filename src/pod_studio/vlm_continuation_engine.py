@@ -14,23 +14,16 @@ from __future__ import annotations
 
 import os
 import re
-import io
 import json
 import uuid
-import base64
 import asyncio
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple, Sequence
+from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, asdict, field
 
 import docx
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.table import WD_TABLE_ALIGNMENT
-from docx.shared import Inches
 import fitz
-from src.pod_studio.section_ast import SectionAST, SectionUnit, ParagraphUnit
-from src.pod_studio.blueprint_schema import BookBlueprint
-from src.pod_studio.cjk_validator import PODIntegrityValidator, CJKValidationResult
+from src.pod_studio.section_ast import SectionAST, SectionUnit
 from src.pod_studio.docx_writer import DocxSerializer
 from src.pod_studio.exemplar_learner import ExemplarLearner, DEFAULT_BOUNDARY_TAGS
 

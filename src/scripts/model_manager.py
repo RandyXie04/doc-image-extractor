@@ -1,9 +1,7 @@
 import os
-import sys
 import urllib.request
 import json
 import urllib.error
-import shutil
 import threading
 from pathlib import Path
 

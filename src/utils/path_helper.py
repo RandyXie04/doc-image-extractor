@@ -24,14 +24,8 @@ def get_bundle_dir() -> Path:
 def get_config_dir() -> Path:
     return get_app_dir() / "config"
 
-def get_models_dir() -> Path:
-    return get_app_dir() / "models"
-
 def get_data_dir() -> Path:
     return get_app_dir() / "data"
-
-def get_log_dir() -> Path:
-    return get_app_dir() / "logs" # 獨立出 logs 資料夾
 
 def get_scratch_dir() -> Path:
     return get_app_dir() / "scratch"
