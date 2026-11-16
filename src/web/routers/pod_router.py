@@ -283,6 +283,8 @@ async def pod_3_propagate_and_validate(
     if template_file and template_file.filename:
         template_path = session_dir / "template.docx"
         await save_upload_file_safely(template_file, template_path, max_mb=CFG.max_template_size_mb)
+    elif (session_dir / "template.docx").exists():
+        template_path = session_dir / "template.docx"
 
     custom_bp = None
     if blueprint_json:
@@ -422,6 +424,8 @@ async def pod_vlm_continuation(
     if template_file and template_file.filename:
         template_path = session_dir / "template.docx"
         await save_upload_file_safely(template_file, template_path, max_mb=CFG.max_template_size_mb)
+    elif (session_dir / "template.docx").exists():
+        template_path = session_dir / "template.docx"
 
     engine = SecureVLMContinuationEngine(
         workspace_base=PATHS.output_dir / "pod_workspaces"

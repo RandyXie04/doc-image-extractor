@@ -114,6 +114,8 @@ class OcrFileUploadResponse(StrictApiSchema):
     file_id: str
     filename_orig: str
     filename_stem: str
+    total_pages: int = Field(default=1, ge=1)
+    orig_name: Optional[str] = None
 
 
 class OcrRunStartResponse(StrictApiSchema):
@@ -143,6 +145,10 @@ class FontInfoItem(StrictApiSchema):
     current_docx_style: Optional[str] = None
     suggested_role: Optional[str] = None
     gemma_status: Optional[str] = "not_run"
+    mapped_by: Optional[str] = None
+    ai_layout_retained: Optional[bool] = None
+    ai_layout_confidence: Optional[float] = None
+    ai_layout_reason: Optional[str] = None
 
 
 class FontScanResponse(StrictApiSchema):
@@ -204,10 +210,16 @@ class FormulaTaskSubmitResponse(StrictApiSchema):
 
 
 class FormulaTaskStatusResponse(StrictApiSchema):
-    status: Literal["processing", "completed", "failed"]
-    progress: int = Field(..., ge=0, le=100)
-    message: str
-    mode: str
+    status: Literal["queued", "running", "processing", "completed", "failed", "cancelled", "not_found"]
+    progress: float = Field(default=0.0, ge=0.0, le=100.0)
+    message: Optional[str] = ""
+    log: Optional[str] = ""
+    result_file: Optional[str] = None
+    word_file: Optional[str] = None
+    zip_file: Optional[str] = None
+    orig_name: Optional[str] = None
+    created_at: Optional[float] = None
+    mode: Optional[str] = None
     total_pages: int = Field(default=0, ge=0)
     current_page: int = Field(default=0, ge=0)
     results: List[Dict[str, Any]] = Field(default_factory=list)
@@ -240,6 +252,9 @@ class HardwareStatusResponse(StrictApiSchema):
     active_provider: str = "CPUExecutionProvider"
     vram_gb: float = 0.0
     is_accelerated: bool = False
+    formula_accelerator: Optional[Dict[str, Any]] = None
+    ocr_accelerator: Optional[Dict[str, Any]] = None
+    last_probed: Optional[str] = None
 
 
 class UpdateCheckResponse(StrictApiSchema):

@@ -84,6 +84,8 @@ export interface OcrFileUploadResponse {
   readonly file_id: string;
   readonly filename_orig: string;
   readonly filename_stem: string;
+  readonly total_pages: number;
+  readonly orig_name: string | null;
 }
 
 export interface OcrRunStartResponse {
@@ -113,6 +115,10 @@ export interface FontInfoItem {
   readonly current_docx_style: string | null;
   readonly suggested_role: string | null;
   readonly gemma_status: string | null;
+  readonly mapped_by: string | null;
+  readonly ai_layout_retained: boolean | null;
+  readonly ai_layout_confidence: number | null;
+  readonly ai_layout_reason: string | null;
 }
 
 export interface FontScanResponse {
@@ -170,10 +176,16 @@ export interface FormulaTaskSubmitResponse {
 }
 
 export interface FormulaTaskStatusResponse {
-  readonly status: "processing" | "completed" | "failed";
+  readonly status: "queued" | "running" | "processing" | "completed" | "failed" | "cancelled" | "not_found";
   readonly progress: number;
-  readonly message: string;
-  readonly mode: string;
+  readonly message: string | null;
+  readonly log: string | null;
+  readonly result_file: string | null;
+  readonly word_file: string | null;
+  readonly zip_file: string | null;
+  readonly orig_name: string | null;
+  readonly created_at: number | null;
+  readonly mode: string | null;
   readonly total_pages: number;
   readonly current_page: number;
   readonly results?: Record<string, unknown>[];
@@ -202,6 +214,9 @@ export interface HardwareStatusResponse {
   readonly active_provider: string;
   readonly vram_gb: number;
   readonly is_accelerated: boolean;
+  readonly formula_accelerator: Record<string, unknown> | null;
+  readonly ocr_accelerator: Record<string, unknown> | null;
+  readonly last_probed: string | null;
 }
 
 export interface UpdateCheckResponse {
@@ -212,6 +227,28 @@ export interface UpdateCheckResponse {
   readonly release_notes: string;
   readonly published_at: string;
   readonly error: string | null;
+}
+
+export interface PodHandoffResponse {
+  readonly status: "success";
+  readonly session_id: string;
+  readonly docx_name: string;
+  readonly pdf_name: string;
+  readonly total_paragraphs: number;
+  readonly message: string;
+}
+
+export interface HardwareTelemetryResponse {
+  readonly gpu_name: string;
+  readonly target_accelerator: string;
+  readonly active_provider: string;
+  readonly total_vram_gb: number;
+  readonly allocated_vram_mb: number;
+  readonly reserved_vram_mb: number;
+  readonly vram_usage_percent: number;
+  readonly is_accelerated: boolean;
+  readonly gpu_locked: boolean;
+  readonly app_mode: string;
 }
 
 export interface TaskPluginSpecItem {

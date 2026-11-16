@@ -33,7 +33,14 @@ from src.web.dependencies import (
     save_upload_file_safely,
     track_background_task,
 )
-from src.web.schemas import OcrProgressResponse, OcrRunStartResponse
+from src.web.schemas import (
+    FontMappingSaveResponse,
+    FontScanResponse,
+    MarkdownRebuildRequest,
+    MarkdownRebuildResponse,
+    OcrProgressResponse,
+    OcrRunStartResponse,
+)
 
 logger = logging.getLogger("ocr_router")
 router = APIRouter(tags=["ocr_pipeline"])
@@ -46,10 +53,6 @@ def _emit_font_suggest_diag(log_line: str) -> None:
 
 # Shared in-memory OCR progress tracking for backward-compatible polling
 ocr_progress_dict: Dict[str, Dict[str, Any]] = {}
-
-
-class MarkdownUpdate(BaseModel):
-    content: str
 
 
 def is_meaningful_progress_line(line: str) -> bool:
@@ -494,8 +497,8 @@ async def get_markdown(filename_stem: str):
     return {"filename_stem": filename_stem, "content": content}
 
 
-@router.post("/api/update_and_rebuild_docx/{filename_stem}")
-async def update_and_rebuild_docx(filename_stem: str, update: MarkdownUpdate):
+@router.post("/api/update_and_rebuild_docx/{filename_stem}", response_model=MarkdownRebuildResponse)
+async def update_and_rebuild_docx(filename_stem: str, update: MarkdownRebuildRequest):
     """Save modified Markdown content and re-trigger Word document conversion."""
     output_dir = PATHS.root / "data" / "03_output"
     md_file = output_dir / f"{filename_stem}.md"
@@ -522,7 +525,7 @@ async def update_and_rebuild_docx(filename_stem: str, update: MarkdownUpdate):
     return {"status": "success", "message": "已成功更新 Markdown 並重新套用樣式產生 Word 文件！"}
 
 
-@router.post("/api/scan_fonts")
+@router.post("/api/scan_fonts", response_model=FontScanResponse)
 async def scan_fonts(request: Request):
     """
     掃描 PDF 字型與 template.docx 段落樣式。
@@ -530,7 +533,7 @@ async def scan_fonts(request: Request):
     Body JSON: { "file_id": "...", "filename_orig": "..." }
     """
     from src.scripts.pdf_font_analyzer import analyze_pdf_for_ui
-    from src.utils.path_helper import get_template_path
+    from src.utils.path_helper import resolve_active_template_path
 
     data = await request.json()
     file_id: str = data.get("file_id", "")
@@ -550,16 +553,8 @@ async def scan_fonts(request: Request):
     if not pdf_path:
         raise HTTPException(status_code=404, detail="找不到 PDF 檔案，請先上傳 PDF。")
 
-    template_candidates = [
-        PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx",
-        PATHS.data_dir / "database_text" / "template.docx",
-        get_template_path(),
-    ]
-    template_path = None
-    for tc in template_candidates:
-        if Path(str(tc)).exists():
-            template_path = str(tc)
-            break
+    active_template = resolve_active_template_path()
+    template_path = str(active_template) if active_template else None
 
     fonts_json_path = str(PATHS.fonts_json_path)
 
@@ -596,7 +591,7 @@ async def suggest_font_mappings(request: Request):
     )
     from src.scripts.pdf_font_analyzer import scan_pdf_fonts
     from src.utils.docx_style_profiles import read_docx_style_profiles
-    from src.utils.path_helper import get_template_path
+    from src.utils.path_helper import resolve_active_template_path
 
     req_id = uuid.uuid4().hex[:8]
     start_ts = time.perf_counter()
@@ -645,16 +640,8 @@ async def suggest_font_mappings(request: Request):
     if isinstance(supplied_styles, list):
         docx_style_profiles = supplied_styles
     else:
-        template_candidates = [
-            PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx",
-            PATHS.data_dir / "database_text" / "template.docx",
-            get_template_path(),
-        ]
-        template_path = None
-        for tc in template_candidates:
-            if Path(str(tc)).exists():
-                template_path = str(tc)
-                break
+        active_template = resolve_active_template_path()
+        template_path = str(active_template) if active_template else None
         docx_style_profiles = []
         if template_path:
             try:
@@ -766,7 +753,7 @@ async def suggest_font_mappings(request: Request):
     return result
 
 
-@router.post("/api/save_font_mapping")
+@router.post("/api/save_font_mapping", response_model=FontMappingSaveResponse)
 async def save_font_mapping_endpoint(request: Request):
     """
     儲存人工審查後的字型 -> 樣式 fonts.json。

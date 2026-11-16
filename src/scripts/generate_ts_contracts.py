@@ -42,6 +42,8 @@ try:
         FounderRepairResponse,
         HardwareStatusResponse,
         UpdateCheckResponse,
+        PodHandoffResponse,
+        HardwareTelemetryResponse,
         TaskPluginSpecItem,
         TaskPluginListResponse,
     )
@@ -84,6 +86,8 @@ except ImportError:
         FounderRepairResponse,
         HardwareStatusResponse,
         UpdateCheckResponse,
+        PodHandoffResponse,
+        HardwareTelemetryResponse,
         TaskPluginSpecItem,
         TaskPluginListResponse,
     )
@@ -123,6 +127,8 @@ EXPORTED_MODELS: List[Type[BaseModel]] = [
     FounderRepairResponse,
     HardwareStatusResponse,
     UpdateCheckResponse,
+    PodHandoffResponse,
+    HardwareTelemetryResponse,
     TaskPluginSpecItem,
     TaskPluginListResponse,
     ParagraphLayoutContract,

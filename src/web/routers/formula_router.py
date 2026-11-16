@@ -34,6 +34,11 @@ from src.web.dependencies import (
     save_upload_file_safely,
     track_background_task,
 )
+from src.web.schemas import (
+    FormulaTaskStatusResponse,
+    FormulaTaskSubmitResponse,
+    OcrFileUploadResponse,
+)
 
 router = APIRouter(tags=["formula_extraction"])
 
@@ -114,7 +119,7 @@ def process_pdf_sync(
         queue.update_task(task_id, status=TaskStatus.FAILED.value, message=err_msg, error=str(e))
 
 
-@router.post("/api/upload_file")
+@router.post("/api/upload_file", response_model=OcrFileUploadResponse)
 async def upload_file(file: UploadFile = File(...)):
     """Upload PDF file for formula extraction or visual crop inspection."""
     orig_ext = Path(file.filename).suffix.lower() if file.filename else ""
@@ -136,7 +141,14 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail=f"無法解析此 PDF 檔案: {e}")
 
     orig_name = Path(file.filename).stem if file.filename else "已轉檔"
-    return {"file_id": file_id, "total_pages": total_pages, "orig_name": orig_name}
+    orig_filename = file.filename or "已轉檔.pdf"
+    return {
+        "file_id": file_id,
+        "total_pages": total_pages,
+        "orig_name": orig_name,
+        "filename_orig": orig_filename,
+        "filename_stem": orig_name,
+    }
 
 
 @router.post("/api/upload_template")
@@ -157,34 +169,34 @@ async def upload_template(file: UploadFile = File(...)):
 @router.get("/api/get_current_template")
 async def get_current_template():
     """Check existence of active user or system Word templates."""
-    template_path = PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx"
-    default_template_path = PATHS.data_dir / "database_text" / "template.docx"
-    from src.utils.path_helper import get_template_path
+    from src.utils.path_helper import resolve_active_template_path, get_template_path
 
-    bundled_template_path = get_template_path()
+    active = resolve_active_template_path()
+    if not active:
+        return {"has_custom": False, "name": "無可用範本"}
 
-    if template_path.exists():
+    user_template = PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx"
+    default_template = PATHS.data_dir / "database_text" / "template.docx"
+    bundled_template = get_template_path()
+
+    if active.resolve() == user_template.resolve():
         return {"has_custom": True, "name": "user_template.docx"}
-    elif default_template_path.exists():
+    elif active.resolve() == default_template.resolve():
         return {"has_custom": False, "name": "系統自訂範本"}
-    elif bundled_template_path.exists():
+    elif active.resolve() == bundled_template.resolve():
         return {"has_custom": False, "name": "系統預設範本"}
     else:
-        return {"has_custom": False, "name": "無可用範本"}
+        return {"has_custom": False, "name": active.name}
 
 
 @router.get("/api/get_template_styles")
 async def get_template_styles():
     """Extract paragraph style names defined in the active docx template."""
-    from src.utils.path_helper import get_template_path
+    from src.utils.path_helper import resolve_active_template_path
 
-    template_path = PATHS.data_dir / "database_text" / "custom_templates" / "user_template.docx"
-    if not template_path.exists():
-        template_path = PATHS.data_dir / "database_text" / "template.docx"
-        if not template_path.exists():
-            template_path = get_template_path()
-            if not template_path.exists():
-                return {"status": "error", "message": "無可用範本"}
+    template_path = resolve_active_template_path()
+    if not template_path or not template_path.exists():
+        return {"status": "error", "message": "無可用範本"}
 
     styles = []
     w_ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -251,7 +263,7 @@ async def render_preview(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/process")
+@router.post("/api/process", response_model=FormulaTaskSubmitResponse)
 async def start_process(
     background_tasks: BackgroundTasks,
     file_id: str = Form(...),
@@ -338,7 +350,7 @@ async def start_process(
     return {"task_id": task_id}
 
 
-@router.get("/api/status/{task_id}")
+@router.get("/api/status/{task_id}", response_model=FormulaTaskStatusResponse)
 async def get_status(task_id: str):
     """Retrieve status of formula extraction task."""
     if task_id in formula_tasks:
@@ -352,7 +364,7 @@ async def get_status(task_id: str):
             "log": rec.message,
             "created_at": rec.created_at,
         }
-    return {"status": "not_found"}
+    return {"status": "not_found", "progress": 0.0, "message": "查無此任務記錄"}
 
 
 @router.get("/api/download/{task_id}")

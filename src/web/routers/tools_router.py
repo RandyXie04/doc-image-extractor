@@ -23,7 +23,12 @@ from typing import Any, Dict
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
-from src.web.dependencies import CFG, PATHS, save_upload_file_safely
+from src.web.dependencies import (
+    CFG,
+    PATHS,
+    is_local_dev_request,
+    save_upload_file_safely,
+)
 from src.web.schemas import ExtractImagesResponse
 
 router = APIRouter(tags=["tools"])
@@ -120,9 +125,7 @@ async def open_folder(task_id: str, request: Request):
     if not target_path or not os.path.exists(target_path):
         raise HTTPException(status_code=404, detail="資料夾或檔案不存在")
 
-    client_host = request.client.host if request.client else ""
-    is_local = client_host in {"127.0.0.1", "::1", "localhost", "testclient"}
-    if not is_local:
+    if not is_local_dev_request(request):
         return {"status": "fallback", "message": "遠端連線無法開啟伺服器資料夾，請改用瀏覽器下載。"}
 
     try:
@@ -150,9 +153,7 @@ async def native_save_file(request: Request):
     if not source_full.is_relative_to(PATHS.root.resolve()) or not source_full.exists():
         raise HTTPException(status_code=404, detail="來源成果檔案不存在或存取受限")
 
-    client_host = request.client.host if request.client else ""
-    is_local = client_host in {"127.0.0.1", "::1", "localhost", "testclient"}
-    if not is_local:
+    if not is_local_dev_request(request):
         return {"status": "fallback", "message": "遠端連線無法開啟伺服器視窗，已自動切換為瀏覽器下載"}
 
     if destination_path:
@@ -201,9 +202,7 @@ async def open_file_folder(request: Request):
     if not raw_path:
         raise HTTPException(status_code=400, detail="缺少檔案路徑")
 
-    client_host = request.client.host if request.client else ""
-    is_local = client_host in {"127.0.0.1", "::1", "localhost", "testclient"}
-    if not is_local:
+    if not is_local_dev_request(request):
         return {"status": "fallback", "message": "遠端連線無法開啟伺服器資料夾，請改用瀏覽器下載。"}
 
     candidate = Path(raw_path)

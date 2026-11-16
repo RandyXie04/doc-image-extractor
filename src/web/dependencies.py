@@ -9,7 +9,10 @@ and utility guards to prevent circular imports between FastAPI routers and app.p
 from __future__ import annotations
 
 import asyncio
+import socket
 from typing import Set
+
+from fastapi import Request
 
 from config import PATHS, CFG, AI, VERSION
 from src.utils.file_guard import save_upload_file_safely, purge_expired_files, purge_in_memory_records
@@ -34,6 +37,9 @@ __all__ = [
     "_BACKGROUND_TASKS",
     "get_gpu_semaphore",
     "track_background_task",
+    # Local dev request detection
+    "get_local_dev_ips",
+    "is_local_dev_request",
 ]
 
 # Global Concurrency Locks
@@ -58,3 +64,34 @@ def track_background_task(task: asyncio.Task) -> asyncio.Task:
     _BACKGROUND_TASKS.add(task)
     task.add_done_callback(_BACKGROUND_TASKS.discard)
     return task
+
+
+def get_local_dev_ips() -> set[str]:
+    """取得開發本機所有 Loopback 與本機網卡 IP 位址集合"""
+    ips = {"127.0.0.1", "::1", "localhost", "testclient"}
+    try:
+        hostname = socket.gethostname()
+        for info in socket.getaddrinfo(hostname, None):
+            addr = info[4][0]
+            if addr:
+                ips.add(str(addr).split("%")[0])
+    except Exception:
+        pass
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ips.add(s.getsockname()[0])
+    except Exception:
+        pass
+    return ips
+
+
+def is_local_dev_request(request: Request) -> bool:
+    """偵測請求來源是否為開發本機 IP 位址"""
+    client_host = (request.client.host if request.client else "").strip()
+    if not client_host:
+        return False
+    normalized = client_host.split("%")[0]
+    if normalized.startswith("::ffff:"):
+        normalized = normalized[7:]
+    return normalized in get_local_dev_ips()

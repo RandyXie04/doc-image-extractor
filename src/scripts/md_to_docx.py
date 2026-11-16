@@ -10,14 +10,14 @@ import pypandoc
 
 # Configure pypandoc to use the bundled pandoc.exe if available
 try:
-    from src.utils.path_helper import get_bundled_pandoc, get_data_dir, get_config_dir, get_template_path
+    from src.utils.path_helper import get_bundled_pandoc, get_data_dir, get_config_dir, get_template_path, resolve_active_template_path
 except ImportError:
     import sys
     from pathlib import Path
     _fallback_root = Path(__file__).parent.parent.parent.resolve()
     if str(_fallback_root) not in sys.path:
         sys.path.insert(0, str(_fallback_root))
-    from src.utils.path_helper import get_bundled_pandoc, get_data_dir, get_config_dir, get_template_path
+    from src.utils.path_helper import get_bundled_pandoc, get_data_dir, get_config_dir, get_template_path, resolve_active_template_path
 
 bundled_pandoc = get_bundled_pandoc()
 if bundled_pandoc.exists():
@@ -124,28 +124,13 @@ def main():
     # 4. Bundled template.docx in package (src/founder_tools/template.docx)
     # 5. config dir template.docx
     # 6. script dir template.docx
-    if args.template and Path(args.template).exists():
-        template_path = args.template
-        print(f"Using template (from --template arg): {template_path}")
+    active_path = resolve_active_template_path(args.template)
+    if active_path:
+        template_path = str(active_path)
+        print(f"Using template: {template_path}")
     else:
-        _template_candidates = [
-            _data_dir / 'database_text' / 'custom_templates' / 'user_template.docx',  # user uploaded
-            _data_dir / 'database_text' / 'template.docx',
-            get_template_path(),  # bundled in package
-            _config_dir / 'template.docx',
-            _script_dir / 'template.docx',
-        ]
         template_path = None
-        for _candidate in _template_candidates:
-            if _candidate.exists():
-                template_path = str(_candidate)
-                print(f"Using template: {template_path}")
-                break
-
-        if template_path is None:
-            _searched = ', '.join(str(c) for c in _template_candidates)
-            print(f"Warning: template.docx not found (searched: {_searched}). "
-                  "Converting without reference doc — styles may differ.")
+        print("Warning: template.docx not found. Converting without reference doc — styles may differ.")
         
     md_files = []
     

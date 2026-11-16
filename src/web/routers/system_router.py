@@ -21,9 +21,16 @@ from typing import Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
-from src.web.dependencies import CFG, PATHS, _GPU_SEMAPHORE, save_upload_file_safely
+from src.web.dependencies import (
+    CFG,
+    PATHS,
+    _GPU_SEMAPHORE,
+    is_local_dev_request,
+    save_upload_file_safely,
+)
 from src.web.schemas import (
     FounderRepairResponse,
+    HardwareStatusResponse,
     HardwareTelemetryResponse,
     TaskPluginListResponse,
     TaskPluginSpecItem,
@@ -86,8 +93,7 @@ async def check_update():
 
 @router.post("/api/apply_update")
 async def apply_update(request: Request):
-    client_host = request.client.host if request.client else ""
-    if client_host not in ("127.0.0.1", "::1", "localhost", "testclient"):
+    if not is_local_dev_request(request):
         raise HTTPException(status_code=403, detail="安全限制：系統更新僅允許伺服器本機操作")
 
     data = await request.json()
@@ -142,7 +148,7 @@ async def list_system_plugins(
     return TaskPluginListResponse(status="success", total=len(items), plugins=items)
 
 
-@router.get("/api/hardware_status")
+@router.get("/api/hardware_status", response_model=HardwareStatusResponse)
 async def get_hardware_status():
     """取得靜態硬體規格設定檔"""
     return CFG.get_hardware_profile()
