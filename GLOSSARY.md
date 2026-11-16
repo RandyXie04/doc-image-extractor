@@ -146,9 +146,29 @@ TypeScript tagged unions (`type: "paragraph" | "heading" | "table" | "figure" | 
 
 Responsive shell, layout tokens, and device category classification (`mobile` | `tablet` | `desktop` | `ultrawide`) implemented in `frontend/src/layout/` and bridged to vanilla web runtime via `src/web/static/js/viewport_manager.js`.
 
-### GPU Mutual Exclusion Semaphore (GPU 互斥信號量 / `_GPU_SEMAPHORE`)
+### Single-Core + Pluggable Task Foundation (單核心 + 可插拔專項工作任務底座)
 
-Global single-concurrency asynchronous lock (`_GPU_SEMAPHORE = asyncio.Semaphore(1)` in `src/web/dependencies.py`) enforcing strict sequential execution across heavy GPU workloads (RTX 3060 12GB), including YOLO ONNX formula extraction, Surya layout OCR, and VLM multimodal inference, preventing VRAM Out-Of-Memory (OOM) panics.
+The modular publishing system architecture separating the core book typesetting engine (`core_typesetting`: `ocr_pipeline`, `pod_studio`) from pluggable specialized publishing sub-tools (`auxiliary_task`: `founder_repair`, `extract_images`, `formula_extraction`, etc.). Enforces zero-intrusion extensibility where new sub-tools are implemented as isolated `BaseTaskPlugin` units (`src/plugins/base.py`) rather than hardcoded into core pipelines.
+
+### TaskPluginRegistry & Dynamic Plugin Discovery (專項任務註冊中心與動態外掛發現)
+
+The singleton lifecycle manager (`src/plugins/registry.py`) and discovery endpoint (`GET /api/system/plugins` in `src/web/routers/system_router.py`) that manage `TaskPluginSpec` metadata (including `formula_extraction` with `api_prefix="/api/process"`), file extension whitelists, and FastAPI router mounting, allowing `src/web/static/sidebar.js` and `src/web/static/index.html` to dynamically render enabled sub-tools without static array edits.
+
+### StandardTaskClient (前端標準任務通訊客戶端)
+
+Universal frontend task orchestration client (`src/web/static/js/task_client.js`) providing a unified interface for `FormData` submission, Server-Sent Events (SSE) real-time progress streaming (`/api/tasks/{task_id}/events`) with automatic HTTP polling fallback (`/api/status/{task_id}`), and live task cancellation (`/api/queue/cancel/{task_id}`).
+
+### GPU Concurrency Semaphore (GPU 推論資源互斥鎖 / `get_gpu_semaphore`)
+
+Global asynchronous concurrency lock (`get_gpu_semaphore()` in `src/web/dependencies.py`) serializing heavy GPU workloads (RTX 3060 12GB), including YOLOv8 ONNX formula extraction, Surya layout OCR, and local Ollama VLM multimodal inference across core pipelines (`ocr_pipeline`, `pod_router`) and pluggable sub-tools (`formula_extraction`), preventing VRAM Out-Of-Memory (OOM) crashes.
+
+### Dual-Mode File Delivery Loop (檔案交付雙模閉環)
+
+Artifact delivery mechanism (`window.toolbox.nativeSave` in `src/web/static/js/output.js` and `/api/native_save_file` in `src/web/routers/tools_router.py`) that invokes native Windows Save-As dialogs for local sessions while requiring an HTTP download endpoint (`fallbackUrl`) for seamless fallback on remote LAN browsers.
+
+### Zero Silent Fallback Policy (零靜默降級政策)
+
+Strict execution and schema invariant across core pipelines and web APIs, mandating explicit failure exceptions instead of unannounced downgrades, silent truncation, or placeholder strings: (1) schema validation rejects undeclared fields via Pydantic v2 `extra="forbid"` in extraction contracts (`StrictContractModel` in `src/extraction/contracts.py`) and web API models (`StrictApiSchema` in `src/web/schemas.py`); (2) model availability failures raise immediate exceptions in `src/utils/ollama_client.py`; and (3) VLM multimodal failures in POD Studio (`src/pod_studio/visual_fallback_repair.py` and `src/pod_studio/vlm_continuation_engine.py`) immediately raise `RuntimeError` rather than silently emitting `<!-- VLM_FAIL -->` HTML comments or raw prompt strings.
 
 ### In-Memory Task Event Broadcaster (記憶體任務事件廣播器 / `TaskEventBroadcaster`)
 

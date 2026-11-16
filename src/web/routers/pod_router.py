@@ -310,18 +310,19 @@ async def pod_3_propagate_and_validate(
                     manual_boundary_idx=manual_boundary_idx,
                 )
         else:
-            final_docx_path, report, _ = await asyncio.to_thread(
-                propagate_and_validate_session,
-                session_dir=session_dir,
-                engine_mode=engine_mode,
-                template_docx_path=template_path,
-                custom_blueprint=custom_bp,
-                pdf_path=pdf_path,
-                model=model,
-                max_sections=max_continuation_sections,
-                manual_boundary_anchor=manual_boundary_anchor,
-                manual_boundary_idx=manual_boundary_idx,
-            )
+            async with get_gpu_semaphore():
+                final_docx_path, report, _ = await asyncio.to_thread(
+                    propagate_and_validate_session,
+                    session_dir=session_dir,
+                    engine_mode=engine_mode,
+                    template_docx_path=template_path,
+                    custom_blueprint=custom_bp,
+                    pdf_path=pdf_path,
+                    model=model,
+                    max_sections=max_continuation_sections,
+                    manual_boundary_anchor=manual_boundary_anchor,
+                    manual_boundary_idx=manual_boundary_idx,
+                )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 

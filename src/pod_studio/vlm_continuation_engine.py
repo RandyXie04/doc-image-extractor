@@ -271,8 +271,11 @@ class SecureVLMContinuationEngine:
         async with self._semaphore:
             api_key = os.getenv("GEMINI_API_KEY", "")
 
-            # 1. 優先嘗試使用 Gemini API
-            if api_key and ("gemini" in model_name.lower()):
+            # 1. Gemini API 推論
+            if "gemini" in model_name.lower():
+                if not api_key:
+                    raise RuntimeError("GEMINI_API_KEY is not set for Gemini VLM continuation.")
+
                 try:
                     from google import genai
                     from google.genai import types
@@ -291,33 +294,37 @@ class SecureVLMContinuationEngine:
                             )
                         ],
                     )
-                    out_text = response.text or ""
+                    out_text = getattr(response, "text", "") or ""
                     # 清理 markdown 代碼塊包裹
                     out_text = re.sub(r'^```(?:markdown)?\n?', '', out_text.strip())
                     out_text = re.sub(r'\n?```$', '', out_text.strip())
+                    if not out_text:
+                        raise RuntimeError(f"Gemini VLM returned an empty continuation for model '{model_name}'.")
                     return out_text
                 except Exception as err:
-                    return f"<!-- VLM_FAIL: Gemini 推論異常 ({type(err).__name__}) -->"
+                    if isinstance(err, RuntimeError):
+                        raise
+                    raise RuntimeError(f"Gemini VLM inference failed: {err}") from err
 
-            # 2. 本機 Ollama 視覺模型 (預設由 OLLAMA_MODEL 指定，如 qwen3.5:4b)
-            from src.utils.ollama_client import async_ollama_chat, OllamaClientError, get_default_vision_model
+            # 2. 本機 Ollama 視覺模型
+            from src.utils.ollama_client import async_ollama_chat
 
-            default_ollama = get_default_vision_model()
-            target_ollama_model = model_name if ("gemini" not in model_name.lower()) else default_ollama
             try:
                 raw_resp = await async_ollama_chat(
                     prompt=prompt,
                     images=[image_bytes],
-                    model=target_ollama_model,
+                    model=model_name,
                     think=False,
                     timeout=180.0,
                     strip_fence=True,
                 )
-                return raw_resp
-            except OllamaClientError as err:
-                return f"<!-- VLM_FAIL: Ollama 推論異常 ({type(err).__name__}) -->"
+                if not raw_resp or not raw_resp.strip():
+                    raise RuntimeError(f"Ollama VLM returned an empty continuation for model '{model_name}'.")
+                return raw_resp.strip()
             except Exception as err:
-                return f"<!-- VLM_FAIL: Ollama 推論異常 ({type(err).__name__}) -->"
+                if isinstance(err, RuntimeError):
+                    raise
+                raise RuntimeError(f"Ollama VLM inference failed: {err}") from err
 
     def _save_sections_to_docx(
         self,
@@ -440,13 +447,8 @@ class SecureVLMContinuationEngine:
             else:
                 repaired_md = raw_text
 
-            if repaired_md.startswith("<!-- VLM_FAIL"):
-                violations.append(f"單元 [{sec.title}] VLM 推論異常，回退為原始草稿。")
-                sec.processed_content = raw_text
-                sec_status = "FALLBACK"
-            else:
-                sec.processed_content = repaired_md
-                sec_status = "VLM_CONTINUED"
+            sec.processed_content = repaired_md
+            sec_status = "VLM_CONTINUED"
 
             final_chars = len(re.sub(r'[\s#:\-\{\}\[\]\(\)\=]+', '', sec.effective_content))
             total_final_chars += final_chars

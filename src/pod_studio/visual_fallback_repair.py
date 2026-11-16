@@ -108,15 +108,6 @@ def repair_corrupted_section_with_vlm(
 
     target_model = model or os.getenv("DEFAULT_AI_MODEL") or os.getenv("GEMINI_MODEL") or "gemini-3.8-flash"
 
-    if ai_client is None:
-        api_key = os.getenv("GEMINI_API_KEY")
-        if api_key:
-            try:
-                from google import genai
-                ai_client = genai.Client(api_key=api_key)
-            except Exception:
-                pass
-
     image_bytes = render_page_crop(pdf_path, page_num, bbox=bbox, dpi=150)
     prompt = build_vlm_repair_prompt(
         corrupted_raw_md=corrupted_raw_md,
@@ -124,39 +115,64 @@ def repair_corrupted_section_with_vlm(
         missing_badges=missing_badges,
     )
 
-    # 1. 優先嘗試 Gemini（若指定 Gemini 模型且已配置 API Key）
-    if ai_client is not None and ("gemini" in target_model.lower()):
-        if hasattr(ai_client, "models") and hasattr(ai_client.models, "generate_content"):
-            from src.utils.ollama_client import normalize_gemini_model_name
+    # 1. Gemini VLM 推論
+    if "gemini" in target_model.lower():
+        if ai_client is None:
+            api_key = os.getenv("GEMINI_API_KEY")
+            if not api_key:
+                raise RuntimeError("GEMINI_API_KEY is not set for Gemini VLM repair.")
+            try:
+                from google import genai
+                ai_client = genai.Client(api_key=api_key)
+            except Exception as e:
+                raise RuntimeError(f"Failed to initialize Gemini client: {e}") from e
 
-            resp = ai_client.models.generate_content(
-                model=normalize_gemini_model_name(target_model),
-                contents=[image_bytes, prompt],
-            )
-            return resp.text.strip()
-        elif hasattr(ai_client, "generate_content"):
-            resp = ai_client.generate_content([prompt, {"mime_type": "image/png", "data": image_bytes}])
-            return resp.text.strip()
-        elif callable(ai_client):
-            return ai_client(prompt, image_bytes)
+        try:
+            if hasattr(ai_client, "models") and hasattr(ai_client.models, "generate_content"):
+                from src.utils.ollama_client import normalize_gemini_model_name
+
+                resp = ai_client.models.generate_content(
+                    model=normalize_gemini_model_name(target_model),
+                    contents=[image_bytes, prompt],
+                )
+                text = getattr(resp, "text", "") or ""
+                if not text.strip():
+                    raise RuntimeError(f"Gemini VLM returned an empty response for model '{target_model}'.")
+                return text.strip()
+            elif hasattr(ai_client, "generate_content"):
+                resp = ai_client.generate_content([prompt, {"mime_type": "image/png", "data": image_bytes}])
+                text = getattr(resp, "text", "") or ""
+                if not text.strip():
+                    raise RuntimeError(f"Gemini VLM returned an empty response for model '{target_model}'.")
+                return text.strip()
+            elif callable(ai_client):
+                res = ai_client(prompt, image_bytes)
+                if not res or not str(res).strip():
+                    raise RuntimeError("Custom ai_client returned an empty response.")
+                return str(res).strip()
+            else:
+                raise RuntimeError(f"Unsupported ai_client type: {type(ai_client)}")
+        except Exception as e:
+            if isinstance(e, RuntimeError):
+                raise
+            raise RuntimeError(f"Gemini VLM repair execution failed: {e}") from e
 
     # 2. 本機離線 Ollama 視覺多模態修復 (完全離線隔離)
     try:
-        from src.utils.ollama_client import ollama_chat, get_default_vision_model, is_ollama_available
+        from src.utils.ollama_client import ollama_chat
 
-        local_model = target_model if ("gemini" not in target_model.lower()) else get_default_vision_model()
-        if is_ollama_available():
-            repaired_text = ollama_chat(
-                prompt=prompt,
-                images=[image_bytes],
-                model=local_model,
-                think=False,
-                timeout=120.0,
-                strip_fence=True,
-            )
-            if repaired_text:
-                return repaired_text
+        repaired_text = ollama_chat(
+            prompt=prompt,
+            images=[image_bytes],
+            model=target_model,
+            think=False,
+            timeout=120.0,
+            strip_fence=True,
+        )
+        if not repaired_text or not repaired_text.strip():
+            raise RuntimeError(f"Ollama VLM returned an empty response for model '{target_model}'.")
+        return repaired_text.strip()
     except Exception as e:
-        print(f"[VisualFallbackRepair] Ollama 修復例外: {e}")
-
-    return f"<!-- VLM Repair Prompt Prepared ({len(image_bytes)} bytes image rendered) -->\n{prompt}"
+        if isinstance(e, RuntimeError):
+            raise
+        raise RuntimeError(f"Ollama VLM repair failed: {e}") from e

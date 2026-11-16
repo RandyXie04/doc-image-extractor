@@ -3,15 +3,17 @@
 Unit and integration tests for SecureVLMContinuationEngine
 """
 
+import os
 import sys
 import json
 import asyncio
 import unittest
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 import docx
 import fitz
+import pytest
 
 # Ensure root directory is on sys.path
 root_dir = Path(__file__).parent.parent.resolve()
@@ -24,6 +26,8 @@ from src.pod_studio.vlm_continuation_engine import (
     VisualExemplarPair,
 )
 from src.pod_studio.section_ast import SectionUnit, ParagraphUnit, SectionAST
+from src.pod_studio.visual_fallback_repair import repair_corrupted_section_with_vlm
+from src.pod_studio.blueprint_schema import BookBlueprint
 
 
 class TestVLMContinuation(unittest.TestCase):
@@ -160,6 +164,75 @@ class TestVLMContinuation(unittest.TestCase):
         self.assertTrue(Path(result.completed_docx_path).exists())
         self.assertTrue(Path(result.completed_md_path).exists())
         self.assertTrue((session_workspace / "vlm_audit_report.json").exists())
+
+
+def test_vlm_repair_gemini_missing_api_key_raises_runtime_error(tmp_path):
+    pdf = tmp_path / "test.pdf"
+    with fitz.open() as doc:
+        doc.new_page().insert_text((50, 50), "test")
+        doc.save(str(pdf))
+
+    bp = BookBlueprint(book_name="t")
+    with patch.dict(os.environ, {}, clear=True):
+        if "GEMINI_API_KEY" in os.environ:
+            del os.environ["GEMINI_API_KEY"]
+        with pytest.raises(RuntimeError, match="GEMINI_API_KEY is not set"):
+            repair_corrupted_section_with_vlm(
+                pdf_path=pdf,
+                page_num=1,
+                corrupted_raw_md="raw",
+                blueprint=bp,
+                model="gemini-3.8-flash",
+            )
+
+
+def test_vlm_repair_gemini_failure_raises_runtime_error(tmp_path):
+    pdf = tmp_path / "test.pdf"
+    with fitz.open() as doc:
+        doc.new_page().insert_text((50, 50), "test")
+        doc.save(str(pdf))
+
+    bp = BookBlueprint(book_name="t")
+    mock_client = MagicMock()
+    mock_client.models.generate_content.side_effect = Exception("API Quota Exceeded")
+    with pytest.raises(RuntimeError, match="Gemini VLM repair execution failed"):
+        repair_corrupted_section_with_vlm(
+            pdf_path=pdf,
+            page_num=1,
+            corrupted_raw_md="raw",
+            blueprint=bp,
+            ai_client=mock_client,
+            model="gemini-3.8-flash",
+        )
+
+
+@pytest.mark.asyncio
+async def test_vlm_continuation_gemini_missing_key_raises_runtime_error(tmp_path):
+    engine = SecureVLMContinuationEngine(workspace_base=tmp_path)
+    with patch.dict(os.environ, {}, clear=True):
+        if "GEMINI_API_KEY" in os.environ:
+            del os.environ["GEMINI_API_KEY"]
+        with pytest.raises(RuntimeError, match="GEMINI_API_KEY is not set"):
+            await engine._call_vlm_infer(
+                prompt="test prompt",
+                image_bytes=b"dummy_png",
+                model_name="gemini-2.5-flash",
+            )
+
+
+@pytest.mark.asyncio
+async def test_vlm_continuation_gemini_failure_raises_runtime_error(tmp_path):
+    engine = SecureVLMContinuationEngine(workspace_base=tmp_path)
+    with patch.dict(os.environ, {"GEMINI_API_KEY": "fake_key"}):
+        with patch("google.genai.Client") as mock_client_cls:
+            mock_client = mock_client_cls.return_value
+            mock_client.models.generate_content.side_effect = Exception("Inference Timeout")
+            with pytest.raises(RuntimeError, match="Gemini VLM inference failed"):
+                await engine._call_vlm_infer(
+                    prompt="test prompt",
+                    image_bytes=b"dummy_png",
+                    model_name="gemini-2.5-flash",
+                )
 
 
 if __name__ == "__main__":
