@@ -82,33 +82,23 @@ _fonts_json: Optional[str] = os.path.normpath(
     os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json')
 )
 
-CIRCLED_MAP = {
-    '①': 1, '②': 2, '③': 3, '④': 4, '⑤': 5,
-    '⑥': 6, '⑦': 7, '⑧': 8, '⑨': 9, '⑩': 10,
-    # Extended circled numbers ⑪–⑳ (U+246A–U+2473)
-    '⑪': 11, '⑫': 12, '⑬': 13, '⑭': 14, '⑮': 15,
-    '⑯': 16, '⑰': 17, '⑱': 18, '⑲': 19, '⑳': 20,
-}
-
-# Regex pattern matching any recognised footnote marker (circled / bracketed / numbered-dot / bare number with space)
-# Added expanded unicode ranges for circled numbers > 10 and dingbats.
-# Extended to support [1], ［1］, 〔1〕, 【1】, [ 1 ], (1), （1）, 1., 1、, Unicode superscripts ⁰¹²³⁴⁵⁶⁷⁸⁹,
-# and alphabet markers [a-jA-J][.、\s]
-FN_MARKER_PATTERN = (
-    r'('
-    r'[\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|'
-    r'[\[［〔【]\s*(?:\d+|[a-jA-J])\s*[\]］〕】]|'
-    r'[\(（]\s*(?:\d+|[a-jA-J])\s*[\)）]|'
-    r'[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|'
-    r'(?<!\d)(?!(?:18|19|20)\d{2}[.、])\d{1,3}[.、]|'
-    r'[a-jA-J][.、\s]'
-    r')'
+from src.extraction.citation_and_footnote_utils import (
+    CIRCLED_MAP,
+    FN_MARKER_PATTERN,
+    _CITATION_PRECEDING_RE,
+    _DIGITS_RE,
+    _FN_MARKER_PARSE_RE,
+    _FN_MARKER_SPLIT_RE,
+    _STARTS_WITH_FN_MARKER_RE,
+    _SUPERSCRIPT_CHAR_MAP,
+    _WEAK_MARKER_RE,
+    _circled_to_int,
+    _replace_fn_markers_in_text,
+    is_citation_continuation_marker,
+    is_strong_citation_text,
+    is_valid_footnote_split_match,
+    try_replace_alpha_fallback,
 )
-_WEAK_MARKER_RE = re.compile(r'^[\d.、\s()（）]+$')
-_DIGITS_RE = re.compile(r'\d+')
-_FN_MARKER_SPLIT_RE = re.compile(FN_MARKER_PATTERN)
-_STARTS_WITH_FN_MARKER_RE = re.compile(r'^\s*(' + FN_MARKER_PATTERN + r')\s*')
-_FN_MARKER_PARSE_RE = re.compile(r'^\s*' + FN_MARKER_PATTERN + r'\s*')
 
 _PAGE_HEADER_PATTERNS = [
     re.compile(r'^[上下中]篇[:：|｜]'),
@@ -394,126 +384,6 @@ def _match_toc_heading(text: str, page_num: int, toc_index: dict, offset_holder:
     return 0
 
 
-_SUPERSCRIPT_CHAR_MAP = {
-    '⁰': 0, '¹': 1, '²': 2, '³': 3, '⁴': 4,
-    '⁵': 5, '⁶': 6, '⁷': 7, '⁸': 8, '⁹': 9
-}
-
-def is_strong_citation_text(text: str) -> bool:
-    """Check if text exhibits characteristics of a formal literature citation."""
-    if not text:
-        return False
-    citation_patterns = [
-        r'《[^》]+》',
-        r'\[[A-Z]\]',
-        r'(?:出版社|出版|Press)',
-        r'(?:\d{4}\s*年\s*版|\d{4}\s*年)',
-        r'(?:第\s*\d+\s*页|[Pp]\.?\s*\d+)',
-        r'(?:参阅|参见|转引自|译|主编)',
-    ]
-    for pat in citation_patterns:
-        if re.search(pat, text):
-            return True
-    return False
-
-def _circled_to_int(marker_str: str) -> int:
-    """Convert any footnote marker string to its integer index."""
-    if not marker_str:
-        return 1
-    if marker_str in CIRCLED_MAP:
-        return CIRCLED_MAP[marker_str]
-    if any(c in _SUPERSCRIPT_CHAR_MAP for c in marker_str):
-        digits = "".join(str(_SUPERSCRIPT_CHAR_MAP[c]) for c in marker_str if c in _SUPERSCRIPT_CHAR_MAP)
-        if digits:
-            return int(digits)
-    # Support letter markers 'a'..'z' / 'A'..'Z' mapped to 1..26
-    alpha_m = re.search(r'[a-zA-Z]', marker_str)
-    if alpha_m:
-        return ord(alpha_m.group(0).lower()) - ord('a') + 1
-    digs = _DIGITS_RE.findall(marker_str)
-    return int(digs[0]) if digs else 1
-
-
-def _replace_fn_markers_in_text(text: str, page_footnotes: list, page_num: int) -> str:
-    """Replace all recognised footnote marker occurrences in *text* with Pandoc ref-tags.
-    Works for both body paragraphs and table cells."""
-    for fn in page_footnotes:
-        m_str = fn.get('marker', '')
-        fn_id = fn.get('id', 1)
-        if not m_str and not fn_id:
-            continue
-        fn_tag = f"[^p{page_num}_{fn_id}]"
-
-        matched = False
-        is_alpha_marker = bool(m_str and re.search(r'^[a-zA-Z][.、\s)）]?$', m_str.strip()))
-        # 1. 優先嘗試原始標記完全匹配
-        if m_str:
-            if is_alpha_marker:
-                alpha_char = re.search(r'[a-zA-Z]', m_str).group(0)
-                alpha_pat = re.compile(
-                    r'(?<=[。，；！？、”’」』）)\]】\u4e00-\u9fff])(?<![a-zA-Z0-9])'
-                    + re.escape(alpha_char)
-                    + r'(?![a-zA-Z0-9])(?=[。，；！？、”’」』）)\]】\s\n]|$)'
-                )
-                new_text, n_subs = alpha_pat.subn(fn_tag, text, count=1)
-                if n_subs > 0:
-                    text = new_text
-                    fn['matched'] = True
-                    matched = True
-            elif _WEAK_MARKER_RE.match(m_str):
-                # 針對弱標記（如 '1.' 或 '(1)'），要求前後不能是數字以防止誤傷小數點（如 31.5%）或正文數值
-                safe_pat = re.compile(r'(?<!\d)' + re.escape(m_str) + r'(?!\d)')
-                new_text, n_subs = safe_pat.subn(fn_tag, text, count=1)
-                if n_subs > 0:
-                    text = new_text
-                    fn['matched'] = True
-                    matched = True
-            elif m_str in text:
-                text = text.replace(m_str, fn_tag, 1)
-                fn['matched'] = True
-                matched = True
-
-        # 2. 次優先：若原始標記未能命中（例如頁底標記為 "1." 或 "[1]"，而正文為 "[1]"、"［1］"、"〔1〕" 等變體），
-        # 檢查該 fn_id 對應的強括號/圓圈標記變體
-        if not matched and fn_id is not None:
-            variants = [
-                f"[{fn_id}]",
-                f"［{fn_id}］",
-                f"〔{fn_id}〕",
-                f"【{fn_id}】",
-                f"[ {fn_id} ]",
-                f"［ {fn_id} ］",
-            ]
-            rev_circled = [k for k, v in CIRCLED_MAP.items() if v == fn_id]
-            if rev_circled:
-                variants.append(rev_circled[0])
-
-            for var in variants:
-                if var in text:
-                    text = text.replace(var, fn_tag, 1)
-                    fn['matched'] = True
-                    matched = True
-                    break
-
-        # 3. 第三優先：若標準標記未命中且 1 <= fn_id <= 26，檢查字母上標變體（如 'a' 對應 1, 'b' 對應 2）
-        if not matched and fn_id is not None and 1 <= fn_id <= 26:
-            alpha_lower = chr(ord('a') + fn_id - 1)
-            alpha_upper = chr(ord('A') + fn_id - 1)
-            for alpha_char in [alpha_lower, alpha_upper]:
-                alpha_pat = re.compile(
-                    r'(?<=[。，；！？、”’」』）)\]】\u4e00-\u9fff])(?<![a-zA-Z0-9])'
-                    + re.escape(alpha_char)
-                    + r'(?![a-zA-Z0-9])(?=[。，；！？、”’」』）)\]】\s\n]|$)'
-                )
-                new_text, n_subs = alpha_pat.subn(fn_tag, text, count=1)
-                if n_subs > 0:
-                    text = new_text
-                    fn['matched'] = True
-                    matched = True
-                    break
-    return text
-
-
 def _table_to_markdown(table, page_footnotes: list, page_num: int) -> str:
     """Convert a PyMuPDF Table object to a GFM Markdown table string.
     Footnote markers inside cells are replaced with Pandoc ref-tags."""
@@ -570,6 +440,11 @@ def _normalize_symbol_font_spans(spans: List[Dict[str, Any]]) -> List[Dict[str, 
 
 def is_page_header(block, page_h, page_w):
     bbox = block.get('bbox', [0, 0, 0, 0])
+    w = bbox[2] - bbox[0]
+    # Side margin running header / edge cut label (narrow vertical text in extreme outer margins)
+    if (bbox[0] > page_w * 0.88 or bbox[2] < page_w * 0.12) and w < 25:
+        return True
+
     # Headers are strictly in top 13% of the page
     if bbox[3] > page_h * 0.13:
         return False
@@ -597,15 +472,6 @@ def is_page_footer(block, page_h):
         return True
     return False
 
-def parse_footnote_marker(text):
-    m = _FN_MARKER_PARSE_RE.match(text)
-    if m:
-        marker_str = m.group(1).strip()
-        num = _circled_to_int(marker_str)
-        if 1800 <= num <= 2100 and re.match(r'^\d{4}[.、]', marker_str):
-            return None, None, text
-        return num, marker_str, text[m.end():].strip()
-    return None, None, text
 
 _CJK_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
 
@@ -742,6 +608,1231 @@ def _map_ai_review_to_font_suggestion(
     }
 
 
+def _parse_retained_ai_font_entry(fval: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    role_upper = str(fval.get("role") or "").upper()
+    role_map = {
+        "H1": ("heading", 1),
+        "H2": ("heading", 2),
+        "H3": ("heading", 3),
+        "楷體": ("quote", None),
+        "楷体": ("quote", None),
+        "KAITI": ("quote", None),
+        "QUOTE": ("quote", None),
+        "正文": ("body", None),
+        "內文": ("body", None),
+        "BODY": ("body", None),
+    }
+    if role_upper not in role_map:
+        return None
+    role_name, level_val = role_map[role_upper]
+    return {
+        "role": role_name,
+        "level": level_val,
+        "confidence": fval.get("confidence", 0.85),
+        "reason": fval.get("reason", "retained_ai_layout"),
+        "source": "gemma",
+    }
+
+
+def _build_ai_font_decision_cache(font_role_map: Optional[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    cache: Dict[str, Dict[str, Any]] = {}
+    if not font_role_map:
+        return cache
+    for fk, fval in font_role_map.items():
+        if isinstance(fval, dict) and fval.get("mapped_by") == "ai_layout":
+            parsed = _parse_retained_ai_font_entry(fval)
+            if parsed is not None:
+                cache[fk] = parsed
+    return cache
+
+
+def _init_layout_audit_data(
+    pdf_name: str,
+    total_pages: int,
+    style_mapping: Dict[str, str],
+    retained_font_suggestions: Dict[str, Dict[str, Any]],
+    doc_profile: Dict[str, Any],
+) -> Dict[str, Any]:
+    body_size = doc_profile.get("body_size", 10.5)
+    body_font = doc_profile.get("body_font", "")
+    toc_index = doc_profile.get("toc_index", {})
+    model_avail = gemma_available(DEFAULT_GEMMA_MODEL)
+    if not model_avail:
+        print(f"[WARN] 本機未安裝 {DEFAULT_GEMMA_MODEL}，標題與斷行使用確定性判定。", flush=True)
+    return {
+        "pdf_name": pdf_name,
+        "total_pages": total_pages,
+        "headers_removed": 0,
+        "footers_removed": 0,
+        "headings_detected": [],
+        "footnotes_matched": 0,
+        "footnotes_fallback": 0,
+        "footnotes_detail": [],
+        "paragraphs_reflowed": 0,
+        "ai_layout": {
+            "model": DEFAULT_GEMMA_MODEL,
+            "model_available": model_avail,
+            "confirmed_style_mapping": dict(style_mapping),
+            "retained_font_suggestions": retained_font_suggestions,
+            "decisions": [],
+        },
+        "doc_profile": {
+            "body_size": body_size,
+            "body_font": body_font,
+            "toc_entries": len(toc_index),
+            "is_native_toc": doc_profile.get("is_native_toc", False),
+        },
+    }
+
+
+def _block_overlaps_any_table(bbox_list: List[Any], block_bbox: Sequence[float]) -> bool:
+    """Return True if block_bbox overlaps any known table region by >30%."""
+    b = fitz.Rect(block_bbox)
+    for tr in bbox_list:
+        inter = b & tr
+        if inter.is_empty:
+            continue
+        if (inter.width * inter.height) / max(b.width * b.height, 1.0) > 0.30:
+            return True
+    return False
+
+
+def _detect_three_line_tables(page: Any, blocks: List[Dict[str, Any]], table_bboxes: List[Any]) -> List[Any]:
+    reconstructed_tables: List[Any] = []
+    if extract_reconstructed_tables_from_page is None:
+        return reconstructed_tables
+    try:
+        three_line_list = extract_reconstructed_tables_from_page(page, blocks=blocks)
+    except Exception:
+        return reconstructed_tables
+    for rtbl in three_line_list:
+        if not _block_overlaps_any_table(table_bboxes, rtbl.bbox):
+            reconstructed_tables.append(rtbl)
+            table_bboxes.append(fitz.Rect(rtbl.bbox))
+    return reconstructed_tables
+
+
+def _is_valid_bordered_table(t: Any, page_w: float, page_h: float) -> bool:
+    if is_valid_pymupdf_table is None:
+        return True
+    try:
+        cells = t.extract()
+    except Exception:
+        cells = []
+    return bool(is_valid_pymupdf_table(cells, t.bbox, page_w, page_h))
+
+
+def _detect_bordered_page_tables(page: Any, page_w: float, page_h: float, table_bboxes: List[Any]) -> List[Any]:
+    page_tables: List[Any] = []
+    try:
+        tabs = page.find_tables()
+    except Exception:
+        return page_tables
+    if not (tabs and tabs.tables):
+        return page_tables
+    for t in tabs.tables:
+        if _block_overlaps_any_table(table_bboxes, t.bbox):
+            continue
+        if _is_valid_bordered_table(t, page_w, page_h):
+            page_tables.append(t)
+            table_bboxes.append(fitz.Rect(t.bbox))
+    return page_tables
+
+
+def _clean_block_spans_and_extract_text(block: Dict[str, Any]) -> str:
+    for line in block.get("lines", []):
+        cleaned_spans = clean_span_duplicates(line.get("spans", []))
+        line["spans"] = _normalize_symbol_font_spans(cleaned_spans)
+    return "".join(s.get("text", "") for l in block.get("lines", []) for s in l.get("spans", [])).strip()
+
+
+def _is_vector_footnote_candidate(
+    block: Dict[str, Any],
+    block_text: str,
+    page_w: float,
+    page_h: float,
+    body_size: float,
+    enable_footnotes: bool,
+    footnote_blocks: List[Dict[str, Any]],
+) -> bool:
+    if not enable_footnotes:
+        return False
+    bbox = block.get("bbox", [0, 0, 0, 0])
+    w = bbox[2] - bbox[0]
+    is_side_margin = (bbox[0] > page_w * 0.88 or bbox[2] < page_w * 0.12) and w < 25
+    sizes = [s.get("size", 0) for l in block.get("lines", []) for s in l.get("spans", [])]
+    avg_size = sum(sizes) / len(sizes) if sizes else 10.0
+    if is_side_margin or bbox[1] < page_h * 0.65 or avg_size >= body_size:
+        return False
+    starts_with_fn = bool(_STARTS_WITH_FN_MARKER_RE.match(block_text))
+    if (starts_with_fn or is_strong_citation_text(block_text)) and not _H3_DECIMAL_RE.match(block_text) and not _H2_DECIMAL_RE.match(block_text):
+        return True
+    if footnote_blocks and avg_size < body_size - 0.5:
+        prev_bbox = footnote_blocks[-1].get("bbox", [0, 0, 0, 0])
+        return bool(bbox[1] >= prev_bbox[1] and abs(bbox[0] - prev_bbox[0]) < 50)
+    return False
+
+
+def _partition_page_blocks(
+    blocks: List[Dict[str, Any]],
+    page_w: float,
+    page_h: float,
+    body_size: float,
+    enable_footnotes: bool,
+    strip_headers_heuristic: bool,
+    table_bboxes: List[Any],
+    audit_data: Dict[str, Any],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+    body_blocks: List[Dict[str, Any]] = []
+    footnote_blocks: List[Dict[str, Any]] = []
+    figure_blocks: List[Dict[str, Any]] = []
+
+    for b in blocks:
+        block_type = b.get("type")
+        if block_type == 1:
+            is_hf = strip_headers_heuristic and (is_page_header(b, page_h, page_w) or is_page_footer(b, page_h))
+            if not is_hf and not (table_bboxes and _block_overlaps_any_table(table_bboxes, b.get("bbox", [0, 0, 0, 0]))):
+                figure_blocks.append(b)
+            continue
+        if block_type != 0:
+            continue
+        block_text = _clean_block_spans_and_extract_text(b)
+        if not block_text:
+            continue
+        bbox = b.get("bbox", [0, 0, 0, 0])
+        if (bbox[0] > page_w * 0.88 or bbox[2] < page_w * 0.12) and (bbox[2] - bbox[0]) < 25:
+            continue
+        if strip_headers_heuristic and is_page_header(b, page_h, page_w):
+            audit_data["headers_removed"] += 1
+            continue
+        if strip_headers_heuristic and is_page_footer(b, page_h):
+            audit_data["footers_removed"] += 1
+            continue
+        if table_bboxes and _block_overlaps_any_table(table_bboxes, bbox):
+            continue
+        if _is_vector_footnote_candidate(b, block_text, page_w, page_h, body_size, enable_footnotes, footnote_blocks):
+            footnote_blocks.append(b)
+        else:
+            body_blocks.append(b)
+
+    return body_blocks, footnote_blocks, figure_blocks
+
+
+def _split_footnote_block_into_parts(fb_text: str) -> List[str]:
+    raw_matches = list(_FN_MARKER_SPLIT_RE.finditer(fb_text))
+    valid_matches = [m for m in raw_matches if is_valid_footnote_split_match(fb_text, m)]
+    parts: List[str] = []
+    last_end = 0
+    for m in valid_matches:
+        parts.append(fb_text[last_end:m.start()])
+        parts.append(m.group(0))
+        last_end = m.end()
+    parts.append(fb_text[last_end:])
+    return parts
+
+
+def _consume_footnote_prefix(prefix: str, current_fn_entry: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if _STARTS_WITH_FN_MARKER_RE.match(prefix) or not prefix.strip():
+        return current_fn_entry
+    if re.match(r'^(?:注[释釋]?|脚[注釋]?|参考[文献獻]|References?|NOTES?)[:：]?\s*$', prefix.strip(), re.I):
+        return current_fn_entry
+    if current_fn_entry:
+        sep = " " if current_fn_entry["content"] else ""
+        current_fn_entry["content"] = str(current_fn_entry["content"]) + sep + prefix.strip()
+        return current_fn_entry
+    return {"id": 1, "marker": "", "content": prefix.strip()}
+
+
+def _parse_page_footnotes_from_blocks(footnote_blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    page_footnotes: List[Dict[str, Any]] = []
+    current_fn_entry: Optional[Dict[str, Any]] = None
+    sorted_blocks = _sort_blocks_by_row_and_x(footnote_blocks, y_tol=5.0)
+
+    for fb in sorted_blocks:
+        fb_text = "".join(s.get("text", "") for l in fb.get("lines", []) for s in l.get("spans", [])).strip()
+        if not fb_text:
+            continue
+        parts = _split_footnote_block_into_parts(fb_text)
+        current_fn_entry = _consume_footnote_prefix(parts[0], current_fn_entry)
+
+        for i in range(1, len(parts), 2):
+            marker_str = parts[i].strip()
+            content_str = parts[i + 1].strip() if (i + 1) < len(parts) else ""
+            num = _circled_to_int(marker_str)
+            prev_content = str(current_fn_entry.get("content", "")) if current_fn_entry else ""
+            if current_fn_entry and is_citation_continuation_marker(marker_str, num, prev_content):
+                sep = "" if prev_content.endswith((":", "：", ";", "；")) else " "
+                current_fn_entry["content"] = (prev_content + sep + marker_str + (" " + content_str if content_str else "")).strip()
+                continue
+            if current_fn_entry:
+                page_footnotes.append(current_fn_entry)
+            current_fn_entry = {"id": num, "marker": marker_str, "content": content_str}
+
+    if current_fn_entry:
+        page_footnotes.append(current_fn_entry)
+    return page_footnotes
+
+
+def _compute_page_x_margins(body_blocks: List[Dict[str, Any]], page_w: float) -> Tuple[float, float]:
+    normal_x0s: List[float] = []
+    normal_x1s: List[float] = []
+    for bb in body_blocks:
+        lines = bb.get("lines", [])
+        bb_text = "".join(s.get("text", "") for l in lines for s in l.get("spans", [])).strip()
+        bbox = bb.get("bbox", [0, 0, 0, 0])
+        is_centered = abs(((bbox[0] + bbox[2]) / 2.0) - (page_w / 2.0)) < (page_w * 0.12)
+        if not is_centered and len(bb_text) > 10:
+            normal_x0s.append(bbox[0])
+            normal_x1s.append(bbox[2])
+    base_x0 = min(normal_x0s) if normal_x0s else 65.0
+    max_x1 = max(normal_x1s) if normal_x1s else (page_w - base_x0)
+    return base_x0, max_x1
+
+
+def _build_interleaved_flow_items(
+    body_blocks: List[Dict[str, Any]],
+    figure_blocks: List[Dict[str, Any]],
+    page_tables: List[Any],
+    reconstructed_tables: List[Any],
+) -> List[Dict[str, Any]]:
+    flow_items: List[Dict[str, Any]] = [
+        {"type": "text", "bbox": bb.get("bbox", [0, 0, 0, 0]), "data": bb}
+        for bb in body_blocks
+    ]
+    flow_items.extend(
+        {"type": "figure", "bbox": fig_b.get("bbox", [0, 0, 0, 0]), "data": (block_idx, fig_b)}
+        for block_idx, fig_b in enumerate(figure_blocks)
+    )
+    flow_items.extend(
+        {"type": "table", "bbox": list(tbl.bbox), "data": tbl}
+        for tbl in page_tables
+    )
+    flow_items.extend(
+        {"type": "reconstructed_table", "bbox": list(rtbl.bbox), "data": rtbl}
+        for rtbl in reconstructed_tables
+    )
+    flow_items.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
+    return flow_items
+
+
+def _is_standard_regex_heading_text(text: str) -> bool:
+    return bool(
+        _H1_PART_RE.match(text)
+        or _H1_SPECIAL_RE.match(text)
+        or _H1_CHAPTER_RE.match(text)
+        or _H2_SECTION_RE.match(text)
+        or _H2_DECIMAL_RE.match(text)
+        or _H3_DECIMAL_RE.match(text)
+        or _H2_INT_SPACE_RE.match(text)
+    )
+
+
+def _evaluate_ai_heading_candidate(
+    candidate: Dict[str, Any],
+    candidate_idx: int,
+    page_num: int,
+    page_w: float,
+    body_size: float,
+    body_font: str,
+    font_role_map: Optional[Dict[str, Any]],
+    ai_font_decision_cache: Dict[str, Dict[str, Any]],
+    ai_heading_by_block: Dict[int, Dict[str, Any]],
+    page_blocks_by_font_key: Dict[str, List[int]],
+    page_queued_font_keys: set,
+) -> Optional[Tuple[Dict[str, Any], Tuple[int, str, str]]]:
+    candidate_lines = candidate.get("lines", [])
+    candidate_text = "".join(s.get("text", "") for ln in candidate_lines for s in ln.get("spans", [])).strip()
+    if not candidate_text or bool(_TOC_LINE_RE.search(candidate_text)):
+        return None
+    c_role, c_style, c_mapped_by = _lookup_block_font_mapping(candidate_lines, font_role_map, is_toc_line=False)
+    if (c_role or c_style) and c_mapped_by != "ai_layout":
+        return None
+    cand_font_key, cand_clean_fn, cand_sz = _extract_primary_font_key(candidate_lines, body_size)
+    if cand_font_key and cand_font_key in ai_font_decision_cache:
+        cached_res = ai_font_decision_cache[cand_font_key]
+        if cached_res.get("source") == "gemma":
+            ai_heading_by_block[id(candidate)] = cached_res
+        return None
+    if _is_standard_regex_heading_text(candidate_text):
+        return None
+    candidate_bbox = candidate.get("bbox", [0, 0, 0, 0])
+    candidate_sizes = [span.get("size", 0.0) for ln in candidate_lines for span in ln.get("spans", [])]
+    candidate_size = sum(candidate_sizes) / len(candidate_sizes) if candidate_sizes else body_size
+    candidate_bold = any(span.get("flags", 0) & 16 for ln in candidate_lines for span in ln.get("spans", []))
+    candidate_center = abs(((candidate_bbox[0] + candidate_bbox[2]) / 2.0) - page_w / 2.0) < page_w * 0.12
+    is_plain_body = bool(
+        cand_clean_fn and body_font and cand_clean_fn.lower() == body_font.lower()
+        and abs(cand_sz - body_size) < 0.5 and not candidate_bold and not candidate_center
+    )
+    if is_plain_body:
+        return None
+    is_heading_like = (
+        2 <= len(candidate_text) <= 55
+        and not re.search(r'[。！？；.]$', candidate_text)
+        and not re.match(r'^(?:表|圖|图|Table|Figure)\s*\d+', candidate_text, re.IGNORECASE)
+    )
+    has_distinct_font = bool(cand_clean_fn and body_font and cand_clean_fn.lower() != body_font.lower())
+    if not (is_heading_like and (candidate_bold or candidate_center or candidate_size > body_size + 0.3 or has_distinct_font)):
+        return None
+    if cand_font_key:
+        page_blocks_by_font_key.setdefault(cand_font_key, []).append(id(candidate))
+        if cand_font_key in page_queued_font_keys:
+            return None
+        page_queued_font_keys.add(cand_font_key)
+    paragraph_id = f"pdf-{page_num}-{candidate_idx}"
+    payload = {
+        "paragraph_id": paragraph_id,
+        "text": candidate_text,
+        "font_size": round(candidate_size, 2),
+        "is_bold": bool(candidate_bold),
+        "is_centered": bool(candidate_center),
+    }
+    return payload, (id(candidate), cand_font_key, candidate_text)
+
+
+def _record_gemma_heading_review_result(
+    result: Dict[str, Any],
+    meta: Optional[Tuple[int, str, str]],
+    page_num: int,
+    style_mapping: Dict[str, str],
+    ai_heading_by_block: Dict[int, Dict[str, Any]],
+    ai_font_decision_cache: Dict[str, Dict[str, Any]],
+    page_blocks_by_font_key: Dict[str, List[int]],
+    retained_font_suggestions: Dict[str, Dict[str, Any]],
+    audit_data: Dict[str, Any],
+) -> None:
+    if result.get("source") == "gemma" and meta:
+        blk_id, f_key, s_txt = meta
+        ai_heading_by_block[blk_id] = result
+        if f_key:
+            ai_font_decision_cache[f_key] = result
+            for other_id in page_blocks_by_font_key.get(f_key, []):
+                ai_heading_by_block[other_id] = result
+            sug = _map_ai_review_to_font_suggestion(result, style_mapping, s_txt)
+            if sug and f_key not in retained_font_suggestions:
+                retained_font_suggestions[f_key] = sug
+        return
+    if meta and meta[1]:
+        ai_font_decision_cache[meta[1]] = result
+    if result.get("ai_status") and result.get("ai_status") != "model_unavailable":
+        audit_data["ai_layout"]["decisions"].append({
+            "page": page_num,
+            "type": "classification_status",
+            "paragraph_id": result.get("paragraph_id"),
+            "status": result["ai_status"],
+        })
+
+
+def _review_page_ai_heading_candidates(
+    body_blocks: List[Dict[str, Any]],
+    page_num: int,
+    page_w: float,
+    body_size: float,
+    body_font: str,
+    font_role_map: Optional[Dict[str, Any]],
+    style_mapping: Dict[str, str],
+    ai_font_decision_cache: Dict[str, Dict[str, Any]],
+    retained_font_suggestions: Dict[str, Dict[str, Any]],
+    audit_data: Dict[str, Any],
+) -> Dict[int, Dict[str, Any]]:
+    ai_heading_by_block: Dict[int, Dict[str, Any]] = {}
+    ai_candidates: List[Dict[str, Any]] = []
+    ai_candidate_meta: Dict[str, Tuple[int, str, str]] = {}
+    page_blocks_by_font_key: Dict[str, List[int]] = {}
+    page_queued_font_keys: set = set()
+
+    for candidate_idx, candidate in enumerate(body_blocks):
+        evaluated = _evaluate_ai_heading_candidate(
+            candidate, candidate_idx, page_num, page_w, body_size, body_font,
+            font_role_map, ai_font_decision_cache, ai_heading_by_block,
+            page_blocks_by_font_key, page_queued_font_keys,
+        )
+        if evaluated is not None:
+            payload, meta = evaluated
+            ai_candidates.append(payload)
+            ai_candidate_meta[payload["paragraph_id"]] = meta
+
+    if ai_candidates:
+        for result in review_uncertain_layout(ai_candidates[:12], model=DEFAULT_GEMMA_MODEL):
+            pid = str(result.get("paragraph_id") or "")
+            _record_gemma_heading_review_result(
+                result, ai_candidate_meta.get(pid), page_num, style_mapping,
+                ai_heading_by_block, ai_font_decision_cache, page_blocks_by_font_key,
+                retained_font_suggestions, audit_data,
+            )
+    return ai_heading_by_block
+
+
+def _splice_paragraph_lines(lines_list: List[str], audit_data: Dict[str, Any]) -> str:
+    para_text = ""
+    for line_txt in lines_list:
+        if not para_text:
+            para_text = line_txt
+        elif _CJK_END_RE.search(para_text) and _CJK_START_RE.search(line_txt):
+            para_text += line_txt
+            audit_data["paragraphs_reflowed"] += 1
+        else:
+            para_text += " " + line_txt
+    return para_text
+
+
+def _format_styled_paragraph_md(
+    para_text: str, custom_style: Optional[str], is_kaiti: bool, style_mapping: Dict[str, str]
+) -> Tuple[str, str]:
+    if custom_style:
+        return custom_style, f'::: {{custom-style="{custom_style}"}}\n{para_text}\n:::'
+    if is_kaiti:
+        kaiti_style = style_mapping.get("kaiti") or "楷體2"
+        return kaiti_style, f'::: {{custom-style="{kaiti_style}"}}\n{para_text}\n:::'
+    body_style = style_mapping.get("body")
+    if body_style:
+        return body_style, f'::: {{custom-style="{body_style}"}}\n{para_text}\n:::'
+    return "", para_text
+
+
+def _emit_trailing_heading_if_present(
+    trailing_h_text: str,
+    page_num: int,
+    para_bbox: Any,
+    dominant_font: str,
+    avg_size: float,
+    style_mapping: Dict[str, str],
+    page_paragraphs: List[str],
+    layout_records: List[Dict[str, Any]],
+    audit_data: Dict[str, Any],
+) -> None:
+    if not trailing_h_text:
+        return
+    h_lvl = 3 if _H3_DECIMAL_RE.match(trailing_h_text) else 2
+    h_style = style_mapping.get(f"h{h_lvl}")
+    h_md = f"{'#' * h_lvl} {trailing_h_text} {{custom-style=\"{h_style}\"}}" if h_style else f"{'#' * h_lvl} {trailing_h_text}"
+    page_paragraphs.append(h_md)
+    audit_data["headings_detected"].append({"page": page_num, "level": f"H{h_lvl}", "text": trailing_h_text})
+    layout_records.append({
+        "type": "heading",
+        "page_num": page_num,
+        "level": h_lvl,
+        "title": trailing_h_text,
+        "raw_text": h_md,
+        "bbox": para_bbox,
+        "font_name": dominant_font,
+        "font_size": avg_size,
+        "custom_style": h_style or "",
+    })
+
+
+def _flush_accumulated_paragraph(
+    state: Dict[str, Any],
+    page_num: int,
+    body_font: str,
+    body_size: float,
+    style_mapping: Dict[str, str],
+    page_paragraphs: List[str],
+    layout_records: List[Dict[str, Any]],
+    audit_data: Dict[str, Any],
+) -> None:
+    if not state["lines"]:
+        return
+    para_text = _splice_paragraph_lines(state["lines"], audit_data)
+    trailing_h_text = ""
+    m_trail = _TRAILING_HEADING_SPLIT_RE.match(para_text.strip())
+    if m_trail:
+        para_text = m_trail.group(1).strip()
+        trailing_h_text = m_trail.group(2).strip()
+
+    custom_style_val, para_md = _format_styled_paragraph_md(
+        para_text, state["custom_style"], state["is_kaiti"], style_mapping
+    )
+    page_paragraphs.append(para_md)
+
+    para_bbox = _union_bboxes([b.get("bbox") for b in state["contributing_blocks"] if b.get("bbox")])
+    dominant_font, avg_size = _compute_dominant_font_and_size(state["contributing_blocks"], body_font, body_size)
+    layout_records.append({
+        "type": "paragraph",
+        "page_num": page_num,
+        "raw_text": para_text,
+        "md_text": para_md,
+        "bbox": para_bbox,
+        "font_name": dominant_font,
+        "font_size": avg_size,
+        "custom_style": custom_style_val,
+    })
+
+    _emit_trailing_heading_if_present(
+        trailing_h_text, page_num, para_bbox, dominant_font, avg_size,
+        style_mapping, page_paragraphs, layout_records, audit_data,
+    )
+    state["last_flushed_para_text"] = trailing_h_text if trailing_h_text else para_text
+    state["lines"] = []
+    state["contributing_blocks"] = []
+    state["is_kaiti"] = False
+    state["custom_style"] = None
+
+
+def _detect_font_mapped_heading_level(
+    block_font_role: Optional[str], block_docx_style: Optional[str], is_toc_line: bool, is_ignored_font: bool
+) -> int:
+    if is_ignored_font or is_toc_line:
+        return 0
+    if block_font_role:
+        role_upper = block_font_role.upper()
+        if role_upper in ("H1", "H2", "H3"):
+            return int(role_upper[1])
+        return 0
+    if block_docx_style:
+        if _STYLE_HEADING1_RE.search(block_docx_style):
+            return 1
+        if _STYLE_HEADING2_RE.search(block_docx_style):
+            return 2
+        if _STYLE_HEADING3_RE.search(block_docx_style):
+            return 3
+    return 0
+
+
+def _detect_regex_heading_level(bb_text: str, clean_for_heading: str, has_sentence_punct: bool) -> int:
+    if _H1_PART_RE.match(bb_text) or _H1_SPECIAL_RE.match(bb_text):
+        return 1
+    if _H1_CHAPTER_RE.match(bb_text) or _H2_SECTION_RE.match(bb_text):
+        return 2
+    if has_sentence_punct:
+        return 0
+    if _H3_DECIMAL_RE.match(bb_text):
+        return 3
+    if _H2_DECIMAL_RE.match(bb_text) or _H2_INT_SPACE_RE.match(bb_text):
+        return 2
+    if _H2_NUM_RE.match(bb_text):
+        return 3
+    if _H3_SUB_RE1.match(bb_text) and 2 <= len(clean_for_heading) <= 30:
+        return 3
+    return 0
+
+
+def _detect_geometric_heading_level(
+    lines: List[Dict[str, Any]],
+    bb_text: str,
+    clean_content: str,
+    bbox: Sequence[float],
+    avg_size: float,
+    body_size: float,
+    body_font: str,
+    is_centered: bool,
+    base_x0: float,
+    page_w: float,
+) -> int:
+    if _CHART_TABLE_END_RE.search(bb_text) or _CIRCLED_START_RE.search(bb_text):
+        return 0
+    span_fonts = [(s.get("font") or "").split("+", 1)[-1].lower() for l in lines for s in l.get("spans", [])]
+    is_heiti_or_bold = any(
+        ("hei" in fn or "黑" in fn or "bold" in fn or "bd" in fn or "heavy" in fn or (s.get("flags", 0) & 16))
+        for l in lines for s in l.get("spans", [])
+        for fn in [(s.get("font") or "").lower()]
+    )
+    body_font_clean = body_font.lower() if body_font else ""
+    cjk_span_fonts = [fn for fn in span_fonts if not any(w in fn for w in ("times", "arial", "helvetica", "georgia", "courier", "symbol"))]
+    is_diff_font = bool(body_font_clean and cjk_span_fonts and any(fn != body_font_clean for fn in cjk_span_fonts))
+    is_true_centered = bool(
+        is_centered and (bbox[0] > base_x0 + 10.0) and abs(bbox[0] - (page_w - bbox[2])) < max(25.0, page_w * 0.08)
+    )
+    if avg_size >= body_size + 1.5 or (is_true_centered and avg_size >= body_size + 0.5):
+        return 2
+    if is_heiti_or_bold and (is_diff_font or avg_size >= body_size) and not re.search(r'[的了在]$', clean_content):
+        return 3
+    if is_true_centered and (is_heiti_or_bold or is_diff_font) and avg_size >= body_size - 0.5 and not re.search(r'[的了在]$', clean_content):
+        return 2
+    return 0
+
+
+def _resolve_block_heading_level(
+    bb: Dict[str, Any],
+    lines: List[Dict[str, Any]],
+    bb_text: str,
+    bbox: Sequence[float],
+    avg_size: float,
+    page_num: int,
+    page_w: float,
+    base_x0: float,
+    body_size: float,
+    body_font: str,
+    toc_index: Dict[str, Any],
+    toc_page_offset: List[Any],
+    block_font_role: Optional[str],
+    block_docx_style: Optional[str],
+    has_font_mapping: bool,
+    is_ignored_font: bool,
+    ai_heading_by_block: Dict[int, Dict[str, Any]],
+) -> Tuple[int, bool, Optional[Dict[str, Any]], bool]:
+    is_toc_line = bool(_TOC_LINE_RE.search(bb_text))
+    clean_for_heading = _CLEAN_FOR_HEADING_RE.sub('', bb_text)
+    clean_content = _HEADING_PREFIX_CLEAN_RE.sub('', clean_for_heading)
+    has_sentence_punct = bool(_SENTENCE_PUNCT_RE.search(clean_content))
+    is_centered = abs(((bbox[0] + bbox[2]) / 2.0) - (page_w / 2.0)) < (page_w * 0.12)
+
+    heading_level = _detect_font_mapped_heading_level(block_font_role, block_docx_style, is_toc_line, is_ignored_font)
+    if not heading_level and not is_toc_line and not has_font_mapping and not is_ignored_font:
+        is_cand = (
+            len(lines) <= 2 and 2 <= len(clean_for_heading) <= 35 and not has_sentence_punct
+            and not _LIST_NUM_PREFIX_RE.match(bb_text)
+            and not re.match(r'^(?:[¡•●◆■※★\-]|（?[一二三四五六七八九十\d]+）?[、.·\s]+[是為有在]|[圖表]\s*\d+[-_.]\d+[\s　]+[是為有在])', bb_text)
+            and not re.match(r'^[圖图表]\s*\d+[\s\u3000]', bb_text)
+        )
+        if is_cand and toc_index:
+            heading_level = _match_toc_heading(clean_for_heading, page_num, toc_index, toc_page_offset) or _match_toc_heading(bb_text, page_num, toc_index, toc_page_offset)
+        if not heading_level:
+            heading_level = _detect_regex_heading_level(bb_text, clean_for_heading, has_sentence_punct)
+        if not heading_level and is_cand:
+            heading_level = _detect_geometric_heading_level(
+                lines, bb_text, clean_content, bbox, avg_size, body_size, body_font, is_centered, base_x0, page_w
+            )
+
+    ai_review = ai_heading_by_block.get(id(bb))
+    ai_heading_applied = False
+    if not heading_level and not has_font_mapping and not is_ignored_font and not is_toc_line and ai_review and ai_review.get("role") == "heading":
+        heading_level = ai_review.get("level") or 0
+        ai_heading_applied = heading_level in (1, 2, 3)
+
+    return heading_level, ai_heading_applied, ai_review, is_toc_line
+
+
+def _lookup_caption_style_from_spans(
+    lines: List[Dict[str, Any]], font_role_map: Optional[Dict[str, Any]]
+) -> Optional[str]:
+    if not font_role_map:
+        return None
+    for span in (sp for ln in lines for sp in ln.get("spans", [])):
+        raw_fn = (span.get("font") or "").split("+", 1)[-1]
+        size_v = round(span.get("size", 0) * 2) / 2
+        for cand in (f"{raw_fn} ({size_v}pt)", f"{raw_fn} ({size_v:.1f}pt)", f"{raw_fn}_{size_v}", raw_fn):
+            if cand in font_role_map and font_role_map[cand].get("docx_style"):
+                return font_role_map[cand].get("docx_style")
+    return None
+
+
+def _emit_caption_block(
+    bb: Dict[str, Any],
+    lines: List[Dict[str, Any]],
+    bb_text: str,
+    bbox: Sequence[float],
+    page_num: int,
+    body_font: str,
+    body_size: float,
+    block_docx_style: Optional[str],
+    style_mapping: Dict[str, str],
+    font_role_map: Optional[Dict[str, Any]],
+    page_paragraphs: List[str],
+    layout_records: List[Dict[str, Any]],
+) -> None:
+    caption_style = block_docx_style or style_mapping.get("image_caption") or _lookup_caption_style_from_spans(lines, font_role_map)
+    cap_md = f'::: {{custom-style="{caption_style}"}}\n{bb_text}\n:::' if caption_style else f'*{bb_text}*'
+    page_paragraphs.append(cap_md)
+    c_font, c_size = _compute_dominant_font_and_size([bb], body_font, body_size)
+    layout_records.append({
+        "type": "caption",
+        "page_num": page_num,
+        "raw_text": bb_text,
+        "md_text": cap_md,
+        "bbox": bbox,
+        "font_name": c_font,
+        "font_size": c_size,
+        "custom_style": caption_style or "",
+    })
+
+
+def _resolve_rule_kaiti_status(
+    block_font_role: Optional[str],
+    block_docx_style: Optional[str],
+    has_font_mapping: bool,
+    is_ignored_font: bool,
+    ai_review: Optional[Dict[str, Any]],
+    total_chars: int,
+    kaiti_chars: int,
+) -> bool:
+    if is_ignored_font:
+        return False
+    if block_font_role and block_font_role.lower() in ("楷體", "楷体", "kaiti", "blockquote"):
+        return True
+    if block_docx_style and bool(_STYLE_KAI_RE.search(block_docx_style)):
+        return True
+    if has_font_mapping:
+        return False
+    if ai_review and ai_review.get("source") == "gemma" and ai_review.get("role") == "quote":
+        return True
+    return total_chars > 0 and (kaiti_chars / total_chars) > 0.5
+
+
+def _determine_block_kaiti_status(
+    page: Any,
+    lines: List[Dict[str, Any]],
+    bb_text: str,
+    bbox: Sequence[float],
+    block_font_role: Optional[str],
+    block_docx_style: Optional[str],
+    has_font_mapping: bool,
+    is_ignored_font: bool,
+    ai_review: Optional[Dict[str, Any]],
+    ai_kaiti_classifier: Any,
+) -> bool:
+    total_chars = 0
+    kaiti_chars = 0
+    block_font_names = set()
+    for span in (sp for ln in lines for sp in ln.get("spans", [])):
+        span_text = span.get("text", "").strip()
+        if not span_text:
+            continue
+        total_chars += len(span_text)
+        font_name = span.get("font", "").lower()
+        if font_name:
+            block_font_names.add(font_name)
+        if "kai" in font_name or "楷" in font_name or "kt" in font_name:
+            kaiti_chars += len(span_text)
+
+    is_kaiti = _resolve_rule_kaiti_status(
+        block_font_role, block_docx_style, has_font_mapping, is_ignored_font, ai_review, total_chars, kaiti_chars
+    )
+    if not is_kaiti and not has_font_mapping and not is_ignored_font and ai_kaiti_classifier is not None:
+        try:
+            is_kaiti = ai_kaiti_classifier.is_block_kaiti(
+                page=page, block_bbox=bbox, block_text=bb_text, font_names=list(block_font_names),
+            )
+        except Exception:
+            pass
+    return is_kaiti
+
+
+def _has_unclosed_delimiters(prev_clean: str) -> bool:
+    prev_ends_with_open = bool(_OPEN_PUNCT_RE.search(prev_clean))
+    unclosed_delims = update_delimiter_stack(prev_clean) if update_delimiter_stack else []
+    has_unclosed_cjk_quote = bool(
+        len(unclosed_delims) > 0
+        or prev_clean.count('《') > prev_clean.count('》')
+        or prev_clean.count('“') > prev_clean.count('”')
+        or prev_clean.count('（') > prev_clean.count('）')
+        or prev_clean.count('(') > prev_clean.count(')')
+    )
+    return prev_ends_with_open or has_unclosed_cjk_quote
+
+
+def _evaluate_punctuation_and_indent_break(
+    prev_clean: str,
+    curr_clean: str,
+    first_para_line: str,
+    is_indented: bool,
+    curr_has_space_indent: bool,
+    indent_jump: bool,
+    prev_block_was_short_line: bool,
+    vertical_gap: float,
+    avg_size: float,
+) -> bool:
+    if vertical_gap > avg_size * 1.5:
+        return True
+    prev_no_mark = _TRAILING_MARK_RE.sub('', prev_clean)
+    prev_has_terminal = bool(_TERMINAL_PUNCT_RE.search(prev_no_mark))
+    prev_ends_with_colon = bool(re.search(r'[：:]$', prev_no_mark))
+    is_hanging_citation = bool(
+        first_para_line and re.match(r'^\[\d+\]', first_para_line) and not re.match(r'^\[\d+\]', curr_clean)
+    )
+    if prev_has_terminal:
+        return bool(is_indented or curr_has_space_indent or prev_block_was_short_line or vertical_gap > avg_size * 0.9)
+    if prev_ends_with_colon and not is_hanging_citation and (is_indented or curr_has_space_indent or prev_block_was_short_line):
+        return True
+    if not is_hanging_citation and (is_indented or curr_has_space_indent) and indent_jump and prev_block_was_short_line:
+        return True
+    return False
+
+
+def _should_flush_before_block(
+    state: Dict[str, Any],
+    bb_text: str,
+    bbox: Sequence[float],
+    avg_size: float,
+    base_x0: float,
+    max_x1: float,
+    is_block_kaiti: bool,
+    block_custom_style: Optional[str],
+    ai_boundary_override: Any,
+    page_num: int,
+    audit_data: Dict[str, Any],
+) -> bool:
+    if not state["lines"]:
+        return False
+    if is_block_kaiti != state["is_kaiti"] or block_custom_style != state["custom_style"]:
+        return True
+    prev_clean = state["lines"][-1].strip()
+    curr_clean = bb_text.strip()
+    if curr_clean and _PARA_START_PREFIX_RE.match(curr_clean):
+        return True
+
+    is_indented = (bbox[0] - base_x0) >= max(10.0, avg_size * 1.4)
+    curr_has_space_indent = bool(re.match(r'^[\u3000]{1,2}|^\s{2,4}', bb_text))
+    indent_jump = bool((bbox[0] - state["last_x0"]) >= 5.0)
+    vertical_gap = (bbox[1] - state["last_y1"]) if state["last_y1"] > 0 else 0.0
+    prev_ref_x1 = state["last_line_x1"] if state["last_line_x1"] > 0 else state["last_x1"]
+    prev_short = bool(prev_ref_x1 > 0 and prev_ref_x1 < max_x1 - max(avg_size * 2.0, 20.0))
+
+    is_unclosed = _has_unclosed_delimiters(prev_clean)
+    prev_clean_content = _HEADING_PREFIX_CLEAN_RE.sub('', _CLEAN_FOR_HEADING_RE.sub('', prev_clean))
+    prev_is_heading_like = bool(
+        not is_unclosed and len(state["lines"]) == 1 and 2 <= len(prev_clean_content) <= 35
+        and not _SENTENCE_PUNCT_RE.search(prev_clean_content) and prev_short
+        and not re.search(r'[的了在和与]$', prev_clean_content)
+    )
+
+    if prev_is_heading_like:
+        should_flush = True
+    elif is_unclosed:
+        should_flush = False
+    else:
+        should_flush = _evaluate_punctuation_and_indent_break(
+            prev_clean, curr_clean, state["lines"][0].strip(),
+            is_indented, curr_has_space_indent, indent_jump, prev_short, vertical_gap, avg_size,
+        )
+
+    if ai_boundary_override is not None and not is_unclosed and not prev_is_heading_like:
+        ai_should_break = ai_boundary_override.get("should_break") if isinstance(ai_boundary_override, dict) else ai_boundary_override
+        if type(ai_should_break) is bool:
+            should_flush = ai_should_break
+        audit_data["ai_layout"]["decisions"].append({
+            "page": page_num,
+            "type": "boundary",
+            "source": "gemma",
+            "previous": prev_clean[:120],
+            "next": curr_clean[:120],
+            "decision": "break" if should_flush else "merge",
+            "confidence": ai_boundary_override.get("confidence") if isinstance(ai_boundary_override, dict) else None,
+        })
+    return should_flush
+
+
+def _update_state_coords(
+    state: Dict[str, Any], bbox: Sequence[float], last_line_x1: float = 0.0, reset_heading: bool = True
+) -> None:
+    state["last_x0"] = bbox[0]
+    state["last_x1"] = bbox[2]
+    state["last_y1"] = bbox[3]
+    state["last_line_x1"] = last_line_x1
+    if reset_heading:
+        state["last_heading_text"] = ""
+
+
+def _handle_non_text_flow_item(
+    item: Dict[str, Any],
+    state: Dict[str, Any],
+    page_num: int,
+    page_w: float,
+    page_h: float,
+    body_font: str,
+    body_size: float,
+    enable_footnotes: bool,
+    page_footnotes: List[Dict[str, Any]],
+    style_mapping: Dict[str, str],
+    all_image_blocks: List[Dict[str, Any]],
+    page_paragraphs: List[str],
+    layout_records: List[Dict[str, Any]],
+    audit_data: Dict[str, Any],
+) -> bool:
+    itype = item["type"]
+    if itype == "text":
+        return False
+
+    _flush_accumulated_paragraph(
+        state, page_num, body_font, body_size, style_mapping, page_paragraphs, layout_records, audit_data
+    )
+    item_bbox = item["bbox"]
+    _update_state_coords(state, item_bbox, 0.0, reset_heading=True)
+
+    if itype == "figure":
+        block_idx, _ = item["data"]
+        all_image_blocks.append({"page_num": page_num, "block_idx": block_idx, "bbox": item_bbox, "page_w": page_w, "page_h": page_h})
+        fig_raw_md = f"![__IMG_PLACEHOLDER_{page_num}_{block_idx}__]()"
+        page_paragraphs.append(fig_raw_md)
+        layout_records.append({"type": "figure", "page_num": page_num, "block_idx": block_idx, "raw_md": fig_raw_md, "bbox": item_bbox, "font_name": "figure", "font_size": 10.5})
+        return True
+    if itype == "table":
+        tbl_md = _table_to_markdown(item["data"], page_footnotes, page_num)
+        if tbl_md:
+            page_paragraphs.append(tbl_md)
+        layout_records.append({"type": "table", "page_num": page_num, "bbox": item_bbox, "raw_md": tbl_md or ""})
+        return True
+    if itype == "reconstructed_table":
+        rtbl = item["data"]
+        tbl_md = _replace_fn_markers_in_text(rtbl.markdown, page_footnotes, page_num) if (enable_footnotes and page_footnotes) else rtbl.markdown
+        if tbl_md:
+            page_paragraphs.append(tbl_md)
+        layout_records.append({
+            "type": "table", "page_num": page_num, "bbox": item_bbox, "raw_md": tbl_md or "",
+            "caption_text": getattr(rtbl, "caption_text", ""),
+        })
+    return True
+
+
+def _emit_heading_block(
+    bb: Dict[str, Any],
+    bb_text: str,
+    bbox: Sequence[float],
+    cur_last_line_x1: float,
+    heading_level: int,
+    ai_heading_applied: bool,
+    ai_review: Optional[Dict[str, Any]],
+    block_docx_style: Optional[str],
+    state: Dict[str, Any],
+    page_num: int,
+    body_font: str,
+    body_size: float,
+    style_mapping: Dict[str, str],
+    page_paragraphs: List[str],
+    layout_records: List[Dict[str, Any]],
+    audit_data: Dict[str, Any],
+) -> None:
+    _flush_accumulated_paragraph(
+        state, page_num, body_font, body_size, style_mapping, page_paragraphs, layout_records, audit_data
+    )
+    prev_heading = state["last_heading_text"]
+    _update_state_coords(state, bbox, cur_last_line_x1, reset_heading=False)
+    if bb_text == prev_heading:
+        return
+    state["last_heading_text"] = bb_text
+    audit_data["headings_detected"].append({
+        "page": page_num,
+        "level": f"H{heading_level}",
+        "text": bb_text,
+        "source": "gemma" if ai_heading_applied else "deterministic",
+        "confidence": ai_review.get("confidence") if (ai_heading_applied and ai_review) else None,
+        "reason": ai_review.get("reason", "") if (ai_heading_applied and ai_review) else "",
+    })
+    custom_style = block_docx_style or style_mapping.get(f"h{heading_level}")
+    formatted_heading = f"{'#' * heading_level} {bb_text} {{custom-style=\"{custom_style}\"}}" if custom_style else f"{'#' * heading_level} {bb_text}"
+    page_paragraphs.append(formatted_heading)
+    h_font, h_size = _compute_dominant_font_and_size([bb], body_font, body_size)
+    layout_records.append({
+        "type": "heading",
+        "page_num": page_num,
+        "level": heading_level,
+        "title": bb_text,
+        "raw_text": formatted_heading,
+        "bbox": bbox,
+        "font_name": h_font,
+        "font_size": h_size,
+        "custom_style": custom_style or "",
+    })
+
+
+def _append_block_lines_to_state(
+    bb: Dict[str, Any],
+    lines: List[Dict[str, Any]],
+    state: Dict[str, Any],
+    is_block_kaiti: bool,
+    block_custom_style: Optional[str],
+    page_footnotes: List[Dict[str, Any]],
+    page_num: int,
+) -> None:
+    if not state["lines"]:
+        state["is_kaiti"] = is_block_kaiti
+        state["custom_style"] = block_custom_style
+
+    block_has_valid_line = False
+    for line in lines:
+        line_str = "".join(s.get("text", "") for s in line.get("spans", [])).strip()
+        if not line_str:
+            continue
+        preceding_ctx = state["lines"][-1] if state["lines"] else state["last_flushed_para_text"]
+        state["lines"].append(_replace_fn_markers_in_text(line_str, page_footnotes, page_num, preceding_context=preceding_ctx))
+        block_has_valid_line = True
+    if block_has_valid_line:
+        state["contributing_blocks"].append(bb)
+
+
+def _process_text_flow_item(
+    item: Dict[str, Any],
+    page: Any,
+    state: Dict[str, Any],
+    page_num: int,
+    page_w: float,
+    base_x0: float,
+    max_x1: float,
+    body_font: str,
+    body_size: float,
+    toc_index: Dict[str, Any],
+    toc_page_offset: List[Any],
+    font_role_map: Optional[Dict[str, Any]],
+    style_mapping: Dict[str, str],
+    ai_heading_by_block: Dict[int, Dict[str, Any]],
+    ai_boundary_by_item: Dict[str, Any],
+    ai_kaiti_classifier: Any,
+    page_footnotes: List[Dict[str, Any]],
+    page_paragraphs: List[str],
+    layout_records: List[Dict[str, Any]],
+    audit_data: Dict[str, Any],
+) -> None:
+    bb = item["data"]
+    lines = bb.get("lines", [])
+    if not lines:
+        return
+    bb_text = "".join(s.get("text", "") for l in lines for s in l.get("spans", [])).strip()
+    if len(bb_text) >= 4 and len(bb_text) % 2 == 0 and bb_text[:len(bb_text) // 2] == bb_text[len(bb_text) // 2:]:
+        bb_text = bb_text[:len(bb_text) // 2]
+
+    sizes = [s.get("size", 0) for l in lines for s in l.get("spans", [])]
+    avg_size = sum(sizes) / len(sizes) if sizes else 10.0
+    bbox = bb.get("bbox", [0, 0, 0, 0])
+    cur_last_line_x1 = lines[-1].get("bbox", bbox)[2] if lines else bbox[2]
+    is_toc_line = bool(_TOC_LINE_RE.search(bb_text))
+
+    block_font_role, block_docx_style, block_mapped_by = _lookup_block_font_mapping(lines, font_role_map, is_toc_line=is_toc_line)
+    if block_mapped_by == "ai_layout":
+        block_font_role, block_docx_style = None, None
+    is_ignored_font = bool(block_font_role and str(block_font_role).strip().lower() in ("忽略", "ignore", "none"))
+    has_font_mapping = bool((block_font_role or block_docx_style) and not is_ignored_font)
+
+    heading_level, ai_heading_applied, ai_review, _ = _resolve_block_heading_level(
+        bb, lines, bb_text, bbox, avg_size, page_num, page_w, base_x0, body_size, body_font,
+        toc_index, toc_page_offset, block_font_role, block_docx_style, has_font_mapping, is_ignored_font, ai_heading_by_block,
+    )
+    if heading_level > 0:
+        _emit_heading_block(
+            bb, bb_text, bbox, cur_last_line_x1, heading_level, ai_heading_applied, ai_review,
+            block_docx_style, state, page_num, body_font, body_size, style_mapping, page_paragraphs, layout_records, audit_data,
+        )
+        return
+
+    state["last_heading_text"] = ""
+    is_block_caption = not is_ignored_font and bool(
+        (block_font_role and block_font_role.lower() in ("圖說", "图说", "caption"))
+        or (block_docx_style and _STYLE_CAPTION_RE.search(block_docx_style))
+    )
+    if is_block_caption:
+        _flush_accumulated_paragraph(state, page_num, body_font, body_size, style_mapping, page_paragraphs, layout_records, audit_data)
+        _emit_caption_block(bb, lines, bb_text, bbox, page_num, body_font, body_size, block_docx_style, style_mapping, font_role_map, page_paragraphs, layout_records)
+        _update_state_coords(state, bbox, cur_last_line_x1, reset_heading=False)
+        return
+
+    is_block_kaiti = _determine_block_kaiti_status(
+        page, lines, bb_text, bbox, block_font_role, block_docx_style, has_font_mapping, is_ignored_font, ai_review, ai_kaiti_classifier,
+    )
+    block_custom_style = block_docx_style if (has_font_mapping and not is_ignored_font) else None
+    if _should_flush_before_block(
+        state, bb_text, bbox, avg_size, base_x0, max_x1, is_block_kaiti, block_custom_style,
+        ai_boundary_by_item.get(item.get("ai_boundary_key")), page_num, audit_data,
+    ):
+        _flush_accumulated_paragraph(state, page_num, body_font, body_size, style_mapping, page_paragraphs, layout_records, audit_data)
+
+    _append_block_lines_to_state(bb, lines, state, is_block_kaiti, block_custom_style, page_footnotes, page_num)
+    _update_state_coords(state, bbox, cur_last_line_x1, reset_heading=False)
+
+
+def _finalize_page_footnotes(
+    page_footnotes: List[Dict[str, Any]],
+    page_num: int,
+    page_paragraphs: List[str],
+    layout_records: List[Dict[str, Any]],
+    audit_data: Dict[str, Any],
+) -> None:
+    for fn in page_footnotes:
+        fn_id = fn["id"]
+        fn_tag = f"[^p{page_num}_{fn_id}]"
+        if not fn.get("matched", False):
+            if page_paragraphs:
+                new_p, replaced = try_replace_alpha_fallback(page_paragraphs[-1], fn_id, fn_tag)
+                page_paragraphs[-1] = new_p if replaced else (page_paragraphs[-1] + fn_tag)
+            else:
+                page_paragraphs.append(fn_tag)
+            audit_data["footnotes_fallback"] += 1
+            audit_data["footnotes_detail"].append({
+                "page": page_num,
+                "id": fn_id,
+                "status": "FALLBACK (正文上標模糊，降級錨定段末)",
+                "content": fn["content"][:60],
+            })
+        else:
+            audit_data["footnotes_matched"] += 1
+            audit_data["footnotes_detail"].append({
+                "page": page_num,
+                "id": fn_id,
+                "status": "MATCHED (雙向匹配精準錨定)",
+                "content": fn["content"][:60],
+            })
+
+        page_paragraphs.append(f"{fn_tag}: {fn['content']}")
+        layout_records.append({
+            "type": "footnote",
+            "page_num": page_num,
+            "fn_id": fn_id,
+            "tag": fn_tag,
+            "content": fn["content"],
+        })
+
+
+def _process_single_pdf_page_layout(
+    page: Any,
+    page_num: int,
+    body_size: float,
+    body_font: str,
+    toc_index: Dict[str, Any],
+    toc_page_offset: List[Any],
+    style_mapping: Dict[str, str],
+    font_role_map: Optional[Dict[str, Any]],
+    enable_footnotes: bool,
+    strip_headers_heuristic: bool,
+    ai_kaiti_classifier: Any,
+    ai_font_decision_cache: Dict[str, Dict[str, Any]],
+    retained_font_suggestions: Dict[str, Dict[str, Any]],
+    final_md_pages: List[str],
+    all_image_blocks: List[Dict[str, Any]],
+    layout_records: List[Dict[str, Any]],
+    audit_data: Dict[str, Any],
+) -> None:
+    page_h = page.rect.height
+    page_w = page.rect.width
+    blocks = _split_merged_heading_blocks(page.get_text("dict").get("blocks", []))
+
+    table_bboxes: List[Any] = []
+    reconstructed_tables = _detect_three_line_tables(page, blocks, table_bboxes)
+    page_tables = _detect_bordered_page_tables(page, page_w, page_h, table_bboxes)
+
+    body_blocks, footnote_blocks, figure_blocks = _partition_page_blocks(
+        blocks, page_w, page_h, body_size, enable_footnotes, strip_headers_heuristic, table_bboxes, audit_data
+    )
+    page_footnotes = _parse_page_footnotes_from_blocks(footnote_blocks)
+    base_x0, max_x1 = _compute_page_x_margins(body_blocks, page_w)
+    flow_items = _build_interleaved_flow_items(body_blocks, figure_blocks, page_tables, reconstructed_tables)
+    ai_heading_by_block = _review_page_ai_heading_candidates(
+        body_blocks, page_num, page_w, body_size, body_font, font_role_map,
+        style_mapping, ai_font_decision_cache, retained_font_suggestions, audit_data,
+    )
+
+    page_paragraphs: List[str] = []
+    ai_boundary_by_item: Dict[str, Any] = {}
+    state: Dict[str, Any] = {
+        "lines": [],
+        "contributing_blocks": [],
+        "is_kaiti": False,
+        "custom_style": None,
+        "last_x0": 0.0,
+        "last_x1": 0.0,
+        "last_y1": 0.0,
+        "last_line_x1": 0.0,
+        "last_heading_text": "",
+        "last_flushed_para_text": "",
+    }
+
+    for item in flow_items:
+        if _handle_non_text_flow_item(
+            item, state, page_num, page_w, page_h, body_font, body_size, enable_footnotes,
+            page_footnotes, style_mapping, all_image_blocks, page_paragraphs, layout_records, audit_data,
+        ):
+            continue
+        _process_text_flow_item(
+            item, page, state, page_num, page_w, base_x0, max_x1, body_font, body_size,
+            toc_index, toc_page_offset, font_role_map, style_mapping, ai_heading_by_block,
+            ai_boundary_by_item, ai_kaiti_classifier, page_footnotes, page_paragraphs, layout_records, audit_data,
+        )
+
+    _flush_accumulated_paragraph(
+        state, page_num, body_font, body_size, style_mapping, page_paragraphs, layout_records, audit_data
+    )
+    _finalize_page_footnotes(page_footnotes, page_num, page_paragraphs, layout_records, audit_data)
+    if page_paragraphs:
+        final_md_pages.append("\n\n".join(page_paragraphs))
+
+
 def _parse_pdf_layout_flow(
     doc: fitz.Document,
     pdf_name: str = "",
@@ -755,18 +1846,10 @@ def _parse_pdf_layout_flow(
 ) -> Tuple[List[str], List[Dict[str, Any]], Dict[str, Any], List[Dict[str, Any]]]:
     """
     純記憶體版面與流式閱讀解析核心 (Pure Parsing Core)。
-    
-    職責：
-    - 遍歷 PDF 頁面結構，執行表格偵測、頁眉/頁尾剔除、腳注解析、標題識別、段落防黏連重流。
-    - 產出未嵌入圖檔路徑之 Markdown 頁面字串（含圖片佔位符號）、待提取圖檔幾何資訊清單與稽核數據。
-    - 保留結構化 layout_records (段落、幾何 bbox、字型、字級、樣式)，供 AST 構建器使用。
-    - 絕不執行任何檔案建立、磁碟寫入（images/、.md、稀有字報告）或目錄變更等副作用。
     """
-    if style_mapping is None:
-        style_mapping = {}
+    style_map = style_mapping or {}
     total_pages = len(doc)
-    
-    # ── 全書特徵探勘與目錄索引建立 ──
+
     doc_profile = build_document_profile(doc)
     body_size = doc_profile.get("body_size", 10.5)
     body_font = doc_profile.get("body_font", "")
@@ -776,1040 +1859,26 @@ def _parse_pdf_layout_flow(
         print(f"[DocProfile] 成功建立標題索引共 {len(toc_index)} 筆 (原生書籤: {doc_profile.get('is_native_toc')})，正文基準: {body_size}pt / '{body_font}'")
 
     retained_font_suggestions: Dict[str, Dict[str, Any]] = {}
-    ai_font_decision_cache: Dict[str, Dict[str, Any]] = {}
-    if font_role_map:
-        for _fk, _fval in font_role_map.items():
-            if isinstance(_fval, dict) and _fval.get("mapped_by") == "ai_layout":
-                _r = str(_fval.get("role") or "").upper()
-                if _r in ("H1", "H2", "H3"):
-                    ai_font_decision_cache[_fk] = {
-                        "role": "heading",
-                        "level": int(_r[1]),
-                        "confidence": _fval.get("confidence", 0.85),
-                        "reason": _fval.get("reason", "retained_ai_layout"),
-                        "source": "gemma",
-                    }
-                elif _r in ("楷體", "楷体", "KAITI", "QUOTE"):
-                    ai_font_decision_cache[_fk] = {
-                        "role": "quote",
-                        "level": None,
-                        "confidence": _fval.get("confidence", 0.85),
-                        "reason": _fval.get("reason", "retained_ai_layout"),
-                        "source": "gemma",
-                    }
-                elif _r in ("正文", "內文", "BODY"):
-                    ai_font_decision_cache[_fk] = {
-                        "role": "body",
-                        "level": None,
-                        "confidence": _fval.get("confidence", 0.85),
-                        "reason": _fval.get("reason", "retained_ai_layout"),
-                        "source": "gemma",
-                    }
+    ai_font_decision_cache = _build_ai_font_decision_cache(font_role_map)
+    audit_data = _init_layout_audit_data(pdf_name, total_pages, style_map, retained_font_suggestions, doc_profile)
 
-    audit_data = {
-        "pdf_name": pdf_name,
-        "total_pages": total_pages,
-        "headers_removed": 0,
-        "footers_removed": 0,
-        "headings_detected": [],
-        "footnotes_matched": 0,
-        "footnotes_fallback": 0,
-        "footnotes_detail": [],
-        "paragraphs_reflowed": 0,
-        "ai_layout": {
-            "model": DEFAULT_GEMMA_MODEL,
-            "model_available": False,
-            "confirmed_style_mapping": dict(style_mapping),
-            "retained_font_suggestions": retained_font_suggestions,
-            "decisions": [],
-        },
-        "doc_profile": {
-            "body_size": body_size,
-            "body_font": body_font,
-            "toc_entries": len(toc_index),
-            "is_native_toc": doc_profile.get("is_native_toc", False),
-        }
-    }
-    audit_data["ai_layout"]["model_available"] = gemma_available(DEFAULT_GEMMA_MODEL)
-    if not audit_data["ai_layout"]["model_available"]:
-        print(f"[WARN] 本機未安裝 {DEFAULT_GEMMA_MODEL}，標題與斷行使用確定性判定。", flush=True)
-    
-    final_md_pages = []
-    all_image_blocks = []
-    layout_records = []
+    final_md_pages: List[str] = []
+    all_image_blocks: List[Dict[str, Any]] = []
+    layout_records: List[Dict[str, Any]] = []
 
-    start_page_idx = 0
-    end_page_idx = total_pages
-    if page_range:
-        start_page_idx = max(0, page_range[0] - 1)
-        end_page_idx = min(total_pages, page_range[1])
+    start_page_idx = max(0, page_range[0] - 1) if page_range else 0
+    end_page_idx = min(total_pages, page_range[1]) if page_range else total_pages
 
     for page_idx in range(start_page_idx, end_page_idx):
         page_num = page_idx + 1
         if progress_callback:
-            progress_pct = int((page_num / total_pages) * 85)
-            progress_callback(progress_pct, f"[INFO] 正在解析第 {page_num}/{total_pages} 頁 (版面/樣式/腳注抽取)...")
-            
-        page: Any = doc[page_idx]
-        page_h = page.rect.height
-        page_w = page.rect.width
-        
-        blocks = _split_merged_heading_blocks(page.get_text("dict").get("blocks", []))
-
-        # ── Step 0: Detect tables via PyMuPDF find_tables() + 3-Line Table Reconstructor ──
-        # Collect table bbox regions so we can exclude their text from body_blocks.
-        page_tables = []  # list of fitz.table.Table objects
-        reconstructed_tables = []  # list of ReconstructedTable objects (3-line tables)
-        table_bboxes = []  # list of fitz.Rect for overlap checks
-
-        def _block_overlaps_any_table(bbox_list, block_bbox):
-            """Return True if block_bbox overlaps any known table region by >30%."""
-            b = fitz.Rect(block_bbox)
-            for tr in bbox_list:
-                inter = b & tr
-                if inter.is_empty:
-                    continue
-                inter_area = inter.width * inter.height
-                b_area = b.width * b.height
-                if inter_area / max(b_area, 1.0) > 0.30:
-                    return True
-            return False
-
-        # Priority 1: High-precision 2D coordinate clustering for borderless 3-line tables
-        if extract_reconstructed_tables_from_page is not None:
-            try:
-                three_line_list = extract_reconstructed_tables_from_page(page, blocks=blocks)
-                for rtbl in three_line_list:
-                    if not _block_overlaps_any_table(table_bboxes, rtbl.bbox):
-                        reconstructed_tables.append(rtbl)
-                        table_bboxes.append(fitz.Rect(rtbl.bbox))
-            except Exception:
-                pass
-
-        # Priority 2: PyMuPDF standard bordered grid table detection (skipped if region already claimed)
-        try:
-            tabs = page.find_tables()
-            if tabs and tabs.tables:
-                for t in tabs.tables:
-                    if _block_overlaps_any_table(table_bboxes, t.bbox):
-                        continue
-                    if is_valid_pymupdf_table is not None:
-                        try:
-                            cells = t.extract()
-                        except Exception:
-                            cells = []
-                        if not is_valid_pymupdf_table(cells, t.bbox, page_w, page_h):
-                            continue
-                    page_tables.append(t)
-                    table_bboxes.append(fitz.Rect(t.bbox))
-        except Exception:
-            pass  # find_tables() not available in older PyMuPDF – graceful fallback
-
-        # Step 1: Collect valid text blocks, separate header/footer/footnote
-        body_blocks = []
-        footnote_blocks = []
-        figure_blocks = []
-
-        for b in blocks:
-            block_type = b.get("type")
-            
-            if block_type == 1:
-                if not (strip_headers_heuristic and (is_page_header(b, page_h, page_w) or is_page_footer(b, page_h))):
-                    if not (table_bboxes and _block_overlaps_any_table(table_bboxes, b.get("bbox", [0, 0, 0, 0]))):
-                        figure_blocks.append(b)
-                continue
-                
-            if block_type != 0:
-                continue
-
-            # Clean duplicate spans within lines and normalize sequence symbol font spans
-            for line in b.get("lines", []):
-                cleaned_spans = clean_span_duplicates(line.get("spans", []))
-                line["spans"] = _normalize_symbol_font_spans(cleaned_spans)
-
-            block_text = "".join(s.get("text", "") for l in b.get("lines", []) for s in l.get("spans", [])).strip()
-            if not block_text:
-                continue
-
-            if strip_headers_heuristic and is_page_header(b, page_h, page_w):
-                audit_data["headers_removed"] += 1
-                continue
-            if strip_headers_heuristic and is_page_footer(b, page_h):
-                audit_data["footers_removed"] += 1
-                continue
-
-            bbox = b.get("bbox", [0, 0, 0, 0])
-
-            # Skip blocks that belong to a detected table region
-            # (they will be rendered via _table_to_markdown instead)
-            if table_bboxes and _block_overlaps_any_table(table_bboxes, bbox):
-                continue
-
-            # Check if block is in footnote area:
-            # Footnotes are located near bottom of page (y >= page_h * 0.72)
-            # and MUST START with a footnote marker or be an immediate continuation of one
-            sizes = [s.get("size", 0) for l in b.get("lines", []) for s in l.get("spans", [])]
-            avg_size = sum(sizes) / len(sizes) if sizes else 10.0
-
-            is_fn = False
-            if enable_footnotes:
-                starts_with_fn_marker = bool(_STARTS_WITH_FN_MARKER_RE.match(block_text))
-                if bbox[1] >= page_h * 0.65 and avg_size < body_size:
-                    if (starts_with_fn_marker or is_strong_citation_text(block_text)) and not _H3_DECIMAL_RE.match(block_text) and not _H2_DECIMAL_RE.match(block_text):
-                        is_fn = True
-                    elif footnote_blocks and avg_size <= 10.0:
-                        # Immediate subsequent block below a footnote block with small font
-                        is_fn = True
-
-            if is_fn:
-                footnote_blocks.append(b)
-            else:
-                body_blocks.append(b)
-                
-        # Step 2: Parse footnotes on this page
-        page_footnotes = []  # list of {id, marker, content, matched}
-        current_fn_entry = None
-        footnote_blocks = _sort_blocks_by_row_and_x(footnote_blocks, y_tol=5.0)
-
-        for fb in footnote_blocks:
-            fb_text = "".join(
-                s.get("text", "") for l in fb.get("lines", []) for s in l.get("spans", [])
-            ).strip()
-            if not fb_text:
-                continue
-
-            # Split block text by ANY recognised footnote marker
-            # This handles both circled numbers and [n] / (n) / n. styles
-            parts = _FN_MARKER_SPLIT_RE.split(fb_text)
-
-            # parts[0] — text before the first marker (may be empty)
-            prefix = parts[0]
-            m_start = _STARTS_WITH_FN_MARKER_RE.match(prefix)
-            if m_start:
-                # The prefix itself *is* a marker (split captured it)
-                pass  # handled below in the loop
-            elif prefix.strip():
-                # Plain continuation text before any marker
-                if current_fn_entry:
-                    sep = " " if current_fn_entry["content"] else ""
-                    current_fn_entry["content"] = str(current_fn_entry["content"]) + sep + prefix.strip()
-                else:
-                    # Orphaned text — treat as footnote #1 continuation
-                    current_fn_entry = {"id": 1, "marker": "", "content": prefix.strip()}
-
-            # Iterate: parts alternates [text, marker, text, marker, text ...]
-            for i in range(1, len(parts), 2):
-                marker_str = parts[i].strip()
-                content_str = parts[i + 1].strip() if (i + 1) < len(parts) else ""
-
-                num = _circled_to_int(marker_str)
-                if 1800 <= num <= 2100 and re.match(r'^\d{4}[.、]', marker_str):
-                    # Prevent publication year (e.g. 2009.) from being parsed as phantom footnote
-                    if current_fn_entry:
-                        current_fn_entry["content"] = (current_fn_entry["content"] + " " + marker_str + (" " + content_str if content_str else "")).strip()
-                    continue
-
-                if current_fn_entry:
-                    page_footnotes.append(current_fn_entry)
-
-                current_fn_entry = {"id": num, "marker": marker_str, "content": content_str}
-
-        if current_fn_entry:
-            page_footnotes.append(current_fn_entry)
-
-        # Step 3: Determine base_x0 and max_x1 for body paragraphs on this page
-        normal_x0s = []
-        normal_x1s = []
-        for bb in body_blocks:
-            lines = bb.get("lines", [])
-            bb_text = "".join(s.get("text", "") for l in lines for s in l.get("spans", [])).strip()
-            bbox = bb.get("bbox", [0, 0, 0, 0])
-            center_x = (bbox[0] + bbox[2]) / 2.0
-            is_centered = abs(center_x - (page_w / 2.0)) < (page_w * 0.12)
-            if not is_centered and len(bb_text) > 10:
-                normal_x0s.append(bbox[0])
-                normal_x1s.append(bbox[2])
-        base_x0 = min(normal_x0s) if normal_x0s else 65.0
-        max_x1 = max(normal_x1s) if normal_x1s else (page_w - base_x0)
-
-        page_paragraphs = []
-        current_para_lines = []
-        current_para_contributing_blocks = []
-        current_para_is_kaiti = False
-        current_para_custom_style = None
-        last_block_x0 = 0.0
-        last_block_x1 = 0.0
-        last_block_y1 = 0.0
-        last_block_last_line_x1 = 0.0
-        last_heading_text = ""
-
-        def flush_current_para():
-            nonlocal current_para_lines, current_para_contributing_blocks, current_para_is_kaiti, current_para_custom_style
-            if current_para_lines:
-                # Splice lines smoothly
-                para_text = ""
-                for line_txt in current_para_lines:
-                    if not para_text:
-                        para_text = line_txt
-                    else:
-                        cjk_end = bool(_CJK_END_RE.search(para_text))
-                        cjk_start = bool(_CJK_START_RE.search(line_txt))
-                        if cjk_end and cjk_start:
-                            para_text += line_txt
-                            audit_data["paragraphs_reflowed"] += 1
-                        else:
-                            para_text += " " + line_txt
-
-                # Split trailing inline heading if merged at sentence end (e.g. "...（疗效对比时剔除）。 4 讨论")
-                trailing_h_text = ""
-                m_trail = _TRAILING_HEADING_SPLIT_RE.match(para_text.strip())
-                if m_trail:
-                    para_text = m_trail.group(1).strip()
-                    trailing_h_text = m_trail.group(2).strip()
-
-                custom_style_val = ""
-                if current_para_custom_style:
-                    # Apply specific custom Word style from font mapping
-                    custom_style_val = current_para_custom_style
-                    para_md = f'::: {{custom-style="{current_para_custom_style}"}}\n{para_text}\n:::'
-                elif current_para_is_kaiti:
-                    # Apply custom Word style instead of basic blockquote
-                    kaiti_style = style_mapping.get("kaiti") or "楷體2"
-                    custom_style_val = kaiti_style
-                    para_md = f'::: {{custom-style="{kaiti_style}"}}\n{para_text}\n:::'
-                else:
-                    body_style = style_mapping.get("body")
-                    if body_style:
-                        custom_style_val = body_style
-                        para_md = f'::: {{custom-style="{body_style}"}}\n{para_text}\n:::'
-                    else:
-                        para_md = para_text
-                page_paragraphs.append(para_md)
-
-                # Record structured paragraph block
-                para_bbox = _union_bboxes([b.get("bbox") for b in current_para_contributing_blocks if b.get("bbox")])
-                dominant_font, avg_size = _compute_dominant_font_and_size(current_para_contributing_blocks, body_font, body_size)
-                layout_records.append({
-                    "type": "paragraph",
-                    "page_num": page_num,
-                    "raw_text": para_text,
-                    "md_text": para_md,
-                    "bbox": para_bbox,
-                    "font_name": dominant_font,
-                    "font_size": avg_size,
-                    "custom_style": custom_style_val,
-                })
-
-                if trailing_h_text:
-                    h_lvl = 3 if _H3_DECIMAL_RE.match(trailing_h_text) else 2
-                    h_style = style_mapping.get(f"h{h_lvl}")
-                    h_md = f"{'#' * h_lvl} {trailing_h_text} {{custom-style=\"{h_style}\"}}" if h_style else f"{'#' * h_lvl} {trailing_h_text}"
-                    page_paragraphs.append(h_md)
-                    audit_data["headings_detected"].append({
-                        "page": page_num,
-                        "level": f"H{h_lvl}",
-                        "text": trailing_h_text,
-                    })
-                    layout_records.append({
-                        "type": "heading",
-                        "page_num": page_num,
-                        "level": h_lvl,
-                        "title": trailing_h_text,
-                        "raw_text": h_md,
-                        "bbox": para_bbox,
-                        "font_name": dominant_font,
-                        "font_size": avg_size,
-                        "custom_style": h_style or "",
-                    })
-
-                current_para_lines = []
-                current_para_contributing_blocks = []
-                current_para_is_kaiti = False
-                current_para_custom_style = None
-        
-        # ── Step 3: Interleave body_blocks, figure_blocks, and page_tables by reading order ──
-        flow_items = []
-        for bb in body_blocks:
-            flow_items.append({
-                "type": "text",
-                "bbox": bb.get("bbox", [0, 0, 0, 0]),
-                "data": bb
-            })
-
-        for block_idx, fig_b in enumerate(figure_blocks):
-            flow_items.append({
-                "type": "figure",
-                "bbox": fig_b.get("bbox", [0, 0, 0, 0]),
-                "data": (block_idx, fig_b)
-            })
-
-        for tbl in page_tables:
-            flow_items.append({
-                "type": "table",
-                "bbox": list(tbl.bbox),
-                "data": tbl
-            })
-
-        for rtbl in reconstructed_tables:
-            flow_items.append({
-                "type": "reconstructed_table",
-                "bbox": list(rtbl.bbox),
-                "data": rtbl,
-            })
-
-        # Pre-filter by confirmed font_role_map and deduplicate AI review by font group.
-        ai_heading_by_block: Dict[int, Dict[str, Any]] = {}
-        ai_candidates = []
-        ai_candidate_meta: Dict[str, Tuple[int, str, str]] = {}
-        page_blocks_by_font_key: Dict[str, List[int]] = {}
-        page_queued_font_keys = set()
-
-        for candidate_idx, candidate in enumerate(body_blocks):
-            candidate_lines = candidate.get("lines", [])
-            candidate_text = "".join(
-                span.get("text", "") for candidate_line in candidate_lines
-                for span in candidate_line.get("spans", [])
-            ).strip()
-            if not candidate_text or bool(_TOC_LINE_RE.search(candidate_text)):
-                continue
-
-            _c_role, _c_style, _c_mapped_by = _lookup_block_font_mapping(
-                candidate_lines, font_role_map, is_toc_line=False
-            )
-            if (_c_role or _c_style) and _c_mapped_by != "ai_layout":
-                continue
-
-            cand_font_key, cand_clean_fn, cand_sz = _extract_primary_font_key(candidate_lines, body_size)
-            if cand_font_key and cand_font_key in ai_font_decision_cache:
-                cached_res = ai_font_decision_cache[cand_font_key]
-                if cached_res.get("source") == "gemma":
-                    ai_heading_by_block[id(candidate)] = cached_res
-                continue
-
-            if (
-                _H1_PART_RE.match(candidate_text)
-                or _H1_SPECIAL_RE.match(candidate_text)
-                or _H1_CHAPTER_RE.match(candidate_text)
-                or _H2_SECTION_RE.match(candidate_text)
-                or _H2_DECIMAL_RE.match(candidate_text)
-                or _H3_DECIMAL_RE.match(candidate_text)
-                or _H2_INT_SPACE_RE.match(candidate_text)
-            ):
-                continue
-
-            candidate_bbox = candidate.get("bbox", [0, 0, 0, 0])
-            candidate_sizes = [span.get("size", 0.0) for ln in candidate_lines for span in ln.get("spans", [])]
-            candidate_size = sum(candidate_sizes) / len(candidate_sizes) if candidate_sizes else body_size
-            candidate_bold = any(span.get("flags", 0) & 16 for ln in candidate_lines for span in ln.get("spans", []))
-            candidate_center = abs(((candidate_bbox[0] + candidate_bbox[2]) / 2.0) - page_w / 2.0) < page_w * 0.12
-
-            is_plain_body_font = bool(
-                cand_clean_fn
-                and body_font
-                and cand_clean_fn.lower() == body_font.lower()
-                and abs(cand_sz - body_size) < 0.5
-                and not candidate_bold
-                and not candidate_center
-            )
-            if is_plain_body_font:
-                continue
-
-            candidate_is_heading_like = (
-                2 <= len(candidate_text) <= 55
-                and not re.search(r'[。！？；.]$', candidate_text)
-                and not re.match(r'^(?:表|圖|图|Table|Figure)\s*\d+', candidate_text, re.IGNORECASE)
-            )
-            has_distinct_font = bool(cand_clean_fn and body_font and cand_clean_fn.lower() != body_font.lower())
-            if candidate_is_heading_like and (candidate_bold or candidate_center or candidate_size > body_size + 0.3 or has_distinct_font):
-                if cand_font_key:
-                    page_blocks_by_font_key.setdefault(cand_font_key, []).append(id(candidate))
-                    if cand_font_key in page_queued_font_keys:
-                        continue
-                    page_queued_font_keys.add(cand_font_key)
-                paragraph_id = f"pdf-{page_num}-{candidate_idx}"
-                ai_candidates.append({
-                    "paragraph_id": paragraph_id,
-                    "text": candidate_text,
-                    "font_size": round(candidate_size, 2),
-                    "is_bold": bool(candidate_bold),
-                    "is_centered": bool(candidate_center),
-                })
-                ai_candidate_meta[paragraph_id] = (id(candidate), cand_font_key, candidate_text)
-
-        if ai_candidates:
-            for result in review_uncertain_layout(ai_candidates[:12], model=DEFAULT_GEMMA_MODEL):
-                pid = str(result.get("paragraph_id") or "")
-                meta = ai_candidate_meta.get(pid)
-                if result.get("source") == "gemma" and meta:
-                    blk_id, f_key, s_txt = meta
-                    ai_heading_by_block[blk_id] = result
-                    if f_key:
-                        ai_font_decision_cache[f_key] = result
-                        for other_id in page_blocks_by_font_key.get(f_key, []):
-                            ai_heading_by_block[other_id] = result
-                        sug = _map_ai_review_to_font_suggestion(result, style_mapping, s_txt)
-                        if sug and f_key not in retained_font_suggestions:
-                            retained_font_suggestions[f_key] = sug
-                else:
-                    if meta and meta[1]:
-                        ai_font_decision_cache[meta[1]] = result
-                    if result.get("ai_status") and result.get("ai_status") != "model_unavailable":
-                        audit_data["ai_layout"]["decisions"].append({
-                            "page": page_num,
-                            "type": "classification_status",
-                            "paragraph_id": result.get("paragraph_id"),
-                            "status": result["ai_status"],
-                        })
-
-        # Sort by top-to-bottom reading order (y0, then x0)
-        flow_items.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
-        ai_boundary_by_item: Dict[str, Any] = {}
-
-        for item in flow_items:
-            itype = item["type"]
-            if itype == "figure":
-                flush_current_para()
-                block_idx, _fig_b = item["data"]
-                fig_bbox = item["bbox"]
-                all_image_blocks.append({
-                    "page_num": page_num,
-                    "block_idx": block_idx,
-                    "bbox": fig_bbox,
-                    "page_w": page_w,
-                    "page_h": page_h,
-                })
-                fig_raw_md = f"![__IMG_PLACEHOLDER_{page_num}_{block_idx}__]()"
-                page_paragraphs.append(fig_raw_md)
-                layout_records.append({
-                    "type": "figure",
-                    "page_num": page_num,
-                    "block_idx": block_idx,
-                    "raw_md": fig_raw_md,
-                    "bbox": fig_bbox,
-                    "font_name": "figure",
-                    "font_size": 10.5,
-                })
-                last_block_x0 = fig_bbox[0]
-                last_block_x1 = fig_bbox[2]
-                last_block_y1 = fig_bbox[3]
-                last_block_last_line_x1 = 0.0
-                last_heading_text = ""
-                continue
-            elif itype == "table":
-                flush_current_para()
-                tbl = item["data"]
-                tbl_md = _table_to_markdown(tbl, page_footnotes, page_num)
-                if tbl_md:
-                    page_paragraphs.append(tbl_md)
-                tbl_bbox = item["bbox"]
-                layout_records.append({
-                    "type": "table",
-                    "page_num": page_num,
-                    "bbox": tbl_bbox,
-                    "raw_md": tbl_md or "",
-                })
-                last_block_x0 = tbl_bbox[0]
-                last_block_x1 = tbl_bbox[2]
-                last_block_y1 = tbl_bbox[3]
-                last_block_last_line_x1 = 0.0
-                last_heading_text = ""
-                continue
-            elif itype == "reconstructed_table":
-                flush_current_para()
-                rtbl = item["data"]
-                tbl_md = (
-                    _replace_fn_markers_in_text(rtbl.markdown, page_footnotes, page_num)
-                    if enable_footnotes and page_footnotes
-                    else rtbl.markdown
-                )
-                if tbl_md:
-                    page_paragraphs.append(tbl_md)
-                tbl_bbox = item["bbox"]
-                layout_records.append({
-                    "type": "table",
-                    "page_num": page_num,
-                    "bbox": tbl_bbox,
-                    "raw_md": tbl_md or "",
-                    "caption_text": getattr(rtbl, "caption_text", ""),
-                })
-                last_block_x0 = tbl_bbox[0]
-                last_block_x1 = tbl_bbox[2]
-                last_block_y1 = tbl_bbox[3]
-                last_block_last_line_x1 = 0.0
-                last_heading_text = ""
-                continue
-
-            # ── Regular Text Block ──
-            bb = item["data"]
-            lines = bb.get("lines", [])
-            if not lines:
-                continue
-            
-            bb_text = "".join(s.get("text", "") for l in lines for s in l.get("spans", [])).strip()
-            
-            # De-duplicate doubled words caused by PDF rendering (e.g. 生命线生命线 -> 生命线)
-            if len(bb_text) >= 4 and len(bb_text) % 2 == 0:
-                half = len(bb_text) // 2
-                if bb_text[:half] == bb_text[half:]:
-                    bb_text = bb_text[:half]
-                    
-            sizes = [s.get("size", 0) for l in lines for s in l.get("spans", [])]
-            avg_size = sum(sizes) / len(sizes) if sizes else 10.0
-            bbox = bb.get("bbox", [0, 0, 0, 0])
-            center_x = (bbox[0] + bbox[2]) / 2.0
-            is_centered = abs(center_x - (page_w / 2.0)) < (page_w * 0.12)
-            
-            # Heading Detection
-            heading_level = 0
-            is_toc_line = bool(_TOC_LINE_RE.search(bb_text))
-            
-            clean_for_heading = _CLEAN_FOR_HEADING_RE.sub('', bb_text)
-            # 排除前端編號（如「一、」、「1、」、「（一）」）後的純文字內容，避免「、」誤判為句中標點
-            clean_content = _HEADING_PREFIX_CLEAN_RE.sub('', clean_for_heading)
-            has_sentence_punct = bool(_SENTENCE_PUNCT_RE.search(clean_content))
-            
-            # ── Priority 0: 人工字體角色對應（優先權最高，直接覆蓋規則型判定）──
-            _block_font_role, _block_docx_style, _block_mapped_by = _lookup_block_font_mapping(
-                lines, font_role_map, is_toc_line=is_toc_line
-            )
-            if _block_mapped_by == "ai_layout":
-                _block_font_role = None
-                _block_docx_style = None
-
-            _is_ignored_font = bool(_block_font_role and str(_block_font_role).strip().lower() in ('忽略', 'ignore', 'none'))
-            _has_font_mapping = bool((_block_font_role or _block_docx_style) and not _is_ignored_font)
-
-            if _is_ignored_font:
-                heading_level = 0
-            elif _block_font_role and not is_toc_line:
-                _role_upper = _block_font_role.upper()
-                if _role_upper == 'H1':
-                    heading_level = 1
-                elif _role_upper == 'H2':
-                    heading_level = 2
-                elif _role_upper == 'H3':
-                    heading_level = 3
-                # 「圖說」、「楷體」、「正文」等不轉為標題
-            elif _block_docx_style and not is_toc_line:
-                if _STYLE_HEADING1_RE.search(_block_docx_style):
-                    heading_level = 1
-                elif _STYLE_HEADING2_RE.search(_block_docx_style):
-                    heading_level = 2
-                elif _STYLE_HEADING3_RE.search(_block_docx_style):
-                    heading_level = 3
-
-            cur_last_line_x1 = lines[-1].get("bbox", bbox)[2] if lines else bbox[2]
-
-            # ── 啟發式標題判定（Fallback）：僅在字體未在字體分析中指定時才執行 ──
-            if not heading_level and not is_toc_line and not _has_font_mapping and not _is_ignored_font:
-                is_candidate_heading = (
-                    len(lines) <= 2
-                    and 2 <= len(clean_for_heading) <= 35
-                    and not has_sentence_punct
-                    and not _LIST_NUM_PREFIX_RE.match(bb_text)
-                    and not re.match(r'^(?:[¡•●◆■※★\-]|（?[一二三四五六七八九十\d]+）?[、.·\s]+[是為有在]|[圖表]\s*\d+[-_.]\d+[\s　]+[是為有在])', bb_text)
-                )
-
-                if re.match(r'^[圖图表]\s*\d+[\s\u3000]', bb_text):
-                    is_candidate_heading = False
-
-                # Priority 1: 目錄索引 / PDF 原生書籤直接命中（100% 命中無規則標題）
-                if is_candidate_heading and toc_index:
-                    toc_lvl = _match_toc_heading(clean_for_heading, page_num, toc_index, toc_page_offset)
-                    if not toc_lvl:
-                        toc_lvl = _match_toc_heading(bb_text, page_num, toc_index, toc_page_offset)
-                    if toc_lvl > 0:
-                        heading_level = toc_lvl
-
-                # Priority 2: 原有標準 Regex 規則
-                if not heading_level:
-                    if _H1_PART_RE.match(bb_text) or _H1_SPECIAL_RE.match(bb_text):
-                        heading_level = 1
-                    elif _H1_CHAPTER_RE.match(bb_text):
-                        heading_level = 2
-                    elif _H2_SECTION_RE.match(bb_text):
-                        heading_level = 2
-                    elif _H3_DECIMAL_RE.match(bb_text) and not has_sentence_punct:
-                        heading_level = 3
-                    elif _H2_DECIMAL_RE.match(bb_text) and not has_sentence_punct:
-                        heading_level = 2
-                    elif _H2_INT_SPACE_RE.match(bb_text) and not has_sentence_punct:
-                        heading_level = 2
-                    elif _H2_NUM_RE.match(bb_text) and not has_sentence_punct:
-                        heading_level = 3
-                    elif _H3_SUB_RE1.match(bb_text) and 2 <= len(clean_for_heading) <= 30 and not has_sentence_punct:
-                        heading_level = 3
-
-                # Priority 3: 相對字級與黑體/粗體幾何特徵判定（取代死板的 avg_size >= 10.8）
-                if not heading_level and is_candidate_heading:
-                    if not _CHART_TABLE_END_RE.search(bb_text) and not _CIRCLED_START_RE.search(bb_text):
-                        span_fonts = [(s.get("font") or "").split("+", 1)[-1].lower() for l in lines for s in l.get("spans", [])]
-                        is_heiti_or_bold = any(
-                            ("hei" in fn or "黑" in fn or "bold" in fn or "bd" in fn or "heavy" in fn or (s.get("flags", 0) & 16))
-                            for l in lines for s in l.get("spans", [])
-                            for fn in [(s.get("font") or "").lower()]
-                        )
-                        body_font_clean = body_font.lower() if body_font else ""
-                        cjk_span_fonts = [fn for fn in span_fonts if not any(w in fn for w in ("times", "arial", "helvetica", "georgia", "courier", "symbol"))]
-                        is_different_font_from_body = bool(body_font_clean and cjk_span_fonts and any(fn != body_font_clean for fn in cjk_span_fonts))
-
-                        # 真正置中判定：左右邊距平衡且兩側有明顯留白，絕非貼齊左邊界之普通正文
-                        left_margin = bbox[0]
-                        right_margin = page_w - bbox[2]
-                        is_true_centered = bool(
-                            is_centered
-                            and (bbox[0] > base_x0 + 10.0)
-                            and abs(left_margin - right_margin) < max(25.0, page_w * 0.08)
-                        )
-
-                        if avg_size >= body_size + 1.5:
-                            heading_level = 2  # 字級明顯大於正文基準
-                        elif is_true_centered and avg_size >= body_size + 0.5:
-                            heading_level = 2  # 真正居中且字級微大於正文
-                        elif is_heiti_or_bold and (is_different_font_from_body or avg_size >= body_size):
-                            # 與正文同字級但換成黑體/粗體的短句標題（排除以助詞結尾的普通句）
-                            if not re.search(r'[的了在]$', clean_content):
-                                heading_level = 3
-                        elif is_true_centered and (is_heiti_or_bold or is_different_font_from_body) and avg_size >= body_size - 0.5:
-                            # 真正居中且具有粗體或相異字體之短標題
-                            if not re.search(r'[的了在]$', clean_content):
-                                heading_level = 2
-
-            ai_review = ai_heading_by_block.get(id(bb))
-            ai_heading_applied = False
-            if (
-                not heading_level
-                and not _has_font_mapping
-                and not _is_ignored_font
-                and not is_toc_line
-                and ai_review
-                and ai_review.get("role") == "heading"
-            ):
-                heading_level = ai_review.get("level") or 0
-                ai_heading_applied = heading_level in (1, 2, 3)
-
-            if heading_level > 0:
-                flush_current_para()
-                last_block_x0 = bbox[0]
-                last_block_x1 = bbox[2]
-                last_block_y1 = bbox[3]
-                last_block_last_line_x1 = cur_last_line_x1
-                # Deduplicate identical consecutive headings on the same page
-                if bb_text == last_heading_text:
-                    continue
-                last_heading_text = bb_text
-                
-                audit_data["headings_detected"].append({
-                    "page": page_num,
-                    "level": f"H{heading_level}",
-                    "text": bb_text,
-                    "source": "gemma" if ai_heading_applied else "deterministic",
-                    "confidence": ai_review.get("confidence") if (ai_heading_applied and ai_review) else None,
-                    "reason": ai_review.get("reason", "") if (ai_heading_applied and ai_review) else "",
-                })
-                # Custom style annotation: font mapping docx_style takes highest priority
-                custom_style = _block_docx_style or style_mapping.get(f"h{heading_level}")
-                if custom_style:
-                    formatted_heading = f"{'#' * heading_level} {bb_text} {{custom-style=\"{custom_style}\"}}"
-                else:
-                    formatted_heading = f"{'#' * heading_level} {bb_text}"
-                page_paragraphs.append(formatted_heading)
-
-                h_font, h_size = _compute_dominant_font_and_size([bb], body_font, body_size)
-                layout_records.append({
-                    "type": "heading",
-                    "page_num": page_num,
-                    "level": heading_level,
-                    "title": bb_text,
-                    "raw_text": formatted_heading,
-                    "bbox": bbox,
-                    "font_name": h_font,
-                    "font_size": h_size,
-                    "custom_style": custom_style or "",
-                })
-                continue
-            else:
-                last_heading_text = ""
-                
-            # ── Regular Body Text ──────────────────────────────────────────────
-            # ── 圖說（Caption）判斷：人工字體角色優先 ──
-            is_block_caption = (not _is_ignored_font and (
-                (_block_font_role and _block_font_role.lower() in ('圖說', '图说', 'caption')) or
-                (_block_docx_style and bool(_STYLE_CAPTION_RE.search(_block_docx_style)))
-            ))
-            if is_block_caption:
-                # 用 custom-style 輸出圖說段落，讓 Pandoc 套用對應 Word 樣式
-                flush_current_para()
-                _caption_style = _block_docx_style or style_mapping.get("image_caption")
-                if not _caption_style and font_role_map:
-                    for line in lines:
-                        for span in line.get('spans', []):
-                            raw_fn = (span.get('font') or '').split('+', 1)[-1]
-                            size_v = round(span.get('size', 0) * 2) / 2
-                            _candidates = [
-                                f"{raw_fn} ({size_v}pt)",
-                                f"{raw_fn} ({size_v:.1f}pt)",
-                                f"{raw_fn}_{size_v}",
-                                raw_fn
-                            ]
-                            for _cand in _candidates:
-                                if _cand in font_role_map:
-                                    _caption_style = font_role_map[_cand].get('docx_style')
-                                    break
-                            if _caption_style:
-                                break
-                        if _caption_style:
-                            break
-                if _caption_style:
-                    cap_md = f'::: {{custom-style="{_caption_style}"}}\n{bb_text}\n:::'
-                    page_paragraphs.append(cap_md)
-                else:
-                    cap_md = f'*{bb_text}*'
-                    page_paragraphs.append(cap_md)  # fallback: 斜體
-
-                c_font, c_size = _compute_dominant_font_and_size([bb], body_font, body_size)
-                layout_records.append({
-                    "type": "caption",
-                    "page_num": page_num,
-                    "raw_text": bb_text,
-                    "md_text": cap_md,
-                    "bbox": bbox,
-                    "font_name": c_font,
-                    "font_size": c_size,
-                    "custom_style": _caption_style or "",
-                })
-                last_block_x0 = bbox[0]
-                last_block_x1 = bbox[2]
-                last_block_y1 = bbox[3]
-                last_block_last_line_x1 = cur_last_line_x1
-                continue
-
-            # Check font for KaiTi (Rule-based + AI Vision fallback)
-            total_chars = 0
-            kaiti_chars = 0
-            block_font_names = set()  # 收集此 block 的所有 font name
-            for line in lines:
-                for span in line.get("spans", []):
-                    span_text = span.get("text", "").strip()
-                    if not span_text: continue
-                    total_chars += len(span_text)
-                    font_name = span.get("font", "").lower()
-                    if font_name:
-                        block_font_names.add(font_name)
-                    if "kai" in font_name or "楷" in font_name or "kt" in font_name:
-                        kaiti_chars += len(span_text)
-
-            # ── 人工字體角色：楷體優先 ──
-            if _is_ignored_font:
-                is_block_kaiti = False
-            elif _block_font_role and _block_font_role.lower() in ('楷體', '楷体', 'kaiti', 'blockquote'):
-                is_block_kaiti = True
-            elif _block_docx_style and bool(_STYLE_KAI_RE.search(_block_docx_style)):
-                is_block_kaiti = True
-            elif _has_font_mapping:
-                # 已明確映射為其他樣式者，不再觸發楷體規則
-                is_block_kaiti = False
-            elif ai_review and ai_review.get("source") == "gemma" and ai_review.get("role") == "quote":
-                is_block_kaiti = True
-            else:
-                is_block_kaiti = (total_chars > 0 and (kaiti_chars / total_chars) > 0.5)
-            
-            # AI Vision fallback: 若規則型判定失敗且 AI 可用，且該字型未人工指定
-            if not is_block_kaiti and not _has_font_mapping and not _is_ignored_font and ai_kaiti_classifier is not None:
-                try:
-                    is_block_kaiti = ai_kaiti_classifier.is_block_kaiti(
-                        page=page, block_bbox=bbox, block_text=bb_text,
-                        font_names=list(block_font_names),
-                    )
-                except Exception:
-                    pass  # AI 失敗時靜默降級，使用規則型結果
-
-            # Determine custom style for regular paragraph (if not caption)
-            block_custom_style = _block_docx_style if (_has_font_mapping and not _is_ignored_font and not is_block_caption) else None
-
-            # Check indentation to determine whether this block starts a new paragraph
-            is_indented = (bbox[0] - base_x0) >= max(10.0, avg_size * 1.4)
-            curr_has_space_indent = bool(re.match(r'^[\u3000]{1,2}|^\s{2,4}', bb_text))
-            indent_jump = bool((bbox[0] - last_block_x0) >= 5.0)
-
-            vertical_gap = (bbox[1] - last_block_y1) if last_block_y1 > 0 else 0.0
-            prev_ref_x1 = last_block_last_line_x1 if last_block_last_line_x1 > 0 else last_block_x1
-            prev_block_was_short_line = bool(prev_ref_x1 > 0 and prev_ref_x1 < max_x1 - max(avg_size * 2.0, 20.0))
-            is_large_vertical_gap = bool(vertical_gap > avg_size * 1.5)
-
-            if current_para_lines:
-                should_flush = False
-                ai_boundary_override = ai_boundary_by_item.get(item.get("ai_boundary_key"))
-                is_unclosed_continuation = False
-                prev_is_heading_like = False
-                curr_clean = bb_text.strip()
-                # 1. 樣式/字體邊界（人工映射 Word 樣式或楷體不同）-> 強制分段
-                if is_block_kaiti != current_para_is_kaiti:
-                    should_flush = True
-                elif block_custom_style != current_para_custom_style:
-                    should_flush = True
-                else:
-                    prev_clean = current_para_lines[-1].strip() if current_para_lines else ""
-                    curr_clean = bb_text.strip()
-
-                    # 2. 當前行開頭為條列編號/前綴（BUG-006A 防禦）-> 強制分段
-                    if curr_clean and _PARA_START_PREFIX_RE.match(curr_clean):
-                        should_flush = True
-                    else:
-                        prev_ends_with_open = bool(_OPEN_PUNCT_RE.search(prev_clean))
-                        unclosed_delims = update_delimiter_stack(prev_clean) if update_delimiter_stack else []
-                        has_unclosed_cjk_quote = bool(
-                            len(unclosed_delims) > 0
-                            or prev_clean.count('《') > prev_clean.count('》')
-                            or prev_clean.count('“') > prev_clean.count('”')
-                            or prev_clean.count('（') > prev_clean.count('）')
-                            or prev_clean.count('(') > prev_clean.count(')')
-                        )
-                        is_unclosed_continuation = prev_ends_with_open or has_unclosed_cjk_quote
-
-                        # 3. 獨立無編號短小標題判定（BUG-004 防黏連保護）
-                        prev_clean_content = _HEADING_PREFIX_CLEAN_RE.sub('', _CLEAN_FOR_HEADING_RE.sub('', prev_clean))
-                        prev_has_sentence_punct = bool(_SENTENCE_PUNCT_RE.search(prev_clean_content))
-                        prev_is_heading_like = bool(
-                            not is_unclosed_continuation
-                            and len(current_para_lines) == 1
-                            and 2 <= len(prev_clean_content) <= 35
-                            and not prev_has_sentence_punct
-                            and prev_block_was_short_line
-                            and not re.search(r'[的了在和与]$', prev_clean_content)
-                        )
-                        if prev_is_heading_like:
-                            should_flush = True
-                        elif is_unclosed_continuation:
-                            # 句中未閉合書名號、括號或引號（BUG-006B）：強制流式接續
-                            should_flush = False
-                        else:
-                            # 4. 垂直空隙（段距跳躍，適用首行無縮排現代版式）
-                            if is_large_vertical_gap:
-                                should_flush = True
-                            else:
-                                # 5. 終止標點判定（剝離行尾注標後檢查句號、問號、感嘆號等）
-                                prev_no_mark = _TRAILING_MARK_RE.sub('', prev_clean)
-                                prev_has_terminal = bool(_TERMINAL_PUNCT_RE.search(prev_no_mark))
-                                prev_ends_with_colon = bool(re.search(r'[：:]$', prev_no_mark))
-                                is_hanging_indent_citation = bool(
-                                    current_para_lines
-                                    and re.match(r'^\[\d+\]', current_para_lines[0].strip())
-                                    and not re.match(r'^\[\d+\]', curr_clean)
-                                )
-
-                                if prev_has_terminal:
-                                    # 有句末標點且（有縮排、未滿行、或有行距）-> 正常自然段結束
-                                    if is_indented or curr_has_space_indent or prev_block_was_short_line or vertical_gap > avg_size * 0.9:
-                                        should_flush = True
-                                elif prev_ends_with_colon and not is_hanging_indent_citation and (is_indented or curr_has_space_indent or prev_block_was_short_line):
-                                    # 冒號後接縮排或短行引出下文（非文獻懸掛縮排）-> 獨立段落
-                                    should_flush = True
-                                elif not is_hanging_indent_citation and (is_indented or curr_has_space_indent) and indent_jump and prev_block_was_short_line:
-                                    # 6. 無終止標點但有明確首行縮排跳躍且前行未滿行 -> 容錯分段
-                                    should_flush = True
-
-                    if (
-                        ai_boundary_override is not None
-                        and not is_unclosed_continuation
-                        and not prev_is_heading_like
-                        and not (curr_clean and _PARA_START_PREFIX_RE.match(curr_clean))
-                        and block_custom_style == current_para_custom_style
-                        and is_block_kaiti == current_para_is_kaiti
-                    ):
-                        ai_should_break = ai_boundary_override.get("should_break") if isinstance(ai_boundary_override, dict) else ai_boundary_override
-                        if type(ai_should_break) is bool:
-                            should_flush = ai_should_break
-                        audit_data["ai_layout"]["decisions"].append({
-                            "page": page_num,
-                            "type": "boundary",
-                            "source": "gemma",
-                            "previous": prev_clean[:120],
-                            "next": curr_clean[:120],
-                            "decision": "break" if should_flush else "merge",
-                            "confidence": ai_boundary_override.get("confidence") if isinstance(ai_boundary_override, dict) else None,
-                        })
-
-                if should_flush:
-                    flush_current_para()
-
-            if not current_para_lines:
-                current_para_is_kaiti = is_block_kaiti
-                current_para_custom_style = block_custom_style
-
-            # Process lines in this block, replacing footnote anchors
-            block_has_valid_line = False
-            for line in lines:
-                line_str = "".join(s.get("text", "") for s in line.get("spans", [])).strip()
-                if not line_str:
-                    continue
-                line_str = _replace_fn_markers_in_text(line_str, page_footnotes, page_num)
-                current_para_lines.append(line_str)
-                block_has_valid_line = True
-            if block_has_valid_line:
-                current_para_contributing_blocks.append(bb)
-
-            last_block_x0 = bbox[0]
-            last_block_x1 = bbox[2]
-            last_block_y1 = bbox[3]
-            last_block_last_line_x1 = cur_last_line_x1
-                
-        # Flush any remaining body text
-        flush_current_para()
-
-        # Step 4: Handle footnotes that didn't match any body/table marker (Fallback anchoring)
-        for fn in page_footnotes:
-            fn_id = fn["id"]
-            fn_tag = f"[^p{page_num}_{fn_id}]"
-            if not fn.get("matched", False):
-                # Safely anchor footnote to last paragraph on page
-                if page_paragraphs:
-                    last_p = page_paragraphs[-1]
-                    handled = False
-                    if 1 <= fn_id <= 26:
-                        for alpha_char in [chr(ord('a') + fn_id - 1), chr(ord('A') + fn_id - 1)]:
-                            alpha_pat = re.compile(
-                                r'(?<=[。，；！？、”’」』）)\]】\u4e00-\u9fff])(?<![a-zA-Z0-9])'
-                                + re.escape(alpha_char)
-                                + r'(?![a-zA-Z0-9])(?=[。，；！？、”’」』）)\]】\s\n]|$)'
-                            )
-                            new_p, n_subs = alpha_pat.subn(fn_tag, last_p, count=1)
-                            if n_subs > 0:
-                                page_paragraphs[-1] = new_p
-                                handled = True
-                                break
-                    if not handled:
-                        page_paragraphs[-1] += fn_tag
-                else:
-                    page_paragraphs.append(fn_tag)
-                audit_data["footnotes_fallback"] += 1
-                audit_data["footnotes_detail"].append({
-                    "page": page_num,
-                    "id": fn_id,
-                    "status": "FALLBACK (正文上標模糊，降級錨定段末)",
-                    "content": fn["content"][:60]
-                })
-            else:
-                audit_data["footnotes_matched"] += 1
-                audit_data["footnotes_detail"].append({
-                    "page": page_num,
-                    "id": fn_id,
-                    "status": "MATCHED (雙向匹配精準錨定)",
-                    "content": fn["content"][:60]
-                })
-
-            # Append Pandoc footnote definition
-            page_paragraphs.append(f"{fn_tag}: {fn['content']}")
-            layout_records.append({
-                "type": "footnote",
-                "page_num": page_num,
-                "fn_id": fn_id,
-                "tag": fn_tag,
-                "content": fn['content'],
-            })
-
-        if page_paragraphs:
-            final_md_pages.append("\n\n".join(page_paragraphs))
+            progress_callback(int((page_num / total_pages) * 85), f"[INFO] 正在解析第 {page_num}/{total_pages} 頁 (版面/樣式/腳注抽取)...")
+        _process_single_pdf_page_layout(
+            doc[page_idx], page_num, body_size, body_font, toc_index, toc_page_offset,
+            style_map, font_role_map, enable_footnotes, strip_headers_heuristic,
+            ai_kaiti_classifier, ai_font_decision_cache, retained_font_suggestions,
+            final_md_pages, all_image_blocks, layout_records, audit_data,
+        )
 
     try:
         from src.extraction.contracts import validate_layout_records
