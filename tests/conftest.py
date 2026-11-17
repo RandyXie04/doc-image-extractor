@@ -59,7 +59,7 @@ if sys.platform == "win32":
         try:
             return orig_poll(self, timeout)
         except OSError as e:
-            if getattr(e, "winerror", None) in (0, 258) or getattr(e, "errno", None) == 0:
+            if getattr(e, "winerror", None) in (0, 158, 258) or getattr(e, "errno", None) == 0:
                 return []
             raise
 

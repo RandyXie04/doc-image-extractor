@@ -38,9 +38,12 @@ A parameterized mode (`enable_footnotes=False` / `--no_footnote`) that completel
 
 The extraction pipeline (`src/scripts/extract_images.py`, `src/scripts/pdf_image_extractor.py`) that parses Word OpenXML (`word/document.xml` active media references) and PDF XObject streams to isolate raster and vector figures without lossy re-encoding, while neutralizing transparency artifacts (Alpha-channel flattening against white background).
 
-### YOLOv8 ONNX Formula Extractor (YOLOv8 ONNX 數學公式提取通道)
+### 3-Stage Formula Extraction & Recognition Pipeline (三階段數學公式偵測、裁切與識別管線)
 
-Object detection subsystem (`src/scripts/yolo_onnx_utils.py`, `src/core_agent.py`) leveraging YOLOv8 ONNX models and DirectML to detect mathematical and chemical formula bounding boxes in PDF documents with interactive 4-way cropping sliders and batch image export.
+Deep extraction pipeline (`src/extraction/formula_pipeline.py`, `src/extraction/formula_detector.py`, `src/extraction/formula_cropper.py`, `src/extraction/formula_recognizer.py`, `src/extraction/formula_exporter.py`) governed by strict Pydantic contracts (`src/extraction/contracts.py`):
+1. **Stage 1 (`FormulaDetector`)**: YOLOv8l MFD ONNX inference (`models/pdf_extract_mfd.onnx` at `imgsz=1280`) with CUDA/DirectML acceleration and CPU fallback, detecting Class 0 (`inline`) and Class 1 (`isolated`) formulas while preserving short inline equations (e.g., `f(x)=ax+bx`) under dense prose.
+2. **Stage 2 (`FormulaCropper`)**: Clamped 3–5px boundary safety padding (`[0, 0, W, H]`), aspect-ratio sorting, and mini-batch packaging (32–64 crops) with compound multi-page reading order restoration.
+3. **Stage 3 (`RecognitionPredictor`) & Multi-Format Export**: Direct SuryaOCR crop batch recognition (`['_math', 'zh']`, bypassing document layout analysis) paired with multi-format emission of sanitized LaTeX, parseable MathML XML (`latex2mathml`), and `imgsz=1600` high-resolution PNG crops.
 
 ### Markdown Postprocessing
 
