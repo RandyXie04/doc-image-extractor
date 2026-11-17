@@ -75,7 +75,6 @@
             </a>
             <div>
                 <h1>POD 樣式智慧擴散工作區</h1>
-                <p class="page-lead">兩階段管線：人工範本規則學習、全書批量樣式擴散與 CJK 骨架守恆驗收。</p>
             </div>
         </header>
 
@@ -101,9 +100,8 @@
             <div class="panel-row" style="margin-bottom: 0.75rem;">
                 <div>
                     <h2 class="panel-title">階段一：上傳人工修整範本與原始 PDF</h2>
-                    <p class="hint" style="margin: 0;">上傳已手動排版前段章節的 Word 文件與原始 PDF 書稿，系統將解析結構樹並鎖定版面規則。</p>
                 </div>
-                <span class="badge" id="sessionBadgeDisplay">未建立 Session</span>
+                <span class="badge" id="sessionBadgeDisplay" style="display: none;">未建立 Session</span>
             </div>
 
             <div class="grid-2" style="margin-bottom: 1rem;">
@@ -136,7 +134,7 @@
                 </div>
             </div>
             <p class="hint" style="margin-top: -0.5rem; margin-bottom: 1.25rem;">
-                可在 Word 內標註 <code>【人工整稿截止】</code> 或 <code>===HUMAN_EDITED_END===</code>，系統將精準鎖定界線，完稿時標籤自動清除。
+                可在 Word 內標註 <code>【人工整稿截止】</code> 指定修整界線。
             </p>
 
             <button type="button" class="btn btn-primary btn-block" id="compileBlueprintBtn" disabled>學習範本特徵並合成藍圖</button>
@@ -148,9 +146,7 @@
             <div class="panel-row" style="margin-bottom: 0.75rem;">
                 <div>
                     <h2 class="panel-title">階段二：全書樣式智慧擴散與硬性驗收</h2>
-                    <p class="hint" style="margin: 0;">將學習之排版藍圖推廣至全書篇章，並嚴格驗證 CJK 骨架守恆。</p>
                 </div>
-                <span class="badge">雙軌策略引擎</span>
             </div>
 
             <div class="field">
@@ -177,32 +173,30 @@
                 <div class="field" id="modelSelectRow">
                     <label class="field-label" for="vlmModelSelect">推論與視覺模型</label>
                     <select id="vlmModelSelect" class="input">
-                        <option value="qwen3.5:4b" selected>Qwen 3.5 (4B) ── 本地離線 (推薦，雙向視覺接續+樣式標記)</option>
-                        <option value="qwen3.5:9b">Qwen 3.5 (9B) ── 本地離線 (高精排版品質)</option>
-                        <option value="qwen3-vl:4b">Qwen 3 VL (4B) ── 本地離線 (版面與公式定位)</option>
-                        <option value="glm-ocr">GLM-OCR (0.9B) ── 本地離線 (輕量文件結構)</option>
-                        <option value="gemini-3.8-flash">Gemini 3.8 Flash (雲端 API)</option>
-                        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite (雲端 API)</option>
-                        <option value="custom">自訂模型名稱…</option>
+                        <option value="qwen3.5:4b" selected>Qwen 3.5 (4B) · 本地 (推薦)</option>
+                        <option value="qwen3.5:9b">Qwen 3.5 (9B) · 本地</option>
+                        <option value="qwen3-vl:4b">Qwen 3 VL (4B) · 本地</option>
+                        <option value="glm-ocr">GLM-OCR (0.9B) · 本地</option>
+                        <option value="gemini-3.8-flash">Gemini 3.8 Flash · 雲端</option>
+                        <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite · 雲端</option>
+                        <option value="custom">自訂模型…</option>
                     </select>
                     <input type="text" id="customModelInput" class="input" placeholder="請輸入模型識別碼 (例如 qwen3.5:4b 或 gemini-3.8-flash)" style="display: none; margin-top: 6px;">
-                    <span class="hint" id="vlmModelHint" style="display: block; margin-top: 4px;">未命中確定性規則的段落或遺失徽標單元，將以此模型批次呼叫預測樣式與補字（本機 Ollama 享 100% 離線隔離與 16K 上下文）。</span>
+                    <span class="hint" id="vlmModelHint" style="display: none;"></span>
                 </div>
 
                 <div class="field">
                     <label class="field-label" for="templateFileInput">套用 Word 樣式庫範本 (可選)</label>
                     <div style="display: flex; gap: 8px;">
                         <input type="file" id="templateFileInput" accept=".docx" style="display: none;">
-                        <button type="button" class="btn btn-secondary btn-block" onclick="document.getElementById('templateFileInput').click()" id="templateFileBtn">使用系統預設範本 (點擊自訂)</button>
+                        <button type="button" class="btn btn-secondary btn-block" onclick="document.getElementById('templateFileInput').click()" id="templateFileBtn">沿用範本內嵌樣式 (點擊上傳自訂 .docx)</button>
                     </div>
-                    <span class="hint" style="display: block; margin-top: 4px;">若留空，將沿用原修整稿件內嵌之 Word 樣式庫。</span>
                 </div>
             </div>
 
             <div class="field" id="maxSectionsRow" style="display: none;">
                 <label class="field-label" for="vlmMaxSections">測試接續章節上限 (選填)</label>
                 <input type="number" id="vlmMaxSections" class="input input-narrow" placeholder="留空代表全書" min="1">
-                <span class="hint">初次測試建議填入 2~3 章以快速檢視視覺接續效果。</span>
             </div>
 
             <button type="button" class="btn btn-primary btn-block" id="propagateBtn" disabled>執行全書智慧擴散與驗收</button>
@@ -212,7 +206,13 @@
 
     <script>
         let currentSessionId = "";
+        let selectedSeedFile = null;
+        let selectedPdfFile = null;
+        let selectedTemplateFile = null;
+        let isFromOcr = false;
 
+        const stepIndicator1 = document.getElementById("stepIndicator1");
+        const stepIndicator2 = document.getElementById("stepIndicator2");
         const seedFileInput = document.getElementById("seedFileInput");
         const seedFileLabel = document.getElementById("seedFileLabel");
         const seedDropZone = document.getElementById("seedDropZone");
@@ -236,60 +236,95 @@
         const vlmMaxSections = document.getElementById("vlmMaxSections");
         const vlmModelHint = document.getElementById("vlmModelHint");
 
+        function lockStage2(resetSession = false) {
+            if (resetSession && !isFromOcr) {
+                currentSessionId = "";
+                sessionBadgeDisplay.textContent = "未建立 Session";
+            }
+            stage2Section.style.opacity = "0.55";
+            stage2Section.style.pointerEvents = "none";
+            propagateBtn.disabled = true;
+            stage2Result.style.display = "none";
+            stepIndicator1.className = "step-tab active";
+            stepIndicator2.className = "step-tab";
+        }
+
         // Drag & Drop for Seed File
-        seedDropZone.onclick = () => seedFileInput.click();
+        seedDropZone.onclick = (e) => {
+            if (e.target === seedFileInput) return;
+            seedFileInput.click();
+        };
         seedDropZone.ondragover = (e) => { e.preventDefault(); seedDropZone.classList.add('dragover'); };
         seedDropZone.ondragleave = () => seedDropZone.classList.remove('dragover');
         seedDropZone.ondrop = (e) => {
             e.preventDefault();
             seedDropZone.classList.remove('dragover');
             if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                seedFileInput.files = e.dataTransfer.files;
-                handleSeedSelect();
+                handleSeedSelect(e.dataTransfer.files[0]);
             }
         };
-        seedFileInput.onchange = handleSeedSelect;
-
-        function handleSeedSelect() {
+        seedFileInput.onchange = () => {
             if (seedFileInput.files && seedFileInput.files[0]) {
-                const file = seedFileInput.files[0];
-                if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
-                    seedFileInput.value = '';
-                    return;
-                }
-                seedFileLabel.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong></span>`;
-                compileBlueprintBtn.disabled = false;
+                handleSeedSelect(seedFileInput.files[0]);
             }
+        };
+
+        function handleSeedSelect(fileArg) {
+            const file = fileArg || (seedFileInput.files && seedFileInput.files[0]);
+            if (!file) return;
+            if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
+                seedFileInput.value = '';
+                return;
+            }
+            selectedSeedFile = file;
+            seedFileInput.value = '';
+            seedFileLabel.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong></span>`;
+            compileBlueprintBtn.disabled = false;
+            compileBlueprintBtn.textContent = '學習範本特徵並合成藍圖';
+            lockStage2(true);
         }
 
         // Drag & Drop for PDF File
-        pdfDropZone.onclick = () => sourcePdfInput.click();
+        pdfDropZone.onclick = (e) => {
+            if (e.target === sourcePdfInput) return;
+            sourcePdfInput.click();
+        };
         pdfDropZone.ondragover = (e) => { e.preventDefault(); pdfDropZone.classList.add('dragover'); };
         pdfDropZone.ondragleave = () => pdfDropZone.classList.remove('dragover');
         pdfDropZone.ondrop = (e) => {
             e.preventDefault();
             pdfDropZone.classList.remove('dragover');
             if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-                sourcePdfInput.files = e.dataTransfer.files;
-                handlePdfSelect();
+                handlePdfSelect(e.dataTransfer.files[0]);
             }
         };
-        sourcePdfInput.onchange = handlePdfSelect;
-
-        function handlePdfSelect() {
+        sourcePdfInput.onchange = () => {
             if (sourcePdfInput.files && sourcePdfInput.files[0]) {
-                const file = sourcePdfInput.files[0];
-                if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
-                    sourcePdfInput.value = '';
-                    return;
-                }
-                sourcePdfLabel.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong></span>`;
+                handlePdfSelect(sourcePdfInput.files[0]);
             }
+        };
+
+        function handlePdfSelect(fileArg) {
+            const file = fileArg || (sourcePdfInput.files && sourcePdfInput.files[0]);
+            if (!file) return;
+            if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
+                sourcePdfInput.value = '';
+                return;
+            }
+            selectedPdfFile = file;
+            sourcePdfInput.value = '';
+            sourcePdfLabel.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong></span>`;
+            lockStage2(false);
         }
+
+        manualBoundaryAnchorInput.oninput = () => lockStage2(false);
+        manualBoundaryIdxInput.oninput = () => lockStage2(false);
 
         templateFileInput.onchange = () => {
             if (templateFileInput.files && templateFileInput.files[0]) {
                 const file = templateFileInput.files[0];
+                selectedTemplateFile = file;
+                templateFileInput.value = '';
                 templateFileBtn.textContent = `自訂範本：${file.name}`;
             }
         };
@@ -326,19 +361,24 @@
 
         // 階段一：學習範本特徵並編譯藍圖
         compileBlueprintBtn.onclick = async () => {
-            const file = seedFileInput.files[0];
-            if (!file) return;
+            const file = selectedSeedFile || (seedFileInput.files && seedFileInput.files[0]);
+            if (!file) {
+                toolbox.notify('請先上傳已預修前段之 Word 範本檔', 'warning');
+                return;
+            }
 
+            lockStage2(false);
             compileBlueprintBtn.disabled = true;
             compileBlueprintBtn.textContent = "正在學習範本樣式與編譯藍圖…";
             stage1Result.style.display = "none";
 
+            const pdfFile = selectedPdfFile || (sourcePdfInput.files && sourcePdfInput.files[0]) || null;
             let formData;
             if (window.PodContracts && window.PodContracts.buildCompileBlueprintFormData) {
                 const idxVal = manualBoundaryIdxInput.value.trim();
                 formData = window.PodContracts.buildCompileBlueprintFormData({
                     seedFile: file,
-                    pdfFile: (sourcePdfInput.files && sourcePdfInput.files[0]) ? sourcePdfInput.files[0] : null,
+                    pdfFile: pdfFile,
                     sessionId: currentSessionId || null,
                     manualBoundaryAnchor: manualBoundaryAnchorInput.value.trim() || null,
                     manualBoundaryIdx: idxVal ? parseInt(idxVal, 10) : null
@@ -346,7 +386,7 @@
             } else {
                 formData = new FormData();
                 formData.append("seed_file", file);
-                if (sourcePdfInput.files && sourcePdfInput.files[0]) formData.append("pdf_file", sourcePdfInput.files[0]);
+                if (pdfFile) formData.append("pdf_file", pdfFile);
                 if (currentSessionId) formData.append("session_id", currentSessionId);
                 if (manualBoundaryAnchorInput.value.trim()) formData.append("manual_boundary_anchor", manualBoundaryAnchorInput.value.trim());
                 if (manualBoundaryIdxInput.value.trim()) formData.append("manual_boundary_idx", manualBoundaryIdxInput.value.trim());
@@ -392,14 +432,15 @@
                         <div style="margin-top: 4px;"><strong>自訂樣式庫：</strong>${styles}</div>
                     </div>`;
 
-                document.getElementById("stepIndicator1").classList.add("completed");
-                document.getElementById("stepIndicator2").classList.add("active");
+                stepIndicator1.className = "step-tab completed";
+                stepIndicator2.className = "step-tab active";
 
                 stage2Section.style.opacity = "1";
                 stage2Section.style.pointerEvents = "auto";
                 propagateBtn.disabled = false;
                 toolbox.notify('藍圖編譯成功，已解鎖階段二', 'success');
             } catch (err) {
+                lockStage2(false);
                 stage1Result.style.display = "block";
                 stage1Result.innerHTML = toolbox.errorPanel('階段一藍圖合成失敗', err.message);
                 toolbox.notify('藍圖合成失敗: ' + err.message, 'error');
@@ -429,13 +470,12 @@
             formData.append("engine_mode", engineMode);
             formData.append("model", selectedModel);
 
-            if (manualBoundaryAnchorInput.value.trim()) formData.append("manual_boundary_anchor", manualBoundaryAnchorInput.value.trim());
-            if (manualBoundaryIdxInput.value.trim()) formData.append("manual_boundary_idx", manualBoundaryIdxInput.value.trim());
             if (engineMode === "vlm_continuation" && vlmMaxSections.value.trim()) {
                 formData.append("max_continuation_sections", vlmMaxSections.value.trim());
             }
-            if (templateFileInput.files && templateFileInput.files[0]) {
-                formData.append("template_file", templateFileInput.files[0]);
+            const tplFile = selectedTemplateFile || (templateFileInput.files && templateFileInput.files[0]);
+            if (tplFile) {
+                formData.append("template_file", tplFile);
             }
 
             try {
@@ -490,30 +530,25 @@
                             <li>
                                 <div>
                                     <span class="file-name">${toolbox.escape(docxName)}</span>
-                                    <span class="file-desc">全書樣式擴散之正式出版級 Word 成果</span>
+                                    <span class="file-desc">Word 完稿文件</span>
                                 </div>
                                 <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON}另存 Word</button>
                             </li>
                             <li>
                                 <div>
                                     <span class="file-name">${toolbox.escape(mdName)}</span>
-                                    <span class="file-desc">結構化 Markdown 完稿文件</span>
+                                    <span class="file-desc">Markdown 文件</span>
                                 </div>
                                 <button type="button" class="btn btn-secondary btn-sm" id="saveMdBtn">${toolbox.DOWNLOAD_ICON}另存 Markdown</button>
                             </li>
                             <li>
                                 <div>
                                     <span class="file-name">${toolbox.escape(auditName)}</span>
-                                    <span class="file-desc">全書 CJK 骨架與樣式對齊審計報告</span>
+                                    <span class="file-desc">審計報告 (JSON)</span>
                                 </div>
                                 <button type="button" class="btn btn-secondary btn-sm" id="saveAuditBtn">${toolbox.DOWNLOAD_ICON}另存審計報告</button>
                             </li>
                         </ul>
-
-                        <div class="result-note" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                            <span>檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀，請及時另存。</span>
-                            <button type="button" class="btn btn-secondary btn-sm" id="openFolderBtn">在檔案總管中顯示成果</button>
-                        </div>
                     </div>`;
 
                 document.getElementById('saveDocxBtn').onclick = (ev) => toolbox.nativeSave({
@@ -543,9 +578,7 @@
                     label: '審計報告 (JSON)'
                 });
 
-                document.getElementById('openFolderBtn').onclick = () => toolbox.openFolder(docxSource);
-
-                document.getElementById("stepIndicator2").classList.add("completed");
+                stepIndicator2.className = "step-tab completed";
                 toolbox.notify('全書樣式擴散與驗收完成', isValid ? 'success' : 'warning');
             } catch (err) {
                 stage2Result.style.display = "block";
@@ -670,34 +703,30 @@
             const stem = params.get('stem');
 
             if (sessId && fromOcr === '1') {
+                isFromOcr = true;
                 currentSessionId = sessId;
                 const containerEl = document.querySelector('.container');
                 const noticeEl = document.createElement('div');
                 noticeEl.className = 'notice-box';
                 noticeEl.style.cssText = 'margin-bottom: 1.25rem; padding: 0.85rem 1.2rem; display: block; border-left: 4px solid var(--accent-cyan);';
                 noticeEl.innerHTML = `
-                    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px;">
-                        <div style="flex: 1; min-width: 280px;">
-                            <strong style="color: var(--accent-cyan); font-size:0.98rem; display:block; margin-bottom: 4px;">🚀 已成功載入全自動整稿初稿《${toolbox.escape(stem || sessId)}》</strong>
-                            <p class="hint" style="margin: 0 0 6px 0; color: var(--text-secondary); font-size:0.84rem; line-height: 1.5;">
-                                原始 PDF (source_book.pdf) 與未套樣式之生稿 (Book_seed.docx) 已移轉至工作區。<br>
-                                <strong style="color: var(--text);">💡 推薦三步驟整稿指引：</strong><br>
-                                1. 點擊右側按鈕下載生稿 Word 檔。<br>
-                                2. 用 Word 手動排版前 1~2 章（標註標題、正文、引文楷體），並在修訂結束處輸入 <code>【人工整稿截止】</code>。<br>
-                                3. 將修整後的 Word 拖曳覆蓋至下方「人工修整範本檔」格，隨後點擊「學習範本特徵並合成藍圖」。
-                            </p>
+                    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+                        <div style="flex: 1; min-width: 240px;">
+                            <strong style="color: var(--accent-cyan); font-size:0.95rem;">已載入初稿《${toolbox.escape(stem || sessId)}》</strong>
+                            <span style="color: var(--text-secondary); font-size:0.84rem; margin-left: 8px;">請下載初稿並預修前段（可標註 <code>【人工整稿截止】</code>）後上傳至下方範本區。</span>
                         </div>
-                        <div style="display:flex; flex-direction:column; gap:6px; align-items:flex-end;">
-                            <span class="file-chip" style="background:var(--surface-2); color:var(--text); font-weight:600;">POD 擴散就緒</span>
-                            <a href="/api/pod/download/${encodeURIComponent(sessId)}/Book_seed.docx" class="btn btn-secondary btn-sm" download style="font-size:0.82rem; white-space:nowrap;">📥 下載初稿進行前段排版</a>
+                        <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                            <span class="file-chip" style="background:var(--surface-2); color:var(--text); font-weight:600;">待上傳預修範本</span>
+                            <a href="/api/pod/download/${encodeURIComponent(sessId)}/Book_seed.docx" class="btn btn-secondary btn-sm" download style="font-size:0.82rem; white-space:nowrap;">📥 下載初稿 Word</a>
                         </div>
                     </div>`;
                 if (containerEl && containerEl.children.length > 1) {
                     containerEl.insertBefore(noticeEl, containerEl.children[1]);
                 }
-                seedFileLabel.innerHTML = `<span class="file-chip"><strong>已載入初稿 (Book_seed.docx)</strong></span>`;
+                seedFileLabel.textContent = '點擊或拖曳已預修前段之 Word 檔';
                 sourcePdfLabel.innerHTML = `<span class="file-chip"><strong>已載入原始 PDF (source_book.pdf)</strong></span>`;
-                compileBlueprintBtn.disabled = false;
+                compileBlueprintBtn.disabled = true;
+                compileBlueprintBtn.textContent = '請先上傳已預修前段之 Word 範本檔';
             }
         });
     </script>

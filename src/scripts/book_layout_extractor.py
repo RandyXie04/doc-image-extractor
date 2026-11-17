@@ -143,9 +143,11 @@ _STANDALONE_HEADING_LINE_RE = re.compile(
 _TRAILING_HEADING_SPLIT_RE = re.compile(
     r'^(.+[。！？）\)”’])\s*(\d+[\s\u3000]+[\u4e00-\u9fff]{2,15}|\d+\.\d+(?:\.\d+)?[\s\u3000]+[\u4e00-\u9fff]{2,25})$'
 )
-_TERMINAL_PUNCT_RE = re.compile(r'[。！？!?…]+[”’」』）)\]】]*$')
+_TERMINAL_PUNCT_RE = re.compile(r'(?:[。！？!?…]+|(?<=[\u4e00-\u9fff])．|(?<!\d)(?:18|19|20)\d{2}．)[”’」』）)\]】]*$')
 _TRAILING_MARK_RE = re.compile(r'(?:\[\d+(?:[-–,，]\d+)*\]|[①-⑳]|\^\[\d+\])+$')
-_PARA_START_PREFIX_RE = re.compile(r'^(?:[（(]?[一二三四五六七八九十\d]+[)）、.．]|[①-⑳]|[•●◆■※★\-])')
+_PARA_START_PREFIX_RE = re.compile(
+    r'^(?:(?!(?:18|19|20)\d{2}[.．])[（(]?[一二三四五六七八九十\d]+[)）、.．](?![0-9%％])|[\[［【]\s*\d+\s*[\]］】](?![，。；：、,.])|[①-⑳]|[•●◆■※★\-])'
+)
 _OPEN_PUNCT_RE = re.compile(r'[《“（(\[〈]$')
 
 
@@ -1147,7 +1149,7 @@ def _flush_accumulated_paragraph(
 
     para_bbox = _union_bboxes([b.get("bbox") for b in state["contributing_blocks"] if b.get("bbox")])
     dominant_font, avg_size = _compute_dominant_font_and_size(state["contributing_blocks"], body_font, body_size)
-    layout_records.append({
+    para_rec: Dict[str, Any] = {
         "type": "paragraph",
         "page_num": page_num,
         "raw_text": para_text,
@@ -1156,7 +1158,16 @@ def _flush_accumulated_paragraph(
         "font_name": dominant_font,
         "font_size": avg_size,
         "custom_style": custom_style_val,
-    })
+    }
+    layout_records.append(para_rec)
+    para_metas = state.get("para_metas_by_id")
+    if isinstance(para_metas, dict):
+        para_metas[id(para_rec)] = {
+            "line_count": len(state["lines"]),
+            "last_line_x1": state["last_line_x1"],
+            "first_line_bbox": state.get("first_line_bbox"),
+            "first_raw_line": state.get("first_raw_line", ""),
+        }
 
     _emit_trailing_heading_if_present(
         trailing_h_text, page_num, para_bbox, dominant_font, avg_size,
@@ -1167,6 +1178,8 @@ def _flush_accumulated_paragraph(
     state["contributing_blocks"] = []
     state["is_kaiti"] = False
     state["custom_style"] = None
+    state["first_line_bbox"] = None
+    state["first_raw_line"] = ""
 
 
 def _detect_font_mapped_heading_level(
@@ -1428,7 +1441,9 @@ def _evaluate_punctuation_and_indent_break(
     prev_has_terminal = bool(_TERMINAL_PUNCT_RE.search(prev_no_mark))
     prev_ends_with_colon = bool(re.search(r'[：:]$', prev_no_mark))
     is_hanging_citation = bool(
-        first_para_line and re.match(r'^\[\d+\]', first_para_line) and not re.match(r'^\[\d+\]', curr_clean)
+        first_para_line
+        and re.match(r'^[\[［【]\s*\d+\s*[\]］】]', first_para_line)
+        and not re.match(r'^[\[［【]\s*\d+\s*[\]］】]', curr_clean)
     )
     if prev_has_terminal:
         return bool(is_indented or curr_has_space_indent or prev_block_was_short_line or vertical_gap > avg_size * 0.9)
@@ -1451,6 +1466,8 @@ def _should_flush_before_block(
     ai_boundary_override: Any,
     page_num: int,
     audit_data: Dict[str, Any],
+    first_line_x0: Optional[float] = None,
+    raw_first_line: Optional[str] = None,
 ) -> bool:
     if not state["lines"]:
         return False
@@ -1461,9 +1478,11 @@ def _should_flush_before_block(
     if curr_clean and _PARA_START_PREFIX_RE.match(curr_clean):
         return True
 
-    is_indented = (bbox[0] - base_x0) >= max(10.0, avg_size * 1.4)
-    curr_has_space_indent = bool(re.match(r'^[\u3000]{1,2}|^\s{2,4}', bb_text))
-    indent_jump = bool((bbox[0] - state["last_x0"]) >= 5.0)
+    effective_x0 = first_line_x0 if first_line_x0 is not None else bbox[0]
+    space_probe = raw_first_line if raw_first_line is not None else bb_text
+    is_indented = (effective_x0 - base_x0) >= max(10.0, avg_size * 1.4)
+    curr_has_space_indent = bool(re.match(r'^(?:[\u3000\u2003]| {2,4})', space_probe))
+    indent_jump = bool((effective_x0 - state["last_x0"]) >= 5.0)
     vertical_gap = (bbox[1] - state["last_y1"]) if state["last_y1"] > 0 else 0.0
     prev_ref_x1 = state["last_line_x1"] if state["last_line_x1"] > 0 else state["last_x1"]
     prev_short = bool(prev_ref_x1 > 0 and prev_ref_x1 < max_x1 - max(avg_size * 2.0, 20.0))
@@ -1666,6 +1685,8 @@ def _process_text_flow_item(
     lines = bb.get("lines", [])
     if not lines:
         return
+    raw_first_line = "".join(s.get("text", "") for s in lines[0].get("spans", []))
+    first_line_bbox = list(lines[0].get("bbox", bb.get("bbox", [0, 0, 0, 0])))
     bb_text = "".join(s.get("text", "") for l in lines for s in l.get("spans", [])).strip()
     if len(bb_text) >= 4 and len(bb_text) % 2 == 0 and bb_text[:len(bb_text) // 2] == bb_text[len(bb_text) // 2:]:
         bb_text = bb_text[:len(bb_text) // 2]
@@ -1708,11 +1729,18 @@ def _process_text_flow_item(
         page, lines, bb_text, bbox, block_font_role, block_docx_style, has_font_mapping, is_ignored_font, ai_review, ai_kaiti_classifier,
     )
     block_custom_style = block_docx_style if (has_font_mapping and not is_ignored_font) else None
+    ai_boundary_key = item.get("ai_boundary_key")
+    ai_boundary_override = ai_boundary_by_item.get(ai_boundary_key) if isinstance(ai_boundary_key, str) else None
     if _should_flush_before_block(
         state, bb_text, bbox, avg_size, base_x0, max_x1, is_block_kaiti, block_custom_style,
-        ai_boundary_by_item.get(item.get("ai_boundary_key")), page_num, audit_data,
+        ai_boundary_override, page_num, audit_data,
+        first_line_x0=first_line_bbox[0], raw_first_line=raw_first_line,
     ):
         _flush_accumulated_paragraph(state, page_num, body_font, body_size, style_mapping, page_paragraphs, layout_records, audit_data)
+
+    if not state["lines"]:
+        state["first_line_bbox"] = first_line_bbox
+        state["first_raw_line"] = raw_first_line
 
     _append_block_lines_to_state(bb, lines, state, is_block_kaiti, block_custom_style, page_footnotes, page_num)
     _update_state_coords(state, bbox, cur_last_line_x1, reset_heading=False)
@@ -1760,6 +1788,200 @@ def _finalize_page_footnotes(
         })
 
 
+_CUSTOM_STYLE_DIV_RE = re.compile(
+    r'^:::\s*\{custom-style="([^"]+)"\}\s*\n(.*?)\n:::(\s*(?:\[\^p\d+_\d+\]\s*)*)$',
+    re.DOTALL,
+)
+_CROSS_PAGE_ABBREV_DOT_RE = re.compile(
+    r'(?:\b(?:p|pp|vol|no|fig|dr|mr|ms|vs|etc|ed|eds|st|ch|sec)|et\s+al|e\.g|i\.e|\b[A-Za-z]\.(?:[A-Za-z]\.)*)\.$',
+    re.IGNORECASE,
+)
+
+
+def _unwrap_styled_div(md_text: str) -> Tuple[str, Optional[str], str]:
+    """Strip an outer Pandoc custom-style div and return (inner_text, style_name, trailing_tags)."""
+    m = _CUSTOM_STYLE_DIV_RE.match(md_text or "")
+    if m:
+        return m.group(2).strip(), m.group(1), m.group(3).strip()
+    return (md_text or "").strip(), None, ""
+
+
+def _is_cross_page_terminal(text: str) -> bool:
+    """Return True if *text* ends with sentence-terminal punctuation rather than a mid-sentence wrap."""
+    cleaned = re.sub(r'(?:\[\^p\d+_\d+\])+\s*$', '', text).rstrip()
+    no_mark = _TRAILING_MARK_RE.sub('', cleaned)
+    if _TERMINAL_PUNCT_RE.search(no_mark):
+        return True
+    core = re.sub(r'[”’」』）)\]】"\']+$', '', no_mark).rstrip()
+    if core.endswith('.') and not _CROSS_PAGE_ABBREV_DOT_RE.search(core):
+        return True
+    return False
+
+
+def _find_prev_nonempty_page(
+    page_snapshots: List[Dict[str, Any]], start_idx: int
+) -> Optional[Dict[str, Any]]:
+    idx = start_idx
+    while idx >= 0:
+        if page_snapshots[idx]["records"]:
+            return page_snapshots[idx]
+        idx -= 1
+    return None
+
+
+def _get_last_body_record_and_md_idx(snap: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], int]:
+    records = snap["records"]
+    trailing_fn_count = 0
+    for rec in reversed(records):
+        if rec.get("type") == "footnote":
+            trailing_fn_count += 1
+        else:
+            break
+    body_idx = len(records) - 1 - trailing_fn_count
+    md_idx = len(snap["paragraphs"]) - 1 - trailing_fn_count
+    if body_idx < 0 or md_idx < 0:
+        return None, -1
+    return records[body_idx], md_idx
+
+
+def _should_merge_cross_page_paragraphs(
+    prev_snap: Dict[str, Any],
+    curr_snap: Dict[str, Any],
+    prev_rec: Dict[str, Any],
+    curr_rec: Dict[str, Any],
+    para_metas_by_id: Dict[int, Dict[str, Any]],
+) -> bool:
+    if prev_rec.get("type") != "paragraph" or curr_rec.get("type") != "paragraph":
+        return False
+    if prev_rec.get("custom_style", "") != curr_rec.get("custom_style", ""):
+        return False
+    if abs(float(prev_rec.get("font_size", 0.0)) - float(curr_rec.get("font_size", 0.0))) > 0.6:
+        return False
+
+    prev_text = str(prev_rec.get("raw_text", "")).strip()
+    curr_text = str(curr_rec.get("raw_text", "")).strip()
+    if not prev_text or not curr_text:
+        return False
+    if _TOC_LINE_RE.search(prev_text) or _TOC_LINE_RE.search(curr_text):
+        return False
+
+    prev_check = re.sub(r'(?:\[\^p\d+_\d+\])+\s*$', '', prev_text).rstrip()
+    is_unclosed = _has_unclosed_delimiters(prev_check)
+    if _is_cross_page_terminal(prev_check) and not is_unclosed:
+        return False
+
+    prev_meta = para_metas_by_id.get(id(prev_rec), {})
+    curr_meta = para_metas_by_id.get(id(curr_rec), {})
+
+    prev_line_count = int(prev_meta.get("line_count", 1))
+    prev_clean_content = _HEADING_PREFIX_CLEAN_RE.sub('', _CLEAN_FOR_HEADING_RE.sub('', prev_check))
+    prev_last_x1 = float(prev_meta.get("last_line_x1", 0.0))
+    prev_max_x1 = float(prev_meta.get("max_x1", prev_snap.get("max_x1", 0.0)))
+    prev_body_size = float(prev_snap.get("body_size", 10.5))
+    prev_is_short = bool(prev_last_x1 > 0 and prev_last_x1 < prev_max_x1 - max(prev_body_size * 2.0, 20.0))
+    if (
+        not is_unclosed and prev_line_count == 1 and 2 <= len(prev_clean_content) <= 35
+        and not _SENTENCE_PUNCT_RE.search(prev_clean_content) and prev_is_short
+        and not re.search(r'[的了在和与]$', prev_clean_content)
+    ):
+        return False
+
+    if (
+        not is_unclosed and prev_last_x1 > 0
+        and prev_last_x1 < prev_max_x1 - max(prev_body_size * 4.0, 45.0)
+        and not re.search(r'[，,、；;：:\-—]$', prev_check)
+    ):
+        return False
+
+    if _PARA_START_PREFIX_RE.match(curr_text):
+        return False
+
+    curr_raw_first_line = str(curr_meta.get("first_raw_line", ""))
+    if re.match(r'^(?:[\u3000\u2003]| {2,4})', curr_raw_first_line):
+        return False
+
+    curr_base_x0 = float(curr_snap.get("base_x0", 65.0))
+    curr_page_w = float(curr_snap.get("page_w", 595.0))
+    curr_body_size = float(curr_snap.get("body_size", 10.5))
+    curr_first_bbox = curr_meta.get("first_line_bbox") or curr_rec.get("bbox") or [0.0, 0.0, 0.0, 0.0]
+    if len(curr_first_bbox) >= 4 and (float(curr_first_bbox[0]) - curr_base_x0) >= max(10.0, curr_body_size * 1.4):
+        return False
+
+    if len(curr_first_bbox) >= 4:
+        is_centered = abs(((float(curr_first_bbox[0]) + float(curr_first_bbox[2])) / 2.0) - (curr_page_w / 2.0)) < (curr_page_w * 0.12)
+        if (
+            is_centered and (float(curr_first_bbox[0]) > curr_base_x0 + 10.0)
+            and abs(float(curr_first_bbox[0]) - (curr_page_w - float(curr_first_bbox[2]))) < max(25.0, curr_page_w * 0.08)
+        ):
+            return False
+
+    curr_line_count = int(curr_meta.get("line_count", 1))
+    curr_clean_content = _HEADING_PREFIX_CLEAN_RE.sub('', _CLEAN_FOR_HEADING_RE.sub('', curr_text))
+    if (
+        curr_line_count == 1 and 2 <= len(curr_clean_content) <= 35
+        and not _SENTENCE_PUNCT_RE.search(curr_clean_content)
+        and not re.search(r'[。！？!?…．.]$', curr_text)
+    ):
+        return False
+
+    return True
+
+
+def _merge_cross_page_layout_paragraphs(
+    page_snapshots: List[Dict[str, Any]],
+    para_metas_by_id: Dict[int, Dict[str, Any]],
+    audit_data: Dict[str, Any],
+) -> None:
+    """Merge incomplete prose paragraphs across consecutive pages while preserving layout contracts."""
+    if len(page_snapshots) < 2:
+        return
+
+    for idx in range(len(page_snapshots) - 1):
+        prev_snap = _find_prev_nonempty_page(page_snapshots, idx)
+        curr_snap = page_snapshots[idx + 1]
+        if prev_snap is None or not curr_snap["records"] or not curr_snap["paragraphs"]:
+            continue
+
+        prev_rec, prev_md_idx = _get_last_body_record_and_md_idx(prev_snap)
+        curr_rec = curr_snap["records"][0]
+        if prev_rec is None or prev_md_idx < 0:
+            continue
+
+        if not _should_merge_cross_page_paragraphs(prev_snap, curr_snap, prev_rec, curr_rec, para_metas_by_id):
+            continue
+
+        prev_inner, style_name, trailing_tags = _unwrap_styled_div(prev_snap["paragraphs"][prev_md_idx])
+        prev_raw = f"{prev_inner}{trailing_tags}" if trailing_tags else (prev_inner or str(prev_rec.get("raw_text", "")).strip())
+        curr_inner, _, curr_trailing = _unwrap_styled_div(curr_snap["paragraphs"][0])
+        curr_raw = f"{curr_inner}{curr_trailing}" if curr_trailing else (curr_inner or str(curr_rec.get("raw_text", "")).strip())
+
+        if _CJK_END_RE.search(prev_raw) and _CJK_START_RE.search(curr_raw):
+            merged_text = prev_raw + curr_raw
+            audit_data["paragraphs_reflowed"] += 1
+        else:
+            merged_text = prev_raw + " " + curr_raw
+
+        effective_style = style_name or str(prev_rec.get("custom_style", ""))
+        merged_md = (
+            f'::: {{custom-style="{effective_style}"}}\n{merged_text}\n:::'
+            if effective_style
+            else merged_text
+        )
+
+        prev_snap["paragraphs"][prev_md_idx] = merged_md
+        prev_rec["raw_text"] = merged_text
+        prev_rec["md_text"] = merged_md
+
+        prev_meta = para_metas_by_id.setdefault(id(prev_rec), {})
+        curr_meta = para_metas_by_id.get(id(curr_rec), {})
+        prev_meta["line_count"] = int(prev_meta.get("line_count", 1)) + int(curr_meta.get("line_count", 1))
+        prev_meta["last_line_x1"] = curr_meta.get("last_line_x1", prev_meta.get("last_line_x1", 0.0))
+        prev_meta["max_x1"] = curr_snap.get("max_x1", prev_meta.get("max_x1", prev_snap.get("max_x1", 0.0)))
+
+        curr_snap["paragraphs"].pop(0)
+        curr_snap["records"].pop(0)
+
+
 def _process_single_pdf_page_layout(
     page: Any,
     page_num: int,
@@ -1778,6 +2000,8 @@ def _process_single_pdf_page_layout(
     all_image_blocks: List[Dict[str, Any]],
     layout_records: List[Dict[str, Any]],
     audit_data: Dict[str, Any],
+    para_metas_by_id: Optional[Dict[int, Dict[str, Any]]] = None,
+    page_snapshots: Optional[List[Dict[str, Any]]] = None,
 ) -> None:
     page_h = page.rect.height
     page_w = page.rect.width
@@ -1799,6 +2023,7 @@ def _process_single_pdf_page_layout(
     )
 
     page_paragraphs: List[str] = []
+    page_records: List[Dict[str, Any]] = []
     ai_boundary_by_item: Dict[str, Any] = {}
     state: Dict[str, Any] = {
         "lines": [],
@@ -1811,26 +2036,48 @@ def _process_single_pdf_page_layout(
         "last_line_x1": 0.0,
         "last_heading_text": "",
         "last_flushed_para_text": "",
+        "first_line_bbox": None,
+        "first_raw_line": "",
+        "para_metas_by_id": para_metas_by_id,
     }
 
     for item in flow_items:
         if _handle_non_text_flow_item(
             item, state, page_num, page_w, page_h, body_font, body_size, enable_footnotes,
-            page_footnotes, style_mapping, all_image_blocks, page_paragraphs, layout_records, audit_data,
+            page_footnotes, style_mapping, all_image_blocks, page_paragraphs, page_records, audit_data,
         ):
             continue
         _process_text_flow_item(
             item, page, state, page_num, page_w, base_x0, max_x1, body_font, body_size,
             toc_index, toc_page_offset, font_role_map, style_mapping, ai_heading_by_block,
-            ai_boundary_by_item, ai_kaiti_classifier, page_footnotes, page_paragraphs, layout_records, audit_data,
+            ai_boundary_by_item, ai_kaiti_classifier, page_footnotes, page_paragraphs, page_records, audit_data,
         )
 
     _flush_accumulated_paragraph(
-        state, page_num, body_font, body_size, style_mapping, page_paragraphs, layout_records, audit_data
+        state, page_num, body_font, body_size, style_mapping, page_paragraphs, page_records, audit_data
     )
-    _finalize_page_footnotes(page_footnotes, page_num, page_paragraphs, layout_records, audit_data)
-    if page_paragraphs:
-        final_md_pages.append("\n\n".join(page_paragraphs))
+    _finalize_page_footnotes(page_footnotes, page_num, page_paragraphs, page_records, audit_data)
+    if page_snapshots is not None:
+        wide_boxes = [
+            b.get("bbox", [0, 0, 0, 0])
+            for b in body_blocks
+            if (b.get("bbox", [0, 0, 0, 0])[2] - b.get("bbox", [0, 0, 0, 0])[0]) >= page_w * 0.35
+        ]
+        snap_base_x0 = min((bx[0] for bx in wide_boxes), default=base_x0)
+        snap_max_x1 = max((bx[2] for bx in wide_boxes), default=max_x1)
+        page_snapshots.append({
+            "page_num": page_num,
+            "page_w": page_w,
+            "base_x0": snap_base_x0,
+            "max_x1": snap_max_x1,
+            "body_size": body_size,
+            "paragraphs": page_paragraphs,
+            "records": page_records,
+        })
+    else:
+        layout_records.extend(page_records)
+        if page_paragraphs:
+            final_md_pages.append("\n\n".join(page_paragraphs))
 
 
 def _parse_pdf_layout_flow(
@@ -1865,6 +2112,8 @@ def _parse_pdf_layout_flow(
     final_md_pages: List[str] = []
     all_image_blocks: List[Dict[str, Any]] = []
     layout_records: List[Dict[str, Any]] = []
+    para_metas_by_id: Dict[int, Dict[str, Any]] = {}
+    page_snapshots: List[Dict[str, Any]] = []
 
     start_page_idx = max(0, page_range[0] - 1) if page_range else 0
     end_page_idx = min(total_pages, page_range[1]) if page_range else total_pages
@@ -1878,7 +2127,14 @@ def _parse_pdf_layout_flow(
             style_map, font_role_map, enable_footnotes, strip_headers_heuristic,
             ai_kaiti_classifier, ai_font_decision_cache, retained_font_suggestions,
             final_md_pages, all_image_blocks, layout_records, audit_data,
+            para_metas_by_id=para_metas_by_id, page_snapshots=page_snapshots,
         )
+
+    _merge_cross_page_layout_paragraphs(page_snapshots, para_metas_by_id, audit_data)
+    for snap in page_snapshots:
+        if snap["paragraphs"]:
+            final_md_pages.append("\n\n".join(snap["paragraphs"]))
+        layout_records.extend(snap["records"])
 
     try:
         from src.extraction.contracts import validate_layout_records

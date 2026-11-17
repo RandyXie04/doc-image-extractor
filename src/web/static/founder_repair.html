@@ -17,7 +17,7 @@
             </a>
             <div>
                 <h1>方正修復</h1>
-                <p class="page-lead">還原早期方正系統 PDF 或 DOCX 的 CMap 編碼缺陷與亂碼。不論上傳 PDF 或 DOCX，輸出一律是修復後的 Word。</p>
+                <p class="page-lead">修復方正字庫 PDF / DOCX 亂碼並輸出 Word (.docx)。</p>
             </div>
         </header>
 
@@ -43,7 +43,10 @@
         const statusDiv = document.getElementById('status');
         let currentFile = null;
 
-        dropZone.onclick = () => fileInput.click();
+        dropZone.onclick = (e) => {
+            if (e.target === fileInput) return;
+            fileInput.click();
+        };
         dropZone.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } };
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
         dropZone.ondragleave = () => dropZone.classList.remove('dragover');
@@ -57,11 +60,17 @@
         };
 
         function handleFile(file) {
+            if (!/\.(pdf|docx)$/i.test(file.name)) {
+                toolbox.notify('僅支援 .pdf 或 .docx 檔案', 'error');
+                fileInput.value = '';
+                return;
+            }
             if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
                 fileInput.value = '';
                 return;
             }
             currentFile = file;
+            fileInput.value = '';
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
             fileNameDisplay.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong><small>${sizeMB} MB</small></span>`;
             submitBtn.disabled = false;
@@ -74,7 +83,8 @@
             if (!currentFile) return;
 
             submitBtn.disabled = true;
-            statusDiv.innerHTML = '<div class="alert">正在修復編碼，請稍候。</div>';
+            submitBtn.textContent = '修復中…';
+            statusDiv.innerHTML = '';
 
             const formData = new FormData();
             formData.append('file', currentFile);
@@ -96,13 +106,9 @@
                                         <span class="file-name">${toolbox.escape(result.filename)}</span>
                                         <span class="file-desc">修復後的 Word 文件</span>
                                     </div>
-                                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
-                                        <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON}另存 Word</button>
-                                        <a href="/static/pod_studio.html" class="btn btn-secondary btn-sm" id="handoffPodBtn">接續送入 POD 整稿 →</a>
-                                    </div>
+                                    <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON}另存 Word</button>
                                 </li>
                             </ul>
-                            <div class="result-note">檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀，請及時另存。</div>
                         </div>`;
                     document.getElementById('saveDocxBtn').onclick = (ev) => toolbox.nativeSave({
                         sourcePath: result.source_path,
@@ -112,9 +118,13 @@
                         mountEl: document.getElementById('resultCard'),
                         label: 'Word'
                     });
+                    submitBtn.textContent = '重新修復';
+                } else {
+                    submitBtn.textContent = '開始修復';
                 }
             } catch (error) {
                 statusDiv.innerHTML = toolbox.errorPanel('修復失敗', error.message, 'submitBtn.click()');
+                submitBtn.textContent = '開始修復';
             } finally {
                 submitBtn.disabled = false;
             }

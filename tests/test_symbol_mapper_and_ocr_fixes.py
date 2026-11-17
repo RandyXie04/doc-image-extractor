@@ -244,6 +244,277 @@ class TestSymbolMapperAndOcrFixes(unittest.TestCase):
             self.assertEqual(len(extracted_files), 1)
             self.assertTrue(extracted_files[0].startswith("page_0002_"))
 
+    def test_reconcile_layout_and_det_recovers_bottom_orphan_lines(self):
+        """驗證雙解析度對帳能救回被版面模型遺漏或截斷的頁底孤兒文字行，並依幾何位置併入上方段落或獨立成塊"""
+        from types import SimpleNamespace
+        from src.scripts.process_ocr import _reconcile_layout_and_det_lines
+
+        # Case 1: 緊鄰上方段落底部的孤兒行應直接併入該文本塊 (line_bboxes_150 擴張、bbox 下移)
+        layout_bboxes = [
+            {"bbox": [60.0, 100.0, 440.0, 160.0], "label": "Text"},
+        ]
+        det_bboxes = [
+            {"bbox": [60.0, 102.0, 440.0, 122.0]},
+            {"bbox": [60.0, 130.0, 440.0, 150.0]},
+            {"bbox": [60.0, 174.0, 440.0, 194.0]},  # 頁底被 layout 截斷的孤兒行 (y_gap=14 <= 1.85*20)
+        ]
+        blocks = _reconcile_layout_and_det_lines(layout_bboxes, det_bboxes, page_w=500.0, page_h=700.0)
+        self.assertEqual(len(blocks), 1)
+        self.assertEqual(blocks[0]["original_label"], "text")
+        self.assertEqual(len(blocks[0]["line_bboxes_150"]), 3)
+        self.assertEqual(blocks[0]["bbox"][3], 194.0)
+
+        # Case 2: 遠離上方區塊（或縮排新段 / object 樣式 polygon）之孤兒行應補建為獨立 "text" 區塊，零掉行
+        obj_layout = [
+            SimpleNamespace(
+                polygon=[[60.0, 100.0], [440.0, 100.0], [440.0, 155.0], [60.0, 155.0]],
+                label="Text",
+            ),
+        ]
+        det_with_far_orphan = [
+            SimpleNamespace(polygon=[[60.0, 102.0], [440.0, 102.0], [440.0, 122.0], [60.0, 122.0]]),
+            SimpleNamespace(polygon=[[60.0, 130.0], [440.0, 130.0], [440.0, 150.0], [60.0, 150.0]]),
+            SimpleNamespace(polygon=[[60.0, 610.0], [320.0, 610.0], [320.0, 630.0], [60.0, 630.0]]),
+        ]
+        blocks_far = _reconcile_layout_and_det_lines(
+            obj_layout, det_with_far_orphan, page_w=500.0, page_h=700.0
+        )
+        self.assertEqual(len(blocks_far), 2)
+        self.assertEqual(blocks_far[1]["original_label"], "text")
+        self.assertEqual(blocks_far[1]["line_bboxes_150"], [[60.0, 610.0, 320.0, 630.0]])
+        total_lines = sum(len(b["line_bboxes_150"]) for b in blocks_far)
+        self.assertEqual(total_lines, 3)
+
+    def test_reconcile_layout_demotes_pagefooter_and_rescues_text_picture(self):
+        """驗證已裁切頁面內之 PageHeader/PageFooter 降級為 text，且無底圖重疊卻含文字行的 Picture 被救回為 text"""
+        from src.scripts.process_ocr import _reconcile_layout_and_det_lines
+
+        layout_bboxes = [
+            {"bbox": [60.0, 20.0, 440.0, 45.0], "label": "PageHeader"},
+            {"bbox": [60.0, 120.0, 440.0, 200.0], "label": "Picture"},
+            {"bbox": [60.0, 640.0, 440.0, 670.0], "label": "PageFooter"},
+        ]
+        det_bboxes = [
+            {"bbox": [60.0, 22.0, 440.0, 42.0]},
+            {"bbox": [60.0, 125.0, 440.0, 145.0]},
+            {"bbox": [60.0, 160.0, 440.0, 180.0]},
+            {"bbox": [60.0, 645.0, 440.0, 665.0]},
+        ]
+        blocks = _reconcile_layout_and_det_lines(
+            layout_bboxes,
+            det_bboxes,
+            page_w=500.0,
+            page_h=700.0,
+            image_rects_150=[],
+        )
+        self.assertEqual(len(blocks), 3)
+        self.assertEqual(blocks[0]["original_label"], "text")
+        self.assertEqual(blocks[0]["line_bboxes_150"], [[60.0, 22.0, 440.0, 42.0]])
+        self.assertEqual(blocks[1]["original_label"], "text")
+        self.assertEqual(
+            blocks[1]["line_bboxes_150"],
+            [[60.0, 125.0, 440.0, 145.0], [60.0, 160.0, 440.0, 180.0]],
+        )
+        self.assertEqual(blocks[2]["original_label"], "text")
+        self.assertEqual(blocks[2]["line_bboxes_150"], [[60.0, 645.0, 440.0, 665.0]])
+
+        # 若確實與真實點陣底圖重疊，Picture 應維持為 picture 不誤救回
+        raster_blocks = _reconcile_layout_and_det_lines(
+            [{"bbox": [60.0, 300.0, 300.0, 500.0], "label": "Picture"}],
+            [{"bbox": [80.0, 350.0, 260.0, 370.0]}],
+            page_w=500.0,
+            page_h=700.0,
+            image_rects_150=[[60.0, 300.0, 300.0, 500.0]],
+        )
+        self.assertEqual(len(raster_blocks), 1)
+        self.assertEqual(raster_blocks[0]["original_label"], "picture")
+        self.assertEqual(raster_blocks[0]["line_bboxes_150"], [])
+
+    def test_scale_bbox_150_to_200_dpi(self):
+        """驗證 _scale_bbox 正確依 4/3 倍率將 150 DPI 座標轉換為 200 DPI 並支援邊界夾限"""
+        from src.scripts.process_ocr import _scale_bbox
+
+        ratio = 4.0 / 3.0
+        scaled = _scale_bbox([30.0, 60.0, 150.0, 300.0], ratio, ratio)
+        self.assertAlmostEqual(scaled[0], 40.0)
+        self.assertAlmostEqual(scaled[1], 80.0)
+        self.assertAlmostEqual(scaled[2], 200.0)
+        self.assertAlmostEqual(scaled[3], 400.0)
+
+        clamped = _scale_bbox([-15.0, -6.0, 900.0, 1200.0], ratio, ratio, max_w=1000.0, max_h=1400.0)
+        self.assertEqual(clamped, [0.0, 0.0, 1000.0, 1400.0])
+
+    def test_sort_blocks_retains_bottom_numbers_in_cropped_page(self):
+        """驗證已裁切頁面底端獨立數字（y0 > page_h * 0.90）不會被誤刪，同時保留右側豎排切口章名過濾"""
+        blocks = [
+            {"bbox": [50, 80, 450, 120], "original_label": "text", "surya_text": "正文段落内容。"},
+            {"bbox": [460, 200, 475, 250], "original_label": "text", "surya_text": "第一章"},
+            {"bbox": [230, 650, 270, 675], "original_label": "text", "surya_text": "128"},
+        ]
+        sorted_blocks = sort_blocks_2d_reading_order(blocks, page_w=500, page_h=700)
+        texts = [b["surya_text"] for b in sorted_blocks]
+        self.assertIn("正文段落内容。", texts)
+        self.assertIn("128", texts)
+        self.assertNotIn("第一章", texts)
+
+    def test_merge_cross_page_paragraphs(self):
+        """驗證 _merge_cross_page_paragraphs 正確拼接句中截斷與未閉合《之跨頁段落，保留樣式且不誤併句號結尾或標題頁"""
+        from src.scripts.process_ocr import _merge_cross_page_paragraphs, build_ocr_layout_contracts
+
+        # Case 1: 句中截斷 + ::: {custom-style="Normal"} 樣式保留
+        pages_mid = [
+            {
+                "page_num": 1,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {
+                        "orig_idx": 0,
+                        "md": '::: {custom-style="Normal"}\n本方以清热解毒、健脾益气为主要治疗原则，临床应用时可根据患者体质适当调整\n:::',
+                        "block": {
+                            "original_label": "text",
+                            "bbox": [60.0, 580.0, 440.0, 640.0],
+                            "line_bboxes_150": [[60.0, 580.0, 440.0, 600.0], [60.0, 610.0, 380.0, 630.0]],
+                            "surya_text": "本方以清热解毒、健脾益气为主要治疗原则，临床应用时可根据患者体质适当调整",
+                        },
+                    }
+                ],
+                "footnotes": [],
+            },
+            {
+                "page_num": 2,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {
+                        "orig_idx": 0,
+                        "md": '::: {custom-style="Normal"}\n剂量与配伍比例，从而达到标本兼治的理想临床疗效。\n:::',
+                        "block": {
+                            "original_label": "text",
+                            "bbox": [60.0, 60.0, 440.0, 110.0],
+                            "line_bboxes_150": [[60.0, 60.0, 440.0, 80.0], [60.0, 90.0, 320.0, 110.0]],
+                            "surya_text": "剂量与配伍比例，从而达到标本兼治的理想临床疗效。",
+                        },
+                    },
+                    {
+                        "orig_idx": 1,
+                        "md": '::: {custom-style="Normal"}\n第二段新起内容，保持独立存在。\n:::',
+                        "block": {
+                            "original_label": "text",
+                            "bbox": [60.0, 130.0, 440.0, 170.0],
+                            "line_bboxes_150": [[96.0, 130.0, 440.0, 150.0], [60.0, 152.0, 300.0, 170.0]],
+                            "surya_text": "第二段新起内容，保持独立存在。",
+                        },
+                    },
+                ],
+                "footnotes": [],
+            },
+        ]
+        merged_mid = _merge_cross_page_paragraphs(pages_mid)
+        self.assertEqual(len(merged_mid[0]["body"]), 1)
+        self.assertEqual(
+            merged_mid[0]["body"][0]["md"],
+            '::: {custom-style="Normal"}\n本方以清热解毒、健脾益气为主要治疗原则，临床应用时可根据患者体质适当调整剂量与配伍比例，从而达到标本兼治的理想临床疗效。\n:::',
+        )
+        self.assertEqual(len(merged_mid[1]["body"]), 1)
+        self.assertIn("第二段新起内容，保持独立存在。", merged_mid[1]["body"][0]["md"])
+        self.assertTrue(len(build_ocr_layout_contracts(merged_mid)) > 0)
+
+        # Case 2: 未閉合書名號《跨頁續接
+        pages_quote = [
+            {
+                "page_num": 1,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {
+                        "orig_idx": 0,
+                        "md": "上述方剂加减化裁规律最早见于清代医家吴鞠通所著《温",
+                        "block": {"original_label": "text", "bbox": [60.0, 600.0, 440.0, 630.0]},
+                    }
+                ],
+                "footnotes": [],
+            },
+            {
+                "page_num": 2,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {
+                        "orig_idx": 0,
+                        "md": "病条辨》中的经典论述。",
+                        "block": {"original_label": "text", "bbox": [60.0, 60.0, 300.0, 80.0]},
+                    }
+                ],
+                "footnotes": [],
+            },
+        ]
+        merged_quote = _merge_cross_page_paragraphs(pages_quote)
+        self.assertEqual(
+            merged_quote[0]["body"][0]["md"],
+            "上述方剂加减化裁规律最早见于清代医家吴鞠通所著《温病条辨》中的经典论述。",
+        )
+        self.assertEqual(len(merged_quote[1]["body"]), 0)
+
+        # Case 3: 頁底以句號「。」結尾 -> 不得合併
+        pages_terminal = [
+            {
+                "page_num": 1,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {
+                        "orig_idx": 0,
+                        "md": "本方临床疗效确切，安全可靠，值得临床推广应用。",
+                        "block": {"original_label": "text", "bbox": [60.0, 600.0, 440.0, 630.0]},
+                    }
+                ],
+                "footnotes": [],
+            },
+            {
+                "page_num": 2,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {
+                        "orig_idx": 0,
+                        "md": "后续观察病例共六十例，均取得良好预后。",
+                        "block": {"original_label": "text", "bbox": [60.0, 60.0, 440.0, 80.0]},
+                    }
+                ],
+                "footnotes": [],
+            },
+        ]
+        not_merged_term = _merge_cross_page_paragraphs(pages_terminal)
+        self.assertEqual(len(not_merged_term[0]["body"]), 1)
+        self.assertEqual(len(not_merged_term[1]["body"]), 1)
+
+        # Case 4: 次頁以標題 # 開頭 -> 不得合併
+        pages_heading = [
+            {
+                "page_num": 1,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {
+                        "orig_idx": 0,
+                        "md": "本方以清热解毒、健脾益气为主要治疗原则，临床应用时可灵活",
+                        "block": {"original_label": "text", "bbox": [60.0, 600.0, 440.0, 630.0]},
+                    }
+                ],
+                "footnotes": [],
+            },
+            {
+                "page_num": 2,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {
+                        "orig_idx": 0,
+                        "md": "# 第二章 临床应用",
+                        "block": {"original_label": "section-header", "bbox": [60.0, 60.0, 300.0, 90.0]},
+                    }
+                ],
+                "footnotes": [],
+            },
+        ]
+        not_merged_head = _merge_cross_page_paragraphs(pages_heading)
+        self.assertEqual(len(not_merged_head[0]["body"]), 1)
+        self.assertEqual(len(not_merged_head[1]["body"]), 1)
+        self.assertEqual(not_merged_head[1]["body"][0]["md"], "# 第二章 临床应用")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -84,8 +84,8 @@
     "mapped_by": "user"
   },
   "FZXBSK--GBK1-0 (12.0pt)": {
-    "role": "H2",
-    "docx_style": "heading 2",
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZLTXHK (11.0pt)": {
@@ -109,8 +109,8 @@
     "mapped_by": "user"
   },
   "FZHTK--GBK1-0 (14.0pt)": {
-    "role": "H2",
-    "docx_style": "heading 2",
+    "role": "H1",
+    "docx_style": "heading 1",
     "mapped_by": "user"
   },
   "FZXBSK--GBK1-0 (18.5pt)": {
@@ -189,8 +189,8 @@
     "mapped_by": "user"
   },
   "FZSSK--GBK1-0 (8.5pt)": {
-    "role": "忽略",
-    "docx_style": null,
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZSHIGKSS--GB1-0 (17.0pt)": {
@@ -489,8 +489,8 @@
     "mapped_by": "user"
   },
   "FZHTK--GBK1-0 (12.0pt)": {
-    "role": "正文",
-    "docx_style": "Normal",
+    "role": "H2",
+    "docx_style": "heading 3",
     "mapped_by": "user"
   },
   "FZLTZCHK--GBK1-0 (11.0pt)": {
@@ -499,8 +499,8 @@
     "mapped_by": "user"
   },
   "FZHTK--GBK1-0 (11.0pt)": {
-    "role": "正文",
-    "docx_style": "標粗",
+    "role": "忽略",
+    "docx_style": null,
     "mapped_by": "user"
   },
   "FZSSK--GBK1-0 (10.0pt)": {
@@ -540,7 +540,7 @@
   },
   "FZKTK--GBK1-0 (10.0pt)": {
     "role": "楷體",
-    "docx_style": "屬名",
+    "docx_style": "footer",
     "mapped_by": "user"
   },
   "FZLTZHK--GBK1-0 (9.5pt)": {
@@ -564,8 +564,8 @@
     "mapped_by": "user"
   },
   "FZKTK--GBK1-0 (9.0pt)": {
-    "role": "正文",
-    "docx_style": "Normal",
+    "role": "楷體",
+    "docx_style": "附註",
     "mapped_by": "user"
   },
   "FZLTKHK--GBK1-0 (8.0pt)": {
@@ -616,6 +616,590 @@
   "RopeSequenceNumberST-R (4.5pt)": {
     "role": "忽略",
     "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZDBSK--GBK1-0 (40.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSHHK--GBK1-0 (21.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZSHHK--GBK1-0 (20.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSHHK--GBK1-0 (19.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZSHHK--GBK1-0 (17.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZSHHK--GBK1-0 (16.5pt)": {
+    "role": "H2",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZLTZCHK--GBK1-0 (15.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZLTZCHK--GBK1-0 (13.5pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (12.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZLTZCHK--GBK1-0 (12.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZKTK--GBK1-0 (11.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZHTK--GBK1-0 (10.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SimSun (10.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZSHK--GBK1-0 (10.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZFSK--GBK1-0 (10.5pt)": {
+    "role": "楷體",
+    "docx_style": "楷體2",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (10.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZXH1K--GBK1-0 (10.5pt)": {
+    "role": "H3",
+    "docx_style": "heading 4",
+    "mapped_by": "user"
+  },
+  "FZKTK--GBK1-0 (10.5pt)": {
+    "role": "楷體",
+    "docx_style": "楷體",
+    "mapped_by": "user"
+  },
+  "FZBANGSHUKAIJW--GB1-0 (10.5pt)": {
+    "role": "楷體",
+    "docx_style": "置中標",
+    "mapped_by": "user"
+  },
+  "FZBANGSHUKAIK--GBK1-0 (10.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "AdobeSongStd-Light (10.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "SimSun (9.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZBWKSJW--GB1-0 (9.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZYOUHK_509R--GBK1-0 (9.0pt)": {
+    "role": "圖說",
+    "docx_style": "圖說",
+    "mapped_by": "user"
+  },
+  "FZHTK--GBK1-0 (9.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (9.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZHTK--GBK1-0 (5.0pt)": {
+    "role": "正文",
+    "docx_style": "footnote text",
+    "mapped_by": "user"
+  },
+  "FZY3JW--GB1-0 (34.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZCHSJW--GB1-0 (24.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZDBSJW--GB1-0 (22.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 1",
+    "mapped_by": "user"
+  },
+  "SimHei (20.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 1",
+    "mapped_by": "user"
+  },
+  "FZXBSJW--GB1-0 (16.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZBIAOYSK--GBK1-0 (16.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZXSSJW--GB1-0 (14.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZLTZHJW--GB1-0 (13.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 3",
+    "mapped_by": "user"
+  },
+  "FZY3JW--GB1-0 (12.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 3",
+    "mapped_by": "user"
+  },
+  "FZDBSJW--GB1-0 (11.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "SimHei (10.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSSJW--GB1-0 (10.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "STSongti-SC-Bold (10.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZXBSJW--GB1-0 (10.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "TimesNewRomanPSMT (10.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZSSJW--GB1-0 (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZCYSJW--GB1-0 (10.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZXSSJW--GB1-0 (10.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZLTZHUNHK--GBK1-0 (10.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 3",
+    "mapped_by": "user"
+  },
+  "FZHTJW--GB1-0 (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "TimesNewRomanPS-ItalicMT (10.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "SimSun (10.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZSSJW--GB1-0 (9.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZKTJW--GB1-0 (9.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTHJW--GB1-0 (9.0pt)": {
+    "role": null,
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZLTZHJW--GB1-0 (9.0pt)": {
+    "role": null,
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZLTCHK--GBK1-0 (9.0pt)": {
+    "role": "圖說",
+    "docx_style": "圖說",
+    "mapped_by": "user"
+  },
+  "FZXSSJW--GB1-0 (9.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (5.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SJrousong-C-Regular (33.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZCHSJW--GB1-0 (25.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 1",
+    "mapped_by": "user"
+  },
+  "FZDHTJW--GB1-0 (16.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZCSJW--GB1-0 (15.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZCYSK--GBK1-0 (15.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SimHei (14.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZHTJW--GB1-0 (13.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZHTJW--GB1-0 (12.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZDBSJW--GB1-0 (12.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZCSJW--GB1-0 (12.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZLTZHUNHJW--GB1-0 (12.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 3",
+    "mapped_by": "user"
+  },
+  "FZXSSK--GBK1-0 (11.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZHTJW--GB1-0 (11.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZXSSK--GBK1-0 (10.5pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "SegoeUIEmoji (10.5pt)": {
+    "role": "忽略",
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZCYSK--GBK1-0 (10.5pt)": {
+    "role": "忽略",
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "SimHei (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSHJW--GB1-0 (10.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 3",
+    "mapped_by": "user"
+  },
+  "GenWanMinTW-Regular-TTF (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTZCHK--GBK1-0 (9.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZY3JW--GB1-0 (9.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SimHei (8.5pt)": {
+    "role": "正文",
+    "docx_style": "表說",
+    "mapped_by": "user"
+  },
+  "FZSSJW--GB1-0 (6.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSSJW--GB1-0 (7.5pt)": {
+    "role": "圖說",
+    "docx_style": null,
+    "mapped_by": "ai_layout",
+    "confidence": 0.9,
+    "reason": "文字內容為列表或圖表標註，且字體大小較小，符合圖說或標註的特徵。",
+    "sample": "A、B、C、D．右眼；E、F、G、H．左眼"
+  },
+  "FZZHUNYSK--GBK1-0 (16.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZCYSJW--GB1-0 (16.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "FZLANTY_ZHONGJW--GB1-0 (13.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZLANTY_ZHONGJW--GB1-0 (10.0pt)": {
+    "role": null,
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZZHUNYSK--GBK1-0 (10.0pt)": {
+    "role": "忽略",
+    "docx_style": null,
+    "mapped_by": "user"
+  },
+  "FZLANTY_ZHUNJW--GB1-0 (10.0pt)": {
+    "role": null,
+    "docx_style": "屬名",
+    "mapped_by": "user"
+  },
+  "FZLTZHK--GBK1-0 (10.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 3",
+    "mapped_by": "user"
+  },
+  "FZKTJW--GB1-0 (10.0pt)": {
+    "role": "楷體",
+    "docx_style": "表說",
+    "mapped_by": "user"
+  },
+  "FZLANTY_ZHUNJW--GB1-0 (9.0pt)": {
+    "role": "圖說",
+    "docx_style": "圖說",
+    "mapped_by": "user"
+  },
+  "FZLTZHJW--GB1-0 (24.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 3",
+    "mapped_by": "ai_layout",
+    "confidence": 0.9,
+    "reason": "字體大小相對較大，且內容為單詞，符合標題的特徵。",
+    "sample": "主 编"
+  },
+  "FZKTJW--GB1-0 (8.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "ai_layout",
+    "confidence": 0.9,
+    "reason": "文字內容為描述性敘述，字體大小和樣式不符合標題或引文的典型特徵。",
+    "sample": "肌肉酸痛、肌力低下硬度增加休息后恢复第2 天恢复第2 天不恢复"
+  },
+  "SimHei (30.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZCSJW--GB1-0 (29.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SimHei (29.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTCHJW--GB1-0 (29.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTZCHJW--GB1-0 (25.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "SimHei (25.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "SourceHanSansSC-Regular (25.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTZCHJW--GB1-0 (19.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 1",
+    "mapped_by": "user"
+  },
+  "SimHei (16.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SourceHanSansSC-Bold (15.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 3",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (13.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTCHK--GBK1-0 (12.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTZCHJW--GB1-0 (12.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SimHei (12.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SourceHanSansSC-Regular (12.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZZZHUNHJW--GB1-0 (12.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SourceHanSansSC-Medium (12.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 3",
+    "mapped_by": "user"
+  },
+  "FZSSJW--GB1-0 (11.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "KaiTi (11.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SourceHanSerifSC-Regular (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZHTK--GBK1-0 (10.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 3",
+    "mapped_by": "user"
+  },
+  "SimHei (9.0pt)": {
+    "role": "正文",
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (8.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSSK--GBK1-0 (7.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   }
 }

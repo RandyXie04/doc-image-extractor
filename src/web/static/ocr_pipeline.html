@@ -16,17 +16,8 @@
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
                 返回工具箱
             </a>
-            <div style="display: flex; justify-content: space-between; align-items: flex-end; flex-wrap: wrap; gap: 8px;">
-                <div>
-                    <h1 style="font-size: 1.45rem; font-weight: 700; color: var(--f2-color-text-primary);">全自動整稿工作台</h1>
-                    <p class="page-lead" style="font-size: 0.88rem; color: var(--f2-color-text-secondary); margin-top: 2px;">
-                        專業圖書版面解析與樣式對應工作站，自動生成結構化 Word (.docx) 與 Markdown (.md) 文件。
-                    </p>
-                </div>
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <span class="f2-badge f2-badge-primary">Fluent 2 Workspace</span>
-                    <span class="hint" style="font-size: 0.8rem;">零日誌安全防護</span>
-                </div>
+            <div>
+                <h1 style="font-size: 1.45rem; font-weight: 700; color: var(--f2-color-text-primary);">全自動整稿工作台</h1>
             </div>
         </header>
 
@@ -37,7 +28,7 @@
                     <span class="step-badge">1</span>
                     <div class="step-text">
                         <span class="step-title">上傳 PDF</span>
-                        <span class="step-desc" id="step1Desc">待選擇檔案</span>
+                        <span class="step-desc" id="step1Desc">待選擇</span>
                     </div>
                 </li>
                 <li class="step-divider" aria-hidden="true"></li>
@@ -45,7 +36,7 @@
                     <span class="step-badge">2</span>
                     <div class="step-text">
                         <span class="step-title">預覽與版面確認</span>
-                        <span class="step-desc" id="step2Desc">即時視覺化裁切</span>
+                        <span class="step-desc" id="step2Desc">版面裁切</span>
                     </div>
                 </li>
                 <li class="step-divider" aria-hidden="true"></li>
@@ -53,7 +44,7 @@
                     <span class="step-badge">3</span>
                     <div class="step-text">
                         <span class="step-title">範本與排版設定</span>
-                        <span class="step-desc" id="step3Desc">標準範本就緒</span>
+                        <span class="step-desc" id="step3Desc">預設出版範本</span>
                     </div>
                 </li>
                 <li class="step-divider" aria-hidden="true"></li>
@@ -111,13 +102,7 @@
                                 <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                             </div>
                             <h3 class="empty-title" id="fileNameDisplay">點擊選擇，或將 PDF 檔案拖曳到這裡</h3>
-                            <p class="empty-subtitle">支援向量原生版與掃描版 PDF・自動辨識標題、引文與圖表</p>
-                            <div class="empty-specs">
-                                <span class="spec-pill">✓ 向量原生秒級解析</span>
-                                <span class="spec-pill">✓ 即時視覺化邊界裁切</span>
-                                <span class="spec-pill">✓ 出版社標準 Word 樣式套用</span>
-                            </div>
-                            <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('fileInput').click()" style="margin-top: 4px;">瀏覽本機 PDF 檔案</button>
+                            <p class="empty-subtitle">支援 .pdf</p>
                             <input type="file" id="fileInput" name="file" accept=".pdf" style="display: none;">
                         </div>
                     </div>
@@ -157,7 +142,6 @@
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
                                 基本整稿設定
                             </h3>
-                            <span class="f2-badge f2-badge-primary">主要設定</span>
                         </div>
 
                         <!-- 活躍檔案精巧資訊列 (已選擇 PDF 時展示) -->
@@ -303,15 +287,15 @@
                             <div class="field" style="margin-bottom: 8px;">
                                 <label class="field-label" for="engineSelect" style="font-size: 0.82rem;">PDF 處理引擎</label>
                                 <select name="engine" id="engineSelect" class="input" style="font-size: 0.82rem; padding: 4px 6px;">
-                                    <option value="auto">自動偵測 (推薦) — 向量原生秒級解析，掃描自動切換</option>
-                                    <option value="pymupdf">高速提取 (PyMuPDF) — 原生向量 PDF，記憶體極輕量</option>
-                                    <option value="suryaocr">深度識別 (Surya OCR) — 掃描書與圖轉曲 PDF</option>
+                                    <option value="auto">自動偵測 (推薦)</option>
+                                    <option value="pymupdf">PyMuPDF (原生向量)</option>
+                                    <option value="suryaocr">Surya OCR (掃描版)</option>
                                 </select>
                             </div>
 
-                            <button type="button" class="btn btn-secondary btn-sm" id="analyzeFontsBtn" disabled title="先上傳 PDF，再分析字體並指定各字體的樣式角色" style="width: 100%; font-size: 0.82rem;">
+                            <button type="button" class="btn btn-secondary btn-sm" id="analyzeFontsBtn" disabled style="width: 100%; font-size: 0.82rem;">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" x2="15" y1="20" y2="20"/><line x1="12" x2="12" y1="4" y2="20"/></svg>
-                                審閱 PDF 字體與編碼角色
+                                字體與 Word 樣式對應
                             </button>
                         </div>
                     </div>
@@ -333,7 +317,7 @@
                             <div id="progressBar" class="f2-progress-fill" style="width: 0%;"></div>
                         </div>
 
-                        <div class="progress-meta" style="margin-top: 6px; display: flex; justify-content: space-between; font-size: 0.78rem; color: var(--f2-color-text-secondary);">
+                        <div class="progress-meta" style="display: none;">
                             <span id="statusMessage">任務初始化中…</span>
                             <span id="percentageText" style="font-weight: 600; color: var(--f2-color-primary);">0%</span>
                         </div>
@@ -352,13 +336,6 @@
                         <div id="pipelineErrorBox" class="pipeline-error-box" style="display: none;" role="alert">
                             <div class="error-title">⚠️ 整稿任務異常中斷</div>
                             <p id="pipelineErrorReason" class="error-reason"></p>
-                            <p id="pipelineErrorSuggestion" class="error-suggestion">
-                                建議處置：請確認頁碼範圍或於「工程設定」切換 OCR 引擎後重試。
-                            </p>
-                            <div class="error-actions">
-                                <button type="button" id="retrySameParamsBtn" class="btn btn-primary btn-sm">以目前設定重試</button>
-                                <button type="button" id="adjustSettingsBtn" class="btn btn-secondary btn-sm">修改參數</button>
-                            </div>
                         </div>
 
                         <!-- 完成結果摘要與下載 (完成時顯示) -->
@@ -380,10 +357,7 @@
             <div class="modal" style="max-width: 980px; width: 95%;">
                 <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; margin-bottom: 0.5rem;">
                     <div>
-                        <h2 id="fontModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary); margin: 0;">審閱 PDF 字體與編碼角色</h2>
-                        <p class="hint" style="margin: 4px 0 0 0; font-size: 0.84rem;">
-                            以下為本 PDF 偵測到的字體群組摘要。您可按需點擊「Gemma 智慧建議」取得角色與 DOCX 範本樣式建議，覆核或調整後點擊「確認套用」儲存至 fonts.json。
-                        </p>
+                        <h2 id="fontModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary); margin: 0;">字體與 Word 樣式對應</h2>
                     </div>
                     <div style="display: flex; align-items: center; gap: 8px;">
                         <button type="button" class="btn btn-secondary btn-sm" id="gemmaFontSuggestBtn">
@@ -391,8 +365,8 @@
                         </button>
                     </div>
                 </div>
-                <div id="gemmaFontSuggestBanner" class="hint" role="status" aria-live="polite" style="margin-bottom: 0.6rem; padding: 6px 10px; border-radius: 4px; background: var(--f2-color-surface-secondary); border: 1px solid var(--f2-color-border-subtle); font-size: 0.82rem;">
-                    狀態：Gemma 尚未參與（目前顯示規則預選與既有設定，可點擊右上角按鈕按需執行建議）
+                <div id="gemmaFontSuggestBanner" class="hint" role="status" aria-live="polite" style="display: none; margin-bottom: 0.6rem; padding: 6px 10px; border-radius: 4px; background: var(--f2-color-surface-secondary); border: 1px solid var(--f2-color-border-subtle); font-size: 0.82rem;">
+                    狀態：Gemma 尚未參與
                 </div>
                 <div class="modal-body" style="max-height: 58vh; overflow-y: auto;">
                     <table class="data-table" id="fontTable">
@@ -402,7 +376,7 @@
                                 <th style="width: 14%;">頻率与版面分布</th>
                                 <th style="width: 24%;">範例文字</th>
                                 <th style="width: 20%;">Gemma 建議與理由</th>
-                                <th style="width: 20%;">對應樣式角色</th>
+                                <th style="width: 20%;">對應 Word 樣式</th>
                             </tr>
                         </thead>
                         <tbody id="fontTableBody">
@@ -425,10 +399,7 @@
              ══════════════════════════════════════════════════════ -->
         <div class="modal-overlay" id="outlineModalOverlay" role="dialog" aria-modal="true" aria-labelledby="outlineModalTitle">
             <div class="modal" style="max-width: 720px; width: 90%;">
-                <h2 id="outlineModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary);">大綱階層微調 (Outline Editor)</h2>
-                <p class="hint" style="margin: 0 0 0.75rem 0; font-size: 0.85rem;">
-                    系統擷取出之章節標題如下。您可手動調整其層級 (H1/H2/H3) 或降為一般內文；完成後儲存即可重新產生 Word 文件。
-                </p>
+                <h2 id="outlineModalTitle" style="font-size: 1.2rem; font-weight: 700; color: var(--f2-color-text-primary);">大綱階層微調</h2>
                 <div class="modal-body" id="outlineList" style="max-height: 55vh; overflow-y: auto;">
                     載入中…
                 </div>
@@ -512,8 +483,6 @@
         const percentageText = document.getElementById('percentageText');
         const pipelineErrorBox = document.getElementById('pipelineErrorBox');
         const pipelineErrorReason = document.getElementById('pipelineErrorReason');
-        const retrySameParamsBtn = document.getElementById('retrySameParamsBtn');
-        const adjustSettingsBtn = document.getElementById('adjustSettingsBtn');
         const pipelineResultSummary = document.getElementById('pipelineResultSummary');
         const cancelTaskBtn = document.getElementById('cancelTaskBtn');
         const statusDiv = document.getElementById('status');
@@ -530,10 +499,17 @@
         let availableTemplateStyles = [];
         let currentStageIdx = 0;
 
+        function setSubmitBtnSecondary() {
+            if (submitBtn) submitBtn.classList.add('is-secondary');
+        }
+        function restoreSubmitBtnPrimary() {
+            if (submitBtn) submitBtn.classList.remove('is-secondary');
+        }
+
         // ══════════════════════════════════════════════════════
         // 1. Workflow Stepper 管理器
         // ══════════════════════════════════════════════════════
-        function updateWorkflowStepper(step) {
+        function updateWorkflowStepper(step, opts = {}) {
             const steps = [
                 { id: 'stepItem1', descId: 'step1Desc' },
                 { id: 'stepItem2', descId: 'step2Desc' },
@@ -546,19 +522,49 @@
                 if (!el) return;
                 const stepNum = idx + 1;
                 el.classList.remove('active', 'completed');
-                if (stepNum < step) {
+                if (opts.allCompleted) {
+                    el.classList.add('completed');
+                } else if (stepNum < step) {
                     el.classList.add('completed');
                 } else if (stepNum === step) {
                     el.classList.add('active');
                 }
             });
 
-            if (currentFileId) {
-                document.getElementById('step1Desc').textContent = currentFile ? currentFile.name : '已就緒';
-                document.getElementById('step2Desc').textContent = `第 ${currentPreviewPage} / ${totalPdfPages} 頁`;
-            } else {
-                document.getElementById('step1Desc').textContent = '待選擇檔案';
-                document.getElementById('step2Desc').textContent = '即時視覺化裁切';
+            const step1Desc = document.getElementById('step1Desc');
+            const step2Desc = document.getElementById('step2Desc');
+            const step3Desc = document.getElementById('step3Desc');
+            const step4Desc = document.getElementById('step4Desc');
+
+            if (step1Desc) {
+                if (opts.step1Text !== undefined) {
+                    step1Desc.textContent = opts.step1Text;
+                } else if (currentFileId) {
+                    step1Desc.textContent = '已載入';
+                } else {
+                    step1Desc.textContent = '待選擇';
+                }
+            }
+            if (step2Desc) {
+                if (opts.step2Text !== undefined) {
+                    step2Desc.textContent = opts.step2Text;
+                } else {
+                    step2Desc.textContent = currentFileId ? '可預覽裁切' : '版面裁切';
+                }
+            }
+            if (step3Desc) {
+                step3Desc.textContent = opts.step3Text !== undefined
+                    ? opts.step3Text
+                    : (currentTemplateName ? currentTemplateName.textContent : '預設出版範本');
+            }
+            if (step4Desc) {
+                if (opts.allCompleted) {
+                    step4Desc.textContent = opts.step4Text !== undefined ? opts.step4Text : '已完成';
+                } else if (opts.step4Text !== undefined) {
+                    step4Desc.textContent = opts.step4Text;
+                } else {
+                    step4Desc.textContent = '等待執行';
+                }
             }
         }
 
@@ -723,6 +729,7 @@
 
             initEvents() {
                 const onSliderChange = (e, dir) => {
+                    restoreSubmitBtnPrimary();
                     this.setCrop({
                         top: headerSlider.value,
                         bottom: footerSlider.value,
@@ -737,6 +744,7 @@
                 rightSlider.oninput = (e) => onSliderChange(e, 'right');
 
                 const onNumChange = (e, dir) => {
+                    restoreSubmitBtnPrimary();
                     this.setCrop({
                         top: headerNumInput.value,
                         bottom: footerNumInput.value,
@@ -756,6 +764,7 @@
 
                 if (resetCropBtn) {
                     resetCropBtn.onclick = () => {
+                        restoreSubmitBtnPrimary();
                         this.setCrop({ top: 0.10, bottom: 0.10, left: 0.00, right: 0.00 }, 'reset');
                     };
                 }
@@ -775,6 +784,8 @@
             kaiti: ''
         };
         let _confirmedRoleStyleMap = { ...STYLE_ROLE_FALLBACK_DEFAULTS };
+        let _fontData = [];
+        let _gemmaSuggestions = {};
 
         function syncConfirmedRoleStylesFromFontMapping(mappingObj) {
             const nextMap = { ...STYLE_ROLE_FALLBACK_DEFAULTS };
@@ -808,9 +819,13 @@
                 const res = await fetch('/api/get_current_template');
                 const data = await res.json();
                 currentTemplateName.textContent = data.name || '預設出版範本';
+                const step3Desc = document.getElementById('step3Desc');
+                if (step3Desc) step3Desc.textContent = currentTemplateName.textContent;
                 fetchTemplateStyles();
             } catch (err) {
                 currentTemplateName.textContent = '無法取得範本資訊';
+                const step3Desc = document.getElementById('step3Desc');
+                if (step3Desc) step3Desc.textContent = currentTemplateName.textContent;
             }
         }
 
@@ -842,8 +857,11 @@
                 const data = await res.json();
                 if (res.ok) {
                     templateUploadStatus.textContent = data.message || '範本上傳成功';
+                    _confirmedRoleStyleMap = { ...STYLE_ROLE_FALLBACK_DEFAULTS };
+                    _gemmaSuggestions = {};
+                    restoreSubmitBtnPrimary();
                     toolbox.notify('Word 範本已更新', 'success');
-                    loadCurrentTemplate();
+                    await loadCurrentTemplate();
                 } else {
                     throw new Error(data.detail || '上傳失敗');
                 }
@@ -857,7 +875,10 @@
         // ══════════════════════════════════════════════════════
         // 5. 檔案上傳與非線性工作流狀態管理
         // ══════════════════════════════════════════════════════
-        dropZone.onclick = () => fileInput.click();
+        dropZone.onclick = (e) => {
+            if (e.target === fileInput) return;
+            fileInput.click();
+        };
         dropZone.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } };
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); };
         dropZone.ondragleave = () => dropZone.classList.remove('drag-over');
@@ -871,8 +892,14 @@
         };
 
         async function handleFile(file) {
+            if (workbenchInspectorPane.classList.contains('is-processing')) {
+                toolbox.notify('整稿任務執行中，請待完成或取消後再更換檔案', 'warning');
+                fileInput.value = '';
+                return;
+            }
             if (!file.name.toLowerCase().endsWith('.pdf')) {
                 toolbox.notify('請選擇 PDF 格式之檔案', 'warning');
+                fileInput.value = '';
                 return;
             }
             if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
@@ -881,14 +908,30 @@
             }
 
             currentFile = file;
+            fileInput.value = '';
+            currentFileId = null;
+            activeStem = null;
+            currentStageIdx = 0;
+            _confirmedRoleStyleMap = { ...STYLE_ROLE_FALLBACK_DEFAULTS };
+            _gemmaSuggestions = {};
+            _fontData = [];
+            if (pipelineFeedbackPanel) pipelineFeedbackPanel.style.display = 'none';
+            if (pipelineResultSummary) {
+                pipelineResultSummary.style.display = 'none';
+                pipelineResultSummary.innerHTML = '';
+            }
+            if (pipelineErrorBox) pipelineErrorBox.style.display = 'none';
+
             currentFileOrigName = file.name.replace(/\.[^/.]+$/, "");
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
 
             fileNameDisplay.textContent = `${file.name} (${sizeMB} MB) 上傳解析中…`;
             submitBtn.disabled = true;
             analyzeFontsBtn.disabled = true;
+            preconditionAlert.style.display = 'flex';
             preconditionAlert.className = 'precondition-hint';
             preconditionText.textContent = '正在上傳與解析 PDF 檔案…';
+            updateWorkflowStepper(1, { step1Text: '上傳中…' });
 
             const formData = new FormData();
             formData.append('file', file);
@@ -913,8 +956,6 @@
                 canvasEmptyState.style.display = 'none';
                 previewContainer.style.display = 'flex';
                 canvasPager.style.display = 'flex';
-                fileBadge.style.display = 'inline-flex';
-                fileBadge.textContent = file.name;
 
                 // 檢視器更新檔案提示
                 if (activeFileInfo) {
@@ -934,12 +975,15 @@
                 updateWorkflowStepper(2);
 
                 // 解除前置條件限制
-                preconditionAlert.className = 'precondition-hint ready';
-                preconditionText.textContent = `檔案就緒 (${totalPdfPages} 頁)・隨時可開始整稿`;
+                preconditionAlert.style.display = 'none';
+                restoreSubmitBtnPrimary();
                 submitBtn.disabled = false;
                 analyzeFontsBtn.disabled = false;
                 submitBtn.textContent = '開始全自動整稿';
             } catch (err) {
+                currentFile = null;
+                currentFileId = null;
+                fileInput.value = '';
                 canvasEmptyState.style.display = 'flex';
                 previewContainer.style.display = 'none';
                 canvasPager.style.display = 'none';
@@ -947,10 +991,12 @@
                 if (activeFileInfo) activeFileInfo.style.display = 'none';
 
                 fileNameDisplay.textContent = '點擊選擇，或將 PDF 檔案拖曳到這裡';
+                preconditionAlert.style.display = 'flex';
                 preconditionAlert.className = 'precondition-hint';
                 preconditionText.textContent = '上傳失敗：' + err.message;
                 submitBtn.disabled = true;
                 analyzeFontsBtn.disabled = true;
+                updateWorkflowStepper(1, { step1Text: '上傳失敗' });
                 toolbox.notify('PDF 載入失敗: ' + err.message, 'error');
             }
         }
@@ -959,7 +1005,7 @@
             if (currentPreviewPage > 1) {
                 currentPreviewPage--;
                 previewPageDisplay.textContent = currentPreviewPage;
-                updateWorkflowStepper(2);
+                if (currentStageIdx === 0) updateWorkflowStepper(2);
                 cropManager.debouncedPreviewRender({
                     top: parseFloat(headerSlider.value),
                     bottom: parseFloat(footerSlider.value),
@@ -973,7 +1019,7 @@
             if (currentPreviewPage < totalPdfPages) {
                 currentPreviewPage++;
                 previewPageDisplay.textContent = currentPreviewPage;
-                updateWorkflowStepper(2);
+                if (currentStageIdx === 0) updateWorkflowStepper(2);
                 cropManager.debouncedPreviewRender({
                     top: parseFloat(headerSlider.value),
                     bottom: parseFloat(footerSlider.value),
@@ -995,8 +1041,12 @@
             pageRangeError.style.display = 'none';
             return true;
         }
-        startPageInput.onchange = validatePageRange;
-        endPageInput.onchange = validatePageRange;
+        startPageInput.onchange = () => { restoreSubmitBtnPrimary(); validatePageRange(); };
+        endPageInput.onchange = () => { restoreSubmitBtnPrimary(); validatePageRange(); };
+        startPageInput.oninput = restoreSubmitBtnPrimary;
+        endPageInput.oninput = restoreSubmitBtnPrimary;
+        if (noFootnoteToggle) noFootnoteToggle.onchange = restoreSubmitBtnPrimary;
+        if (engineSelect) engineSelect.onchange = restoreSubmitBtnPrimary;
 
         // ══════════════════════════════════════════════════════
         // 6. 六階段語意進度管道 (PipelineProgressAdapter)
@@ -1030,23 +1080,30 @@
 
         function updatePipelineUI(stageIndex, percent, msg) {
             currentStageIdx = stageIndex;
+            const hasPercent = percent !== undefined && percent !== null;
+            const p = hasPercent ? Math.max(0, Math.min(100, Math.round(percent))) : null;
+
             STAGE_KEYS.forEach((key, idx) => {
                 const el = document.getElementById(`stage_${key}`);
                 if (!el) return;
                 const num = idx + 1;
                 el.classList.remove('active', 'completed', 'error');
-                if (num < stageIndex) {
+                if (p !== null && p >= 100) {
+                    el.classList.add('completed');
+                } else if (num < stageIndex) {
                     el.classList.add('completed');
                 } else if (num === stageIndex) {
                     el.classList.add('active');
                 }
             });
 
-            if (percent !== undefined) {
-                const p = Math.max(0, Math.min(100, Math.round(percent)));
+            if (p !== null) {
                 progressBar.style.width = p + '%';
                 percentageText.textContent = p + '%';
                 pipelinePercentBadge.textContent = p + '%';
+                if (p < 100) {
+                    updateWorkflowStepper(4, { step4Text: '處理中 (' + p + '%)' });
+                }
             }
             if (msg) {
                 statusMessage.textContent = msg;
@@ -1084,6 +1141,7 @@
             collapseAccordion('tierEngineerTrigger', 'tierEngineerContent', 'tierEngineerAccordion');
 
             // 進入唯讀處理狀態
+            restoreSubmitBtnPrimary();
             setInspectorReadonly(true);
             updateWorkflowStepper(4);
 
@@ -1166,12 +1224,7 @@
                             if (cRes.ok) {
                                 isFinished = true;
                                 cleanupListeners();
-                                setInspectorReadonly(false);
-                                updatePipelineUI(currentStageIdx, 0, '整稿任務已由使用者手動取消');
-                                pipelineStatusTitle.textContent = '整稿任務已取消';
-                                submitBtn.textContent = '重新執行整稿';
-                                submitBtn.disabled = false;
-                                toolbox.notify('任務已取消', 'info');
+                                onCancelled(cData.message || '整稿任務已取消');
                             } else {
                                 toolbox.notify(cData.detail || '取消失敗', 'warning');
                                 cancelTaskBtn.disabled = false;
@@ -1189,18 +1242,26 @@
                     if (isFinished) return;
                     const prog = window.OcrContracts ? window.OcrContracts.assertOcrProgressContract(progRaw) : progRaw;
 
-                    const nextStage = resolveStageIdx(prog, currentStageIdx);
-                    updatePipelineUI(nextStage, prog.progress, prog.message);
-
                     if (prog.status === 'failed') {
                         isFinished = true;
                         cleanupListeners();
+                        currentStageIdx = resolveStageIdx(prog, currentStageIdx);
                         onFailure(prog.message || prog.error || '後端整稿發生未知錯誤');
+                        return;
+                    } else if (prog.status === 'cancelled') {
+                        isFinished = true;
+                        cleanupListeners();
+                        onCancelled(prog.message || '整稿任務已取消');
+                        return;
                     } else if (prog.status === 'completed') {
                         isFinished = true;
                         cleanupListeners();
                         onComplete(stem);
+                        return;
                     }
+
+                    const nextStage = resolveStageIdx(prog, currentStageIdx);
+                    updatePipelineUI(nextStage, prog.progress, prog.message);
                 }
 
                 function startPolling() {
@@ -1242,42 +1303,55 @@
             }
         };
 
+        function onCancelled(msg = '整稿任務已取消') {
+            if (cancelTaskBtn) cancelTaskBtn.style.display = 'none';
+            setInspectorReadonly(false);
+            STAGE_KEYS.forEach((key) => {
+                const el = document.getElementById(`stage_${key}`);
+                if (el) el.classList.remove('active');
+            });
+            pipelineStatusTitle.textContent = msg;
+            statusMessage.textContent = msg;
+            pipelinePercentBadge.textContent = '已取消';
+            percentageText.textContent = '0%';
+            progressBar.style.width = '0%';
+            updateWorkflowStepper(4, { step4Text: '已取消' });
+            submitBtn.textContent = '重新執行整稿';
+            restoreSubmitBtnPrimary();
+            submitBtn.disabled = false;
+            toolbox.notify('任務已取消', 'info');
+        }
+
         function onFailure(errMsg) {
             if (cancelTaskBtn) cancelTaskBtn.style.display = 'none';
             setInspectorReadonly(false);
+            restoreSubmitBtnPrimary();
             submitBtn.textContent = '重新執行整稿';
 
+            STAGE_KEYS.forEach((key) => {
+                const el = document.getElementById(`stage_${key}`);
+                if (el) el.classList.remove('active');
+            });
             const activeStageEl = document.getElementById(`stage_${STAGE_KEYS[currentStageIdx - 1] || 'load'}`);
-            if (activeStageEl) activeStageEl.classList.add('error');
+            if (activeStageEl) {
+                activeStageEl.classList.remove('active');
+                activeStageEl.classList.add('error');
+            }
 
             pipelineErrorBox.style.display = 'block';
             pipelineErrorReason.textContent = '異常原因：' + errMsg;
             pipelineStatusTitle.textContent = '整稿任務中斷';
+            updateWorkflowStepper(4, { step4Text: '執行中斷' });
             toolbox.notify('整稿失敗：' + errMsg, 'error');
         }
-
-        retrySameParamsBtn.onclick = () => {
-            uploadForm.dispatchEvent(new Event('submit'));
-        };
-
-        adjustSettingsBtn.onclick = () => {
-            const advTrigger = document.getElementById('tierAdvancedTrigger');
-            const advContent = document.getElementById('tierAdvancedContent');
-            const advContainer = document.getElementById('tierAdvancedAccordion');
-            if (advTrigger && advContent && advContainer) {
-                advTrigger.setAttribute('aria-expanded', 'true');
-                advContainer.classList.add('is-expanded');
-                advContent.removeAttribute('hidden');
-                advContent.style.display = 'flex';
-                advContainer.scrollIntoView({ behavior: 'smooth' });
-            }
-        };
 
         function onComplete(stem) {
             if (cancelTaskBtn) cancelTaskBtn.style.display = 'none';
             setInspectorReadonly(false);
             updatePipelineUI(6, 100, '全自動整稿已完成');
+            updateWorkflowStepper(4, { allCompleted: true });
             submitBtn.textContent = '再次重新整稿';
+            setSubmitBtnSecondary();
 
             const docxName = `${stem}.docx`;
             const mdName = `${stem}.md`;
@@ -1293,21 +1367,21 @@
                         <span style="font-weight: 600;">全自動整稿成果清單</span>
                         <button type="button" class="btn btn-secondary btn-sm" id="openOutlineModalBtn">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-                            微調大綱階層 (Outline Editor)
+                            微調大綱階層
                         </button>
                     </div>
                     <ul class="result-files" style="padding: 10px 14px; margin: 0; list-style: none;">
                         <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--f2-color-border-subtle);">
                             <div>
                                 <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary);">${toolbox.escape(docxName)}</span>
-                                <span class="file-desc" style="display: block; font-size: 0.8rem;">套用 Word 樣式範本之完稿排版文件</span>
+                                <span class="file-desc" style="display: block; font-size: 0.8rem;">Word 排版文件</span>
                             </div>
                             <button type="button" class="btn btn-primary btn-sm" id="saveDocxBtn">${toolbox.DOWNLOAD_ICON || ''}另存 Word</button>
                         </li>
                         <li style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0;">
                             <div>
                                 <span class="file-name" style="font-weight: 600; color: var(--f2-color-text-primary);">${toolbox.escape(mdName)}</span>
-                                <span class="file-desc" style="display: block; font-size: 0.8rem;">標準結構化 Markdown 文件</span>
+                                <span class="file-desc" style="display: block; font-size: 0.8rem;">Markdown 文件</span>
                             </div>
                             <button type="button" class="btn btn-secondary btn-sm" id="saveMdBtn">${toolbox.DOWNLOAD_ICON || ''}另存 Markdown</button>
                         </li>
@@ -1315,14 +1389,10 @@
                     <div class="notice-box">
                         <div>
                             <strong>銜接 POD 整稿工作區（人工預審與樣式擴散）</strong>
-                            <span class="hint" style="margin: 0; display: block; font-size: 0.8rem;">直接攜帶此 DOCX 與 PDF 至 POD 工作區。</span>
                         </div>
                         <button type="button" class="btn btn-primary btn-sm" id="handoffPodBtn">接續 POD 整稿 &rarr;</button>
                     </div>
-                    <div style="padding: 10px 14px; background: var(--f2-color-surface-secondary); border-top: 1px solid var(--f2-color-border-subtle); border-radius: 0 0 8px 8px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; font-size: 0.82rem; color: var(--f2-color-text-secondary);">
-                        <span>檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀</span>
-                        <button type="button" class="btn btn-secondary btn-sm" id="openFolderBtn">在檔案總管中開啟</button>
-                    </div>
+                    <div id="savedLocationInfo" class="saved-info" style="display:none; padding: 10px 14px; background: var(--f2-color-surface-secondary); border-top: 1px solid var(--f2-color-border-subtle); border-radius: 0 0 8px 8px; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 0.82rem; color: var(--f2-color-text-secondary);"></div>
                 </div>
             `;
 
@@ -1345,7 +1415,6 @@
             });
 
             document.getElementById('openOutlineModalBtn').onclick = () => openOutlineEditor(stem);
-            document.getElementById('openFolderBtn').onclick = () => toolbox.openFolder(docxSource);
 
             const handoffBtn = document.getElementById('handoffPodBtn');
             if (handoffBtn) {
@@ -1498,8 +1567,6 @@
         let _docxStyleList = [];
         let _docxStyleProfiles = [];
         let _defaultRoles = ['H1', 'H2', 'H3', '圖說', '楷體', '正文', '忽略'];
-        let _fontData = [];
-        let _gemmaSuggestions = {};
 
         analyzeFontsBtn.addEventListener('click', async () => {
             if (!currentFileId) {
@@ -1511,7 +1578,8 @@
             fontMappingSaveStatus.textContent = '';
             _gemmaSuggestions = {};
             if (gemmaFontSuggestBanner) {
-                gemmaFontSuggestBanner.textContent = '狀態：Gemma 尚未參與（目前顯示規則預選與既有設定，可點擊右上角按鈕按需執行建議）';
+                gemmaFontSuggestBanner.style.display = 'none';
+                gemmaFontSuggestBanner.textContent = '狀態：Gemma 尚未參與';
             }
 
             try {
@@ -1565,6 +1633,7 @@
                 }
                 gemmaFontSuggestBtn.disabled = true;
                 if (gemmaFontSuggestBanner) {
+                    gemmaFontSuggestBanner.style.display = 'block';
                     gemmaFontSuggestBanner.dataset.gemmaStatus = 'running';
                     gemmaFontSuggestBanner.dataset.gemmaOutcome = 'pending';
                     gemmaFontSuggestBanner.textContent = '狀態：正在排隊等待 GPU 資源並由本機 Gemma (8K context) 批次分析字體與範本樣式…';
@@ -1601,9 +1670,6 @@
                             if (sug.docx_style && _docxStyleList.includes(sug.docx_style)) {
                                 f.preselected_docx_style = sug.docx_style;
                                 f.preselected_role = sug.role || null;
-                            } else if (sug.role && _defaultRoles.includes(sug.role)) {
-                                f.preselected_role = sug.role;
-                                f.preselected_docx_style = null;
                             }
                         }
                     });
@@ -1622,22 +1688,9 @@
 
         function buildStyleOptions(styleList, roles, currentRole, currentDocxStyle, suggestedRole) {
             const allOptions = [];
-            const isAuto = (!currentRole && !currentDocxStyle) || currentRole === 'auto' || currentRole === '自動';
-            const autoLabel = suggestedRole ? `自動 (規則推薦: ${toolbox.escape(suggestedRole)})` : '自動（依版面與章節規則辨識）';
+            const isAuto = !currentDocxStyle || !styleList.includes(currentDocxStyle);
+            const autoLabel = '自動（依版面與章節規則辨識）';
             allOptions.push(`<option value="auto"${isAuto ? ' selected' : ''}>${autoLabel}</option>`);
-
-            const filteredRoles = (roles || []).filter(r => r !== 'auto' && r !== '自動');
-            if (filteredRoles.length) {
-                allOptions.push('<optgroup label="版面角色">');
-                for (const r of filteredRoles) {
-                    const sel = (!isAuto && !currentDocxStyle && currentRole === r) ? ' selected' : '';
-                    let label = r;
-                    if (r === '忽略') label = '忽略（強制排除，不作為標題/楷體）';
-                    else if (r === '正文') label = '正文（強制為內文段落）';
-                    allOptions.push(`<option value="role::${toolbox.escape(r)}"${sel}>${toolbox.escape(label)}</option>`);
-                }
-                allOptions.push('</optgroup>');
-            }
 
             if (styleList.length) {
                 allOptions.push('<optgroup label="Word 範本樣式">');
@@ -1665,7 +1718,6 @@
             const label = statusLabels[sug.status] || 'Gemma 狀態';
             const confText = (typeof sug.confidence === 'number') ? ` (${Math.round(sug.confidence * 100)}%)` : '';
             const targetParts = [];
-            if (sug.role) targetParts.push(`角色: ${toolbox.escape(sug.role)}`);
             if (sug.docx_style) targetParts.push(`樣式: ${toolbox.escape(sug.docx_style)}`);
             const targetLine = targetParts.length ? `<div style="font-weight:600; font-size:0.8rem; margin-top:2px;">${targetParts.join(' · ')}</div>` : '';
             const reasonLine = sug.reason ? `<div class="hint" style="font-size:0.76rem; margin-top:2px;">${toolbox.escape(sug.reason)}</div>` : '';
@@ -1687,7 +1739,6 @@
                 const effectiveRole = f.preselected_role || f.current_role;
                 const effectiveStyle = f.preselected_docx_style || f.current_docx_style;
                 const opts = buildStyleOptions(styles, roles, effectiveRole, effectiveStyle, f.suggested_role);
-                const sugBadge = f.suggested_role ? `<span class="badge" style="margin-left:6px;font-size:0.74rem;opacity:0.85;">規則: ${toolbox.escape(f.suggested_role)}</span>` : '';
                 const occ = f.occurrence_count || 0;
                 const pages = f.page_count || 0;
                 const pos = f.position_summary || {};
@@ -1696,7 +1747,7 @@
                 return `<tr>
                     <td class="cell-mono">
                         <div>${toolbox.escape(f.name)}</div>
-                        <div style="margin-top:4px;"><span class="badge">${toolbox.escape(f.size_pt)} pt</span>${sugBadge}</div>
+                        <div style="margin-top:4px;"><span class="badge">${toolbox.escape(f.size_pt)} pt</span></div>
                     </td>
                     <td style="font-size:0.78rem;">
                         <div>出現 <strong>${toolbox.escape(occ)}</strong> 次 / ${toolbox.escape(pages)} 頁</div>
@@ -1731,9 +1782,7 @@
                     removeKeys.push(fontName);
                     return;
                 }
-                if (val.startsWith('role::')) {
-                    mapping[fontName] = { role: val.slice(6), docx_style: null };
-                } else if (val.startsWith('style::')) {
+                if (val.startsWith('style::')) {
                     const docxStyle = val.slice(7);
                     const sug = _gemmaSuggestions[fontName];
                     let role = (sug && sug.docx_style === docxStyle && sug.role) ? sug.role : null;
@@ -1774,6 +1823,7 @@
                 const result = await resp.json();
                 if (resp.ok) {
                     syncConfirmedRoleStylesFromFontMapping(mapping);
+                    restoreSubmitBtnPrimary();
                     fontMappingSaveStatus.textContent = `${result.message || '儲存成功'}，整稿時將自動套用。`;
                     toolbox.notify('字體樣式對應已儲存', 'success');
                     setTimeout(() => fontModalOverlay.classList.remove('open'), 1200);

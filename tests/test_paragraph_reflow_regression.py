@@ -294,6 +294,134 @@ class TestParagraphReflowRegression(unittest.TestCase):
         self.assertIn("第一行正常文字", md)
         self.assertIn("第二行正常文字", md)
 
+    def test_10_fullwidth_space_indent_splits_paragraphs_with_same_x0(self):
+        """
+        Scenario 10: Two consecutive paragraphs share x0=60 and normal line spacing,
+        distinguished only by leading fullwidth spaces (\u3000\u3000) on the second paragraph.
+        """
+        p1_l1 = "　　第一段首行采用两个全角空格进行缩进排版，并且本行长度接近版心右边界。"
+        p2_l1 = "　　第二段同样以两个全角空格起始，即使坐标相同且行距紧凑也必须拆分为独立段落。"
+
+        page_data = [
+            (p1_l1, 60, 100, "china-ss", 10.5),
+            (p2_l1, 60, 118, "china-ss", 10.5),
+        ]
+        pdf_path = self._create_synthetic_doc([page_data])
+        out_dir = self.test_dir / "out10"
+        md_path, _ = process_book_vector_pdf(str(pdf_path), str(out_dir))
+        with open(md_path, "r", encoding="utf-8") as f:
+            md = f.read().strip()
+
+        paras = [p.strip() for p in md.split("\n\n") if p.strip()]
+        self.assertEqual(len(paras), 2, f"Expected 2 paragraphs for fullwidth-space indent, got: {paras}")
+        self.assertIn("第一段首行", paras[0])
+        self.assertIn("第二段同样", paras[1])
+
+    def test_11_cross_page_incomplete_paragraph_merged_and_indented_preserved(self):
+        """
+        Scenario 11: Cross-page incomplete sentences and unclosed delimiters merge seamlessly,
+        while indented or post-terminal next-page paragraphs stay separated.
+        """
+        pages_data = [
+            # Page 1: ends mid-word without terminal punctuation
+            [
+                ("　　这是第一页开头的完整引入句，随后继续阐述核心临床思路。", 60, 100, "china-ss", 10.5),
+                ("这本书能够成为连接传统智慧与现代临床的纽带，为肿瘤专科医生、临", 60, 118, "china-ss", 10.5),
+            ],
+            # Page 2: starts unindented mid-word continuation, ends with unclosed 《温
+            [
+                ("床营养师与中医师提供实用参考，助力制定个体化诊疗方案。", 60, 100, "china-ss", 10.5),
+                ("　　第二段结尾引出清代吴鞠通先生所著《温", 60, 120, "china-ss", 10.5),
+            ],
+            # Page 3: closes 病条辨》 and ends sentence, followed by indented new paragraph on Page 4
+            [
+                ("病条辨》之沙参麦冬汤方义，全段在此处句号收束。", 60, 100, "china-ss", 10.5),
+            ],
+            [
+                ("这是第四页开头带有首行坐标缩进的新段落，不应与上一页合并。", 84, 100, "china-ss", 10.5),
+                ("这是第四页第二行正文，用于确立左边界基准坐标。", 60, 118, "china-ss", 10.5),
+            ],
+        ]
+        pdf_path = self._create_synthetic_doc(pages_data)
+        out_dir = self.test_dir / "out11"
+        md_path, _ = process_book_vector_pdf(str(pdf_path), str(out_dir))
+        with open(md_path, "r", encoding="utf-8") as f:
+            md = f.read().strip()
+
+        self.assertIn("为肿瘤专科医生、临床营养师与中医师提供实用参考", md)
+        self.assertIn("《温病条辨》之沙参麦冬汤方义", md)
+        paras = [p.strip() for p in md.split("\n\n") if p.strip()]
+        self.assertEqual(len(paras), 4, f"Expected 4 paragraphs after cross-page merging, got: {paras}")
+
+        # Verify BookAST consistency & contract validity
+        ast = extract_book_vector_ast(pdf_path, ai_kaiti=False)
+        ast_paras = [p for sec in ast.sections for p in sec.paragraphs]
+        self.assertEqual(len(ast_paras), 4)
+        self.assertIn("为肿瘤专科医生、临床营养师", ast_paras[1].raw_text)
+        self.assertIn("《温病条辨》", ast_paras[2].raw_text)
+
+    def test_12_bibliography_fullwidth_brackets_and_wrapped_year_preserved(self):
+        """
+        Scenario 12: Bibliography entries with fullwidth ［N］ markers remain separate items,
+        and wrapped 4-digit publication years (e.g. '2019．') stay attached to their citation.
+        """
+        page_data = [
+            ("［1］石静．口腔疾病的诊断与治疗［M］．昆明：云南科技出版社，2020．", 60, 100, "china-ss", 10.5),
+            ("［2］唐红萍，朱兰省．现代口腔诊疗学［M］．汕头：汕头大学出版社，", 60, 118, "china-ss", 10.5),
+            ("2019．", 84, 136, "china-ss", 10.5),
+            ("［3］付钢．数字化口腔种植的临床实践［M］．重庆：重庆大学出版社，2023．", 60, 154, "china-ss", 10.5),
+        ]
+        pdf_path = self._create_synthetic_doc([page_data])
+        out_dir = self.test_dir / "out12"
+        md_path, _ = process_book_vector_pdf(str(pdf_path), str(out_dir))
+        with open(md_path, "r", encoding="utf-8") as f:
+            md = f.read().strip()
+
+        paras = [p.strip() for p in md.split("\n\n") if p.strip()]
+        self.assertEqual(len(paras), 3, f"Expected 3 bibliography entries, got: {paras}")
+        self.assertIn("［1］石静", paras[0])
+        self.assertIn("［2］唐红萍", paras[1])
+        self.assertIn("2019．", paras[1])
+        self.assertIn("［3］付钢", paras[2])
+
+    def test_13_multiline_block_first_line_indent_not_lost(self):
+        """
+        Scenario 13: When a subsequent paragraph has Line 1 indented (x0=84) and Line 2
+        at base_x0=60, the block's bbox[0] is 60, so first_line_x0 must still split it.
+        """
+        from src.scripts.book_layout_extractor import _should_flush_before_block
+
+        state = {
+            "lines": ["前一段已接近右边界且以句号完整结束。"],
+            "contributing_blocks": [],
+            "is_kaiti": False,
+            "custom_style": None,
+            "last_x0": 60.0,
+            "last_x1": 420.0,
+            "last_y1": 115.0,
+            "last_line_x1": 420.0,
+            "last_heading_text": "",
+            "last_flushed_para_text": "",
+        }
+        audit_data = {"ai_layout": {"decisions": []}}
+        # Simulates a multi-line PyMuPDF block whose overall bbox[0]=60 but line 0 starts at x0=84
+        should_flush = _should_flush_before_block(
+            state=state,
+            bb_text="次段第一行有坐标缩进并跨到第二行回到左边界。",
+            bbox=[60.0, 122.0, 420.0, 152.0],
+            avg_size=10.5,
+            base_x0=60.0,
+            max_x1=420.0,
+            is_block_kaiti=False,
+            block_custom_style=None,
+            ai_boundary_override=None,
+            page_num=1,
+            audit_data=audit_data,
+            first_line_x0=84.0,
+            raw_first_line="次段第一行有坐标缩进",
+        )
+        self.assertTrue(should_flush)
+
 
 if __name__ == "__main__":
     unittest.main()

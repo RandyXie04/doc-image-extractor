@@ -126,7 +126,7 @@
                     <span class="step-no">第 1 步</span>
                     <h3>全自動整稿</h3>
                     <p>先以視覺裁切去除頁眉頁尾，再自動重建標題階層、表格與圖片，產出初稿。</p>
-                    <span class="out">輸出：Word、Markdown、圖片資料夾 images/書名/</span>
+                    <span class="out">輸出：Word、Markdown、圖片資料夾</span>
                 </a>
             </li>
             <li>
@@ -134,7 +134,7 @@
                     <span class="step-no">第 2 步</span>
                     <h3>POD 整稿</h3>
                     <p>人工預修第 1 步初稿的前 1~2 章後，上傳預修 Word 與原 PDF，系統自動學習排版規則並擴散至全書。</p>
-                    <span class="out">輸出：成品 Word、Markdown、驗收報告 audit_report.json</span>
+                    <span class="out">輸出：成品 Word、Markdown、驗收報告 (JSON)</span>
                 </a>
             </li>
         </ol>
@@ -164,21 +164,37 @@
     <script src="/static/js/viewport_manager.js"></script>
     <script src="/static/sidebar.js"></script>
     <script>
+        const BUILTIN_AUX_IDS = new Set(['founder_repair', 'extract_images', 'formula_extraction']);
+        const escHtml = (text) => window.toolbox && typeof window.toolbox.escape === 'function'
+            ? window.toolbox.escape(text)
+            : String(text ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
         fetch('/api/system/plugins?category=auxiliary_task')
             .then(r => r.json())
             .then(data => {
                 if (!data || data.status !== 'success' || !Array.isArray(data.plugins) || data.plugins.length === 0) return;
                 const listEl = document.getElementById('auxToolList');
-                if (listEl) {
-                    listEl.innerHTML = data.plugins.map(p => `
+                if (!listEl) return;
+                const extraPlugins = data.plugins.filter(p =>
+                    p && p.is_enabled !== false &&
+                    !BUILTIN_AUX_IDS.has(p.id) &&
+                    !listEl.querySelector(`a[href="${CSS.escape(p.entry_url || '')}"]`)
+                );
+                if (extraPlugins.length === 0) return;
+                const extraHtml = extraPlugins.map(p => {
+                    const outputs = Array.isArray(p.output_types) && p.output_types.length > 0
+                        ? ` 輸出：${p.output_types.map(t => escHtml(String(t).toUpperCase())).join('、')}。`
+                        : '';
+                    return `
                         <li>
-                            <a href="${p.entry_url}">
-                                <strong>${p.name}</strong>
-                                <span>${p.description} 輸出：${p.output_types.map(t => t.toUpperCase()).join('、')}。</span>
+                            <a href="${escHtml(p.entry_url)}">
+                                <strong>${escHtml(p.name)}</strong>
+                                <span>${escHtml(p.description)}${outputs}</span>
                             </a>
                         </li>
-                    `).join('');
-                }
+                    `;
+                }).join('');
+                listEl.insertAdjacentHTML('beforeend', extraHtml);
             })
             .catch(() => {});
     </script>

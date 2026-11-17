@@ -1299,101 +1299,6 @@ details.disclosure summary {
     text-decoration: underline;
 }
 
-/* 4. Tabular Style Mapper */
-.style-mapper-toolbar {
-    margin-bottom: 8px;
-}
-
-.style-mapper-table-wrap {
-    max-height: 240px;
-    overflow-y: auto;
-    border: 1px solid var(--f2-color-border-subtle, #e5e7eb);
-    border-radius: 4px;
-}
-
-.style-mapper-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 0.8rem;
-}
-
-.style-mapper-table th {
-    background: var(--f2-color-surface-secondary, #f8fafc);
-    color: var(--f2-color-text-secondary, #616161);
-    font-weight: 600;
-    text-align: left;
-    padding: 6px 8px;
-    position: sticky;
-    top: 0;
-    z-index: 1;
-    border-bottom: 1px solid var(--f2-color-border-subtle, #e5e7eb);
-}
-
-.style-mapper-table td {
-    padding: 6px 8px;
-    border-bottom: 1px solid var(--f2-color-border-subtle, #e5e7eb);
-    vertical-align: middle;
-}
-
-.style-mapper-table tr:hover {
-    background: var(--f2-color-surface-secondary, #f8fafc);
-}
-
-.role-cell {
-    font-weight: 500;
-    color: var(--f2-color-text-primary, #242424);
-    white-space: nowrap;
-}
-
-.style-table-select {
-    width: 100%;
-    padding: 3px 6px;
-    font-size: 0.8rem;
-    border: 1px solid var(--f2-color-border, #d1d5db);
-    border-radius: 3px;
-    background: var(--f2-color-surface, #ffffff);
-    color: var(--f2-color-text-primary, #242424);
-}
-
-.style-badge {
-    display: inline-block;
-    padding: 1px 6px;
-    border-radius: 10px;
-    font-size: 0.72rem;
-    font-weight: 500;
-    white-space: nowrap;
-}
-
-.style-badge.matched {
-    background: var(--success-soft);
-    color: var(--f2-color-success, #107C41);
-}
-
-.style-badge.custom {
-    background: var(--warning-soft);
-    color: var(--warning, #795B00);
-}
-
-.btn-reset-row {
-    background: none;
-    border: 1px solid var(--f2-color-border-subtle, #e5e7eb);
-    border-radius: 3px;
-    padding: 1px 6px;
-    font-size: 0.72rem;
-    cursor: pointer;
-    color: var(--f2-color-text-secondary, #616161);
-}
-
-.btn-reset-row:hover:not(:disabled) {
-    border-color: var(--f2-color-primary, #0F6CBD);
-    color: var(--f2-color-primary, #0F6CBD);
-}
-
-.btn-reset-row:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-}
-
 /* 5. Preconditions and Action Box */
 .precondition-hint {
     display: flex;
@@ -1444,6 +1349,16 @@ details.disclosure summary {
     cursor: not-allowed;
     background: var(--surface-2);
     color: var(--f2-color-text-disabled);
+}
+
+.btn-primary-lg.is-secondary {
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+}
+
+.btn-primary-lg.is-secondary:hover:not(:disabled) {
+    background: var(--surface-2);
 }
 
 /* 6. Read-Only Processing State (Settings locked, feedback card & cancel interactive) */

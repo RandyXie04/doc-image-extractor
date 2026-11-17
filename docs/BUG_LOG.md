@@ -600,3 +600,92 @@ ADR-014（純 OCR 管線邏輯修復、CropBox 原點補償、全頁底圖隔離
 - `tests/test_symbol_mapper_and_ocr_fixes.py`：
   - 新增單元測試驗證多行 CJK 拼接平滑度、偽腳注退回標題不被抹除、實際頁寬動態置中標題判定、以及 `target_pages` 與掃描底圖排除機制（全數測試通過）。
 
+---
+
+## BUG-015 — 文字轉曲 PDF 於 SuryaOCR 管線發生頁底文字段落截斷與漏行
+
+### Bug Description
+
+在純 OCR 管線（`src/scripts/process_ocr.py`）處理經前端 `CropBox` 裁切（預設 `footer_ratio=0.10`）之「文字轉曲（outlined/curved）」PDF 時，發生以下四類漏字與斷段異常：
+
+1. **頁底文字行與段落尾行被截斷或遺漏**：頁面底端常遺失末尾數行，或僅含 1–3 字的段落短尾行、淡筆畫文字行在切片識別時靜默消失。
+2. **已裁切頁面內底端正文與純數字行遭誤刪**：位於 `CropBox` 內的頁底正文被 Surya 版面模型標記為 `PageFooter` / `PageHeader`，或依 `bbox[1] > page_h * 0.90` 規則被當作獨立頁碼濾除。
+3. **無實體圖片重疊的轉曲文字區塊被誤標為 `Picture` 而整塊丟棄**：缺少向量文字層時，部分標題或短文字段落被版面模型判為 `Picture`，卻因無 `vec_text` 而未能觸發短橫幅搶救邏輯。
+4. **跨頁未完結段落斷裂**：頁底未以句末標點結束（或含未閉合書名號如 `《`）的段落未能與次頁頂端無縮排正文自動續接。
+
+### Status
+
+CLOSED
+
+### Root Cause
+
+1. **缺乏 Surya `det` 文字行偵測對帳與預設垂直切片分裂**：`src/scripts/process_ocr.py` 原僅於 150 DPI 呼叫 `batch_layout_detection`（且未拉高 `settings.LAYOUT_SLICE_MIN` 停用 `ImageSlicer` 垂直切片），未引入 `batch_text_detection`（`det_model`）作為行級覆蓋基準，導致未被 `layout_model` 包覆的頁底文字行直接遺失。
+2. **`_slice_box_into_lines` 切片門檻過高**：原預設 `min_line_h=10`、`arr < 185`、`thresh = max(5, int(box_img.width * 0.01))` 及 `±2px` 裁切邊距，容易過濾頁底短行或筆畫較淡的行切片。
+3. **後端對已裁切頁面仍執行頁尾與誤標 `Picture` 丟棄策略**：`sort_blocks_2d_reading_order()` 存在 `bbox[1] > page_h * 0.90`（`^\d{1,4}$`）硬過濾，且原迴圈對 `PageFooter` / `PageHeader` 未降級保留，對 `Picture` 僅依賴 `vec_text` 短橫幅條件搶救，在無向量字元的轉曲 PDF 下失效。
+4. **150 DPI 單解析度識別與缺乏跨頁續接階段**：直接以 150 DPI 區塊截圖送入 `batch_recognition` 影響小字識別率，且 `process_page_footnotes()` 產出 `pages_data` 後直接進入 `build_ocr_layout_contracts(pages_data)`，缺少跨頁段落續接處理。
+
+### Decision Gate
+
+ADR-015（已裁切頁面之 SuryaOCR 雙解析度（150 DPI det+layout / 200 DPI rec）與零拋棄跨頁續接架構）。
+
+### Resolution
+
+- `src/scripts/process_ocr.py`：
+  - 新增 Surya `det` 模型延遲載入與 PEP 562 匯出：於 `TYPE_CHECKING`、`_ensure_surya_loaded()`、`__getattr__()` 與 `__dir__()` 補齊 `batch_text_detection`、`load_det_model`、`load_det_processor`（相容 `surya.model.detection.model.load_processor` 回退）；並於 `_configure_local_surya_checkpoints()` 支援 `models/surya_pt/det` 對應 `DETECTOR_MODEL_CHECKPOINT`。
+  - 實作 `_sync_surya_settings()` 將 `settings.LAYOUT_SLICE_MIN` 與 `settings.LAYOUT_SLICE_SIZE` 提高至 `4000x4000` / `3000x3000` 以停用 150 DPI 垂直切片，並實作 `_apply_surya_runtime_patches()`。
+  - 強化 `_slice_box_into_lines(box_img, min_line_h=8)`：改採 `arr < 195`、`thresh = max(2, int(box_img.width * 0.004))` 與 `±3px` 垂直填充，保留短尾行與淡筆畫。
+  - 新增純函數 `_scale_bbox()` 與 `_reconcile_layout_and_det_lines()`：落實 `CropBox` 內零拋棄信任，透過 `_normalize_layout_label()` 將 `PageFooter`/`PageHeader` 降級為 `"text"`、搶救無重疊 `image_rects_150` 且含 `vec_text` 或 `det` 文字行之 `Picture` 為 `"text"`，並依 `median_lh` 回收所有孤兒 `det` 文字行至鄰近正文區塊或補建新 `"text"` 區塊。
+  - 重構 `main()` 為雙階段巨集批次（`macro_batch_size = 24 if _device == "cuda" else 9`、`chunk_size = 6 if _device == "cuda" else 3`）：`_run_phase_a_layout_det_macro_batch()` 於 150 DPI 執行 `layout + det` 並於階段結束立即卸載並呼叫 `_release_vram_cache()`；`_run_phase_b_rec_macro_batch()` 於 200 DPI 依 `_scale_bbox()` 縮放 `line_bboxes_150`（含 `±2px` 垂直緩衝，無行框時對高 `>= 45px` 區塊回退 `_slice_box_into_lines`）執行 `batch_recognition` 後立即卸載並釋放 VRAM。
+  - 移除 `sort_blocks_2d_reading_order()` 中 `bbox[1] > page_h * 0.90` 之純數字頁碼過濾；更新 `_merge_wrapping_paragraphs()` 支援 `_PROSE_MERGE_LABELS`、`-15.0 <= y_gap <= line_height_thresh` 及 `_has_unclosed_paired_delimiter()`。
+  - 新增 `_merge_cross_page_paragraphs(pages_data)`（搭配 `_unwrap_custom_style_div`、`_is_non_prose_markdown_item`、`_has_cross_page_first_line_indent`）並串接於 `process_page_footnotes()` 之後與 `build_ocr_layout_contracts(pages_data)` 之前；同步新增 `_collect_image_blocks_from_surya()`。
+- `tests/test_symbol_mapper_and_ocr_fixes.py`：
+  - 於 `TestSymbolMapperAndOcrFixes` 新增 `test_reconcile_layout_and_det_recovers_bottom_orphan_lines`、`test_reconcile_layout_demotes_pagefooter_and_rescues_text_picture`、`test_scale_bbox_150_to_200_dpi`、`test_sort_blocks_retains_bottom_numbers_in_cropped_page` 與 `test_merge_cross_page_paragraphs`。
+- 靜態檢查與回歸測試驗證：
+  - `python -m pyright src/scripts/process_ocr.py`：`0 errors, 0 warnings, 0 informations`。
+  - `pytest tests/test_symbol_mapper_and_ocr_fixes.py tests/test_ocr_error_handling.py tests/test_ocr_gemma_boundaries.py tests/test_paragraph_reconstruction.py`：`42 passed`。
+
+---
+
+## BUG-016 — 向量 PDF 版面抽取 Pyright 型別錯誤與頁內/跨頁段落斷行重流異常
+
+### Bug Description
+
+`src/scripts/book_layout_extractor.py` 在重構後存在以下兩類缺陷：
+
+1. **Pyright 靜態型別錯誤（L1713）**：`_process_text_flow_item()` 直接呼叫 `ai_boundary_by_item.get(item.get("ai_boundary_key"))`，傳入 `Any | None` 給 `Dict[str, Any].get(key: str)`，觸發 `reportArgumentType` 型別報錯。
+2. **頁內縮排與跨頁段落斷行重流異常**：
+   - `curr_has_space_indent` 檢查已經過 `.strip()` 清除空白的 `bb_text`，導致以全形空白（`\u3000` / `\u2003`）或空格進行首行縮排的相鄰同 `x0` 段落無法拆段；多行區塊則取整體 `bbox[0]` 而非首行 `lines[0]["bbox"][0]`，導致「首行縮排、次行回退至左界」的多行區塊被誤判為無縮排而黏連。
+   - `_PARA_START_PREFIX_RE` 未排除四位數出版年份（如 `2020．`）及小數，且未涵蓋全形文獻編號 `［1］`（`is_hanging_citation` 亦僅支援半形 `[1]`），造成參考文獻條目黏連或折行年份被切為孤立段落。
+   - `_parse_pdf_layout_flow()` 逐頁清空段落狀態後直接以 `\n\n` 串接各頁結果，缺乏跨頁未完結段落續接機制，使頁尾句中斷字或未閉合書名號/括號在翻頁後強制斷段。
+
+### Status
+
+CLOSED
+
+### Root Cause
+
+1. `item.get("ai_boundary_key")` 回傳 `Any | None`，未收窄為 `str` 即傳入 `ai_boundary_by_item.get(...)`。
+2. `_process_text_flow_item()` 僅傳入已去除首尾空白的 `bb_text` 與區塊外框 `bbox[0]` 至 `_should_flush_before_block()`，抹除了首行前置空白字元與首行真實 `x0` 座標。
+3. `_PARA_START_PREFIX_RE` 與 `_TERMINAL_PUNCT_RE` 未處理出版年份 `20xx．` 與全形文獻前綴 `［N］`。
+4. 向量管線缺少與純 OCR 管線（ADR-015）對齊的跨頁未完結段落合併階段。
+
+### Decision Gate
+
+No new design decision is required.
+遵循既有 ADR-008（Pyright 嚴格型別與 `validate_layout_records` 契約）、ADR-012（未閉合成對符號優先級）與 ADR-015（跨頁未完結段落續接守則），並保持 `_parse_pdf_layout_flow()` 與 `extract_book_vector_ast()` 零磁碟 I/O 契約及 Golden SHA-256 基準不變。
+
+### Resolution
+
+- `src/scripts/book_layout_extractor.py`：
+  - 於 `_process_text_flow_item()` 收窄 `ai_boundary_key` 為 `str` 後再查詢 `ai_boundary_by_item`，消除第 1713 行 Pyright 報錯。
+  - 新增 `first_line_x0` 與 `raw_first_line` 參數傳入 `_should_flush_before_block()`，使首行座標縮排與全形/半形空白縮排（`\u3000` / `\u2003` / 2–4 空格）偵測在多行區塊與同 `x0` 段落中精確生效。
+  - 更新 `_PARA_START_PREFIX_RE`、`_TERMINAL_PUNCT_RE` 與 `is_hanging_citation`，保護出版年份（如 `2019．`、`2020．`）不被切為獨立段落，並支援全形文獻編號 `［N］` 分隔與懸掛縮排延續。
+  - 新增 `_unwrap_styled_div()`、`_is_cross_page_terminal()`、`_should_merge_cross_page_paragraphs()` 與 `_merge_cross_page_layout_paragraphs()`，於 `_parse_pdf_layout_flow()` 內對跨頁未完結或含未閉合符號之段落進行安全續接（同步維護 `final_md_pages`、`layout_records`、`BookAST` 與 `validate_layout_records()` 契約，並保護縮排段落、置中/短行、標題、表格、圖說、圖片與目錄行不被誤合）。
+- `tests/test_paragraph_reflow_regression.py`：
+  - 新增 `test_10_fullwidth_space_indent_splits_paragraphs_with_same_x0`、`test_11_cross_page_incomplete_paragraph_merged_and_indented_preserved`、`test_12_bibliography_fullwidth_brackets_and_wrapped_year_preserved` 與 `test_13_multiline_block_first_line_indent_not_lost`。
+- 靜態檢查與回歸測試驗證：
+  - `python -m pyright src/scripts/book_layout_extractor.py`：`0 errors, 0 warnings, 0 informations`。
+  - `pytest tests/test_paragraph_reflow_regression.py tests/test_vector_ast.py tests/test_heading_and_anti_sticking.py tests/test_bibliography_footnote_preservation.py tests/test_wave2_architecture_fixes.py` 與全套非 `heavy` 回歸測試全數通過。
+
+
+

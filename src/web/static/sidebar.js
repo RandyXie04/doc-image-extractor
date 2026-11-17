@@ -10,11 +10,9 @@ function syncQuotaDisplayUI() {
     const upEl = document.getElementById('cfgMaxUploadVal');
     const tplEl = document.getElementById('cfgMaxTemplateVal');
     const retEl = document.getElementById('cfgRetentionVal');
-    const privRetEl = document.getElementById('privacyRetentionHours');
     if (upEl) upEl.textContent = `${window.APP_CONFIG.maxUploadSizeMB} MB`;
     if (tplEl) tplEl.textContent = `${window.APP_CONFIG.maxTemplateSizeMB} MB`;
     if (retEl) retEl.textContent = `${window.APP_CONFIG.fileRetentionHours} 小時`;
-    if (privRetEl) privRetEl.textContent = `${window.APP_CONFIG.fileRetentionHours}`;
 }
 
 fetch('/api/system_config').then(r => r.json()).then(cfg => {
@@ -99,11 +97,11 @@ const MAIN_NAV_ITEMS = [
     { href: '/static/pod_studio.html', key: 'pod_studio', icon: 'pod', label: 'POD 整稿' }
 ];
 
-// 輔助識別工具清單（收攏至 Settings > OCR 與識別工具設定）
+// 輔助識別工具清單（收攏至 Settings > OCR 與識別設定）
 const AUXILIARY_NAV_ITEMS = [
-    { href: '/static/formula.html', key: 'formula', icon: 'formula', label: '公式提取' },
+    { href: '/static/founder_repair.html', key: 'founder_repair', icon: 'wrench', label: '方正修復' },
     { href: '/static/extract_images.html', key: 'extract_images', icon: 'image', label: '圖片提取' },
-    { href: '/static/founder_repair.html', key: 'founder_repair', icon: 'wrench', label: '方正修復' }
+    { href: '/static/formula.html', key: 'formula', icon: 'formula', label: '公式提取' }
 ];
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -186,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="ia-category-panel-inner">
                         <!-- 1.1 General Settings -->
                         <div class="ia-subgroup" role="group" aria-labelledby="sgGeneralTitle">
-                            <div class="ia-subgroup-title" id="sgGeneralTitle">一般與工作流設定 (General)</div>
+                            <div class="ia-subgroup-title" id="sgGeneralTitle">一般與工作流設定</div>
                             <div class="ia-nav-list" id="mainNavList">
                                 ${mainNavHtml}
                             </div>
@@ -201,13 +199,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         <!-- 1.2 OCR & Recognition Settings -->
                         <div class="ia-subgroup" role="group" aria-labelledby="sgOcrTitle">
-                            <div class="ia-subgroup-title" id="sgOcrTitle">OCR 與識別設定 (Recognition)</div>
+                            <div class="ia-subgroup-title" id="sgOcrTitle">OCR 與識別設定</div>
                             ${auxGroupHtml}
                         </div>
 
                         <!-- 1.3 Document Conversion Settings & 1.4 Output & Export Settings -->
                         <div class="ia-subgroup" role="group" aria-labelledby="sgOutputTitle">
-                            <div class="ia-subgroup-title" id="sgOutputTitle">轉檔與輸出配額 (Conversion & Output)</div>
+                            <div class="ia-subgroup-title" id="sgOutputTitle">轉檔與輸出配額</div>
                             <div class="ia-kv-list" aria-label="轉檔與輸出配額參數">
                                 <div class="ia-kv-row">
                                     <span class="ia-kv-label">單次上傳上限</span>
@@ -226,7 +224,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         <!-- 1.5 Advanced Settings -->
                         <div class="ia-subgroup" role="group" aria-labelledby="sgAdvancedTitle">
-                            <div class="ia-subgroup-title" id="sgAdvancedTitle">進階與系統維護 (Advanced)</div>
+                            <div class="ia-subgroup-title" id="sgAdvancedTitle">進階與系統維護</div>
                             <button id="modeToggleBtn" class="sidebar-btn ia-control-btn" type="button" title="切換出版社編輯模式與工程師除錯模式">模式：讀取中</button>
                             <button id="checkUpdateBtn" class="sidebar-btn ia-control-btn" type="button" title="檢查是否有新版程式可供更新">
                                 <span class="ia-btn-inline-icon">${svg('refresh', 13)}</span>
@@ -258,7 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="ia-category-panel-inner">
                         <!-- 2.1 ~ 2.4 Manuals, Formatting Specs & Guides -->
                         <div class="ia-subgroup" role="group" aria-labelledby="sgDocManualsTitle">
-                            <div class="ia-subgroup-title" id="sgDocManualsTitle">操作指南與技術規格 (Guides & Specs)</div>
+                            <div class="ia-subgroup-title" id="sgDocManualsTitle">操作指南與技術規格</div>
                             <div class="settings-doc-list" id="sidebarDocList">
                                 <div class="ia-loading-hint">載入文件中...</div>
                             </div>
@@ -266,7 +264,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         <!-- 2.5 Troubleshooting & Support -->
                         <div class="ia-subgroup" role="group" aria-labelledby="sgDocSupportTitle">
-                            <div class="ia-subgroup-title" id="sgDocSupportTitle">疑難排解與支援 (Troubleshooting & FAQ)</div>
+                            <div class="ia-subgroup-title" id="sgDocSupportTitle">疑難排解與支援</div>
                             <button type="button" class="sidebar-doc-link" id="openDocCenterQuickBtn" title="開啟完整文件檢視中心">
                                 <span class="doc-icon">${svg('list', 14)}</span>
                                 <span class="doc-name">開啟完整文件檢視中心</span>
@@ -279,15 +277,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                         <!-- 2.6 System Environment, Version & Privacy Specs -->
                         <div class="ia-subgroup" role="group" aria-labelledby="sgDocEnvTitle">
-                            <div class="ia-subgroup-title" id="sgDocEnvTitle">系統環境與隱私規範 (System & Privacy)</div>
+                            <div class="ia-subgroup-title" id="sgDocEnvTitle">系統環境與隱私規範</div>
                             <div class="ia-env-card">
                                 <div id="hardwareDisplay" class="sidebar-info-box">硬體加速：偵測中</div>
                                 <div id="aiModelDisplay" class="sidebar-info-box">AI 推論：偵測中</div>
                                 <div id="versionDisplay" class="sidebar-version-text">版本：讀取中</div>
-                                <div class="sidebar-privacy">
-                                    <strong>零日誌隱私架構</strong>
-                                    <span>檔案保留 <span id="privacyRetentionHours">${window.APP_CONFIG.fileRetentionHours}</span> 小時後自動銷毀</span>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -961,23 +955,33 @@ document.addEventListener('DOMContentLoaded', () => {
             const auxPlugins = data.plugins.filter(p => p.category === 'auxiliary_task' && p.is_enabled);
             const curPath = window.location.pathname;
 
+            const isPluginActive = (item) => Boolean(
+                curPath.includes(item.id) || (item.entry_url && curPath.endsWith(item.entry_url.split('/').pop()))
+            );
+
             const mainNavList = document.getElementById('mainNavList');
             if (mainNavList && corePlugins.length > 0) {
-                mainNavList.innerHTML = corePlugins.map(item => `
-                    <a href="${item.entry_url}" class="nav-link ${curPath.includes(item.id) ? 'active' : ''}"${curPath.includes(item.id) ? ' aria-current="page"' : ''}>
+                mainNavList.innerHTML = corePlugins.map(item => {
+                    const active = isPluginActive(item);
+                    return `
+                    <a href="${item.entry_url}" class="nav-link ${active ? 'active' : ''}"${active ? ' aria-current="page"' : ''}>
                         <span class="nav-icon">${svg(item.icon, 15)}</span>
                         <span class="nav-label">${window.toolbox.escape(item.name)}</span>
-                    </a>`).join('');
+                    </a>`;
+                }).join('');
             }
 
             const auxNavChildren = document.getElementById('auxNavChildren');
             const auxCountEl = document.querySelector('#auxNavToggle .nav-group-count');
             if (auxNavChildren && auxPlugins.length > 0) {
-                auxNavChildren.innerHTML = auxPlugins.map(item => `
-                    <a href="${item.entry_url}" class="nav-sub-link ${curPath.includes(item.id) ? 'active' : ''}"${curPath.includes(item.id) ? ' aria-current="page"' : ''}>
+                auxNavChildren.innerHTML = auxPlugins.map(item => {
+                    const active = isPluginActive(item);
+                    return `
+                    <a href="${item.entry_url}" class="nav-sub-link ${active ? 'active' : ''}"${active ? ' aria-current="page"' : ''}>
                         <span class="nav-sub-icon">${svg(item.icon, 14)}</span>
                         <span class="nav-sub-label">${window.toolbox.escape(item.name)}</span>
-                    </a>`).join('');
+                    </a>`;
+                }).join('');
                 if (auxCountEl) auxCountEl.textContent = auxPlugins.length;
             }
         } catch (err) {

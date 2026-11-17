@@ -1,4 +1,6 @@
 from __future__ import annotations
+import gc
+import math
 import os
 import glob
 import sys
@@ -89,16 +91,20 @@ def _clean_hallucinations(text: str) -> str:
 if TYPE_CHECKING:
     # Lazy-loaded Surya OCR symbols (type annotations for static analysis; not in __dict__ at runtime per PEP 562)
     batch_layout_detection: Any
+    batch_text_detection: Any
     load_rec_model: Any
     load_rec_processor: Any
     load_layout_model: Any
     load_layout_processor: Any
+    load_det_model: Any
+    load_det_processor: Any
     settings: Any
     SURYA_AVAILABLE: bool
 
 def _ensure_surya_loaded() -> bool:
-    global batch_layout_detection, load_rec_model, load_rec_processor
-    global load_layout_model, load_layout_processor, settings, SURYA_AVAILABLE
+    global batch_layout_detection, batch_text_detection, load_rec_model, load_rec_processor
+    global load_layout_model, load_layout_processor, load_det_model, load_det_processor
+    global settings, SURYA_AVAILABLE
     if globals().get("SURYA_AVAILABLE") is not None:
         return globals()["SURYA_AVAILABLE"]
 
@@ -116,16 +122,34 @@ def _ensure_surya_loaded() -> bool:
         globals()["load_layout_model"] = load_layout_model
         globals()["load_layout_processor"] = load_layout_processor
         globals()["settings"] = settings
+        try:
+            from surya.detection import batch_text_detection
+            from surya.model.detection.model import (
+                load_model as load_det_model,
+                load_processor as _model_load_det_processor,
+            )
+            import surya.model.detection.processor as _det_proc_mod
+            load_det_processor = getattr(_det_proc_mod, "load_processor", _model_load_det_processor)
+            globals()["batch_text_detection"] = batch_text_detection
+            globals()["load_det_model"] = load_det_model
+            globals()["load_det_processor"] = load_det_processor
+        except Exception:
+            globals()["batch_text_detection"] = None
+            globals()["load_det_model"] = None
+            globals()["load_det_processor"] = None
         globals()["SURYA_AVAILABLE"] = True
     except Exception as e:
         import traceback
         traceback.print_exc()
         print(f"Surya OCR (<0.7.0) not installed yet. Error: {e}")
         globals()["batch_layout_detection"] = None
+        globals()["batch_text_detection"] = None
         globals()["load_rec_model"] = None
         globals()["load_rec_processor"] = None
         globals()["load_layout_model"] = None
         globals()["load_layout_processor"] = None
+        globals()["load_det_model"] = None
+        globals()["load_det_processor"] = None
         globals()["settings"] = None
         globals()["SURYA_AVAILABLE"] = False
     return globals()["SURYA_AVAILABLE"]
@@ -167,6 +191,74 @@ def _ensure_detectors_loaded():
     _DETECTORS_LOADED = True
 
 
+_CJK_CHAR_RE = re.compile(r'[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff00-\uffef]')
+_CJK_PUNCT_EXT_RE = re.compile(r'[\u2018-\u201f\u2026\u2014]')
+
+_PAIRED_DELIMITER_MAP: dict[str, str] = {
+    "《": "》",
+    "〈": "〉",
+    "（": "）",
+    "(": ")",
+    "“": "”",
+    "‘": "’",
+    "【": "】",
+    "[": "]",
+    "「": "」",
+    "『": "』",
+}
+_CLOSING_TO_OPENING_DELIMITER: dict[str, str] = {v: k for k, v in _PAIRED_DELIMITER_MAP.items()}
+_PROSE_MERGE_LABELS = ("text", "paragraph", "section-header", "sectionheader", "listitem", "textinlinemath")
+_CUSTOM_STYLE_DIV_RE = re.compile(r'^\s*:::\s*\{custom-style="([^"]+)"\}\s*\n(.*?)\n:::\s*$', re.DOTALL)
+_CROSS_PAGE_TERMINAL_RE = re.compile(r'[。！？；!?;][”’"\'）\)\]】」』]*$')
+_CROSS_PAGE_LIST_PREFIX_RE = re.compile(
+    r'^\s*(?:'
+    r'[\u2460-\u24ff\u2780-\u2793\u3251-\u325f]|'
+    r'[\[［〔【]\s*(?:\d+|[a-jA-J])\s*[\]］〕】]|'
+    r'[\u2070\u00b9\u00b2\u00b3\u2074-\u2079]+|'
+    r'\u6ce8\s*\d+|'
+    r'[（(]\s*(?:\d+|[a-jA-J]|[一二三四五六七八九十]+)\s*[)）]|'
+    r'(?:\d+|[a-jA-J])(?:[、)）]|\.(?!\d))\s*|'
+    r'[-*+•]\s+'
+    r')'
+)
+
+
+def _join_cjk_pair(prev_text: str, curr_text: str) -> str:
+    """Concatenate two segments with no space between CJK glyphs and a space between ASCII words."""
+    if not prev_text:
+        return curr_text
+    if not curr_text:
+        return prev_text
+    prev_char = prev_text[-1]
+    curr_char = curr_text[0]
+    prev_is_cjk = bool(_CJK_CHAR_RE.match(prev_char))
+    curr_is_cjk = bool(_CJK_CHAR_RE.match(curr_char))
+    if prev_is_cjk and curr_is_cjk:
+        return prev_text + curr_text
+    if (prev_is_cjk and _CJK_PUNCT_EXT_RE.match(curr_char)) or (
+        curr_is_cjk and _CJK_PUNCT_EXT_RE.match(prev_char)
+    ):
+        return prev_text + curr_text
+    return prev_text + " " + curr_text
+
+
+def _has_unclosed_paired_delimiter(text: str) -> bool:
+    """Return True when text contains any unclosed CJK/ASCII paired delimiter."""
+    if not text:
+        return False
+    stack: list[str] = []
+    for ch in text:
+        if ch in _PAIRED_DELIMITER_MAP:
+            stack.append(ch)
+        elif ch in _CLOSING_TO_OPENING_DELIMITER:
+            expected = _CLOSING_TO_OPENING_DELIMITER[ch]
+            for idx in range(len(stack) - 1, -1, -1):
+                if stack[idx] == expected:
+                    del stack[idx:]
+                    break
+    return bool(stack)
+
+
 def _join_ocr_line_slices(lines: list[str]) -> str:
     """
     Seamlessly joins multiple OCR line slices within a single bounding box.
@@ -179,32 +271,22 @@ def _join_ocr_line_slices(lines: list[str]) -> str:
         s = ln.strip()
         if not s:
             continue
-        if not joined:
-            joined = s
-        else:
-            prev_char = joined[-1]
-            curr_char = s[0]
-            prev_is_cjk = bool(re.match(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]', prev_char))
-            curr_is_cjk = bool(re.match(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]', curr_char))
-            if prev_is_cjk and curr_is_cjk:
-                joined += s
-            else:
-                joined += " " + s
+        joined = _join_cjk_pair(joined, s) if joined else s
     return joined
 
 
-def _slice_box_into_lines(box_img: Any, min_line_h: int = 10) -> list[Any]:
+def _slice_box_into_lines(box_img: Any, min_line_h: int = 8) -> list[Any]:
     """Slice a multi-line box image into horizontal line image slices using projection profile."""
     import numpy as np
     img_gray = box_img.convert("L")
     arr = np.array(img_gray)
-    binary = (arr < 185).astype(np.uint8)
+    binary = (arr < 195).astype(np.uint8)
     row_counts = np.sum(binary, axis=1)
 
     in_line = False
     lines = []
     start = 0
-    thresh = max(5, int(box_img.width * 0.01))
+    thresh = max(2, int(box_img.width * 0.004))
     for y, count in enumerate(row_counts):
         if count > thresh and not in_line:
             in_line = True
@@ -212,13 +294,335 @@ def _slice_box_into_lines(box_img: Any, min_line_h: int = 10) -> list[Any]:
         elif count <= thresh and in_line:
             in_line = False
             if y - start >= min_line_h:
-                lines.append((max(0, start - 2), min(box_img.height, y + 2)))
+                lines.append((max(0, start - 3), min(box_img.height, y + 3)))
     if in_line and len(row_counts) - start >= min_line_h:
-        lines.append((max(0, start - 2), min(box_img.height, len(row_counts))))
+        lines.append((max(0, start - 3), min(box_img.height, len(row_counts))))
 
     if len(lines) <= 1:
         return [box_img]
     return [box_img.crop((0, y1, box_img.width, y2)) for y1, y2 in lines]
+
+
+def _scale_bbox(
+    bbox: list[float] | tuple[float, ...],
+    sx: float,
+    sy: float,
+    max_w: float | None = None,
+    max_h: float | None = None,
+) -> list[float]:
+    """Scale [x0, y0, x1, y1] by (sx, sy) and optionally clamp to [0.0, 0.0, max_w, max_h]."""
+    if len(bbox) < 4:
+        return [0.0, 0.0, 0.0, 0.0]
+    x0 = float(bbox[0]) * sx
+    y0 = float(bbox[1]) * sy
+    x1 = float(bbox[2]) * sx
+    y1 = float(bbox[3]) * sy
+    if max_w is not None:
+        w_lim = float(max_w)
+        x0 = max(0.0, min(w_lim, x0))
+        x1 = max(0.0, min(w_lim, x1))
+    if max_h is not None:
+        h_lim = float(max_h)
+        y0 = max(0.0, min(h_lim, y0))
+        y1 = max(0.0, min(h_lim, y1))
+    return [x0, y0, x1, y1]
+
+
+def _extract_bbox_from_item(item: Any) -> list[float] | None:
+    """Extract normalized [x0, y0, x1, y1] from a Surya box object, dict, or sequence."""
+    raw_bbox: Any = None
+    raw_poly: Any = None
+    if isinstance(item, dict):
+        raw_bbox = item.get("bbox")
+        raw_poly = item.get("polygon")
+    elif isinstance(item, (list, tuple)):
+        if len(item) >= 4 and all(isinstance(v, (int, float)) for v in item[:4]):
+            x0, y0, x1, y1 = float(item[0]), float(item[1]), float(item[2]), float(item[3])
+            return [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+        raw_poly = item
+    else:
+        raw_bbox = getattr(item, "bbox", None)
+        raw_poly = getattr(item, "polygon", None)
+
+    if (
+        isinstance(raw_bbox, (list, tuple))
+        and len(raw_bbox) >= 4
+        and all(isinstance(v, (int, float)) for v in raw_bbox[:4])
+    ):
+        x0, y0, x1, y1 = float(raw_bbox[0]), float(raw_bbox[1]), float(raw_bbox[2]), float(raw_bbox[3])
+        return [min(x0, x1), min(y0, y1), max(x0, x1), max(y0, y1)]
+
+    if isinstance(raw_poly, (list, tuple)) and len(raw_poly) > 0:
+        try:
+            xs = [float(p[0]) for p in raw_poly]
+            ys = [float(p[1]) for p in raw_poly]
+            return [min(xs), min(ys), max(xs), max(ys)]
+        except (TypeError, IndexError, ValueError):
+            return None
+    return None
+
+
+def _bbox_area(bbox: list[float]) -> float:
+    return max(0.0, bbox[2] - bbox[0]) * max(0.0, bbox[3] - bbox[1])
+
+
+def _bbox_intersection_area(b1: list[float], b2: list[float]) -> float:
+    ix0 = max(b1[0], b2[0])
+    iy0 = max(b1[1], b2[1])
+    ix1 = min(b1[2], b2[2])
+    iy1 = min(b1[3], b2[3])
+    if ix1 <= ix0 or iy1 <= iy0:
+        return 0.0
+    return (ix1 - ix0) * (iy1 - iy0)
+
+
+def _normalize_layout_label(raw_label: str) -> str:
+    norm = raw_label.lower().strip()
+    if norm in ("pagefooter", "pageheader", "page-footer", "page-header"):
+        return "text"
+    if norm in ("sectionheader", "section-header"):
+        return "section-header"
+    if norm in ("listitem", "list-item", "textinlinemath"):
+        return "text"
+    return norm or "text"
+
+
+def _reconcile_layout_and_det_lines(
+    layout_bboxes: list[Any],
+    det_bboxes: list[Any],
+    page_w: float,
+    page_h: float,
+    image_rects_150: list[list[float]] | None = None,
+    table_zones_150: list[dict[str, Any]] | None = None,
+    vec_text_lookup: dict[int, str] | None = None,
+) -> list[dict[str, Any]]:
+    """
+    Reconcile 150 DPI layout regions with text-detection line boxes under zero-drop rules.
+    Demotes PageHeader/PageFooter inside CropBox to text, rescues raster-free Picture text,
+    and recovers any orphan det lines missed or truncated by the layout model.
+    """
+    _ = (page_w, page_h)
+    det_lines: list[dict[str, Any]] = []
+    for d_item in det_bboxes:
+        db = _extract_bbox_from_item(d_item)
+        if db is not None and db[2] > db[0] and db[3] > db[1]:
+            det_lines.append({"bbox": db, "assigned": False})
+    det_lines.sort(key=lambda d: (d["bbox"][1], d["bbox"][0]))
+
+    if det_lines:
+        heights = sorted(max(1.0, d["bbox"][3] - d["bbox"][1]) for d in det_lines)
+        mid = len(heights) // 2
+        median_lh = heights[mid] if len(heights) % 2 == 1 else (heights[mid - 1] + heights[mid]) / 2.0
+    else:
+        median_lh = 22.0
+
+    norm_tables: list[tuple[list[float], str]] = []
+    for tz in table_zones_150 or []:
+        tb = _extract_bbox_from_item(tz)
+        if tb is not None:
+            norm_tables.append((tb, str(tz.get("markdown") or tz.get("md") or "")))
+
+    norm_images: list[list[float]] = []
+    for ir in image_rects_150 or []:
+        ib = _extract_bbox_from_item(ir)
+        if ib is not None:
+            norm_images.append(ib)
+
+    blocks: list[dict[str, Any]] = []
+    for idx, raw_box in enumerate(layout_bboxes):
+        bbox = _extract_bbox_from_item(raw_box)
+        if bbox is None:
+            continue
+        if isinstance(raw_box, dict):
+            raw_label = str(raw_box.get("label") or raw_box.get("original_label") or "text")
+        else:
+            lbl_attr = getattr(raw_box, "label", None)
+            raw_label = lbl_attr if isinstance(lbl_attr, str) else "text"
+        label = _normalize_layout_label(raw_label)
+        r_area = _bbox_area(bbox)
+        vec_text = (vec_text_lookup or {}).get(idx, "").strip()
+
+        matched_md: str | None = None
+        matched_tr_bbox: list[float] | None = None
+        for tr_bbox, tr_md in norm_tables:
+            tr_area = _bbox_area(tr_bbox)
+            min_area = min(r_area, tr_area)
+            if min_area > 0.0 and _bbox_intersection_area(bbox, tr_bbox) > 0.25 * min_area:
+                matched_md = tr_md
+                matched_tr_bbox = tr_bbox
+                break
+
+        if matched_md is not None:
+            for d in det_lines:
+                if d["assigned"]:
+                    continue
+                d_area = _bbox_area(d["bbox"])
+                if d_area > 0.0 and (
+                    _bbox_intersection_area(d["bbox"], bbox) > 0.25 * d_area
+                    or (matched_tr_bbox is not None and _bbox_intersection_area(d["bbox"], matched_tr_bbox) > 0.25 * d_area)
+                ):
+                    d["assigned"] = True
+            blocks.append({
+                "original_label": "table",
+                "bbox": bbox,
+                "line_bboxes_150": [],
+                "surya_text": matched_md,
+                "type": None,
+            })
+            continue
+
+        has_overlapping_image = False
+        for img_rect in norm_images:
+            img_area = _bbox_area(img_rect)
+            min_area = min(r_area, img_area)
+            if min_area > 0.0 and _bbox_intersection_area(bbox, img_rect) > 0.25 * min_area:
+                has_overlapping_image = True
+                break
+
+        bx0, by0, bx1, by1 = bbox
+        bw = max(0.0, bx1 - bx0)
+        matched_det_lines: list[dict[str, Any]] = []
+        for d in det_lines:
+            if d["assigned"]:
+                continue
+            lx0, ly0, lx1, ly1 = d["bbox"]
+            lw = max(0.0, lx1 - lx0)
+            lh = max(0.0, ly1 - ly0)
+            cy = (ly0 + ly1) / 2.0
+            v_overlap = max(0.0, min(by1, ly1) - max(by0, ly0))
+            v_match = (by0 - 4.0 <= cy <= by1 + 6.0) or (lh > 0.0 and v_overlap >= 0.4 * lh)
+            h_overlap = max(0.0, min(bx1, lx1) - max(bx0, lx0))
+            min_w = min(lw, bw)
+            h_match = min_w > 0.0 and h_overlap >= 0.3 * min_w
+            if v_match and h_match:
+                matched_det_lines.append(d)
+
+        if label in ("picture", "figure", "image"):
+            if not has_overlapping_image and (bool(vec_text) or len(matched_det_lines) > 0):
+                for d in matched_det_lines:
+                    d["assigned"] = True
+                if vec_text:
+                    blocks.append({
+                        "original_label": "text",
+                        "bbox": bbox,
+                        "line_bboxes_150": [],
+                        "surya_text": vec_text,
+                        "type": None,
+                    })
+                else:
+                    line_bboxes = [
+                        list(d["bbox"])
+                        for d in sorted(matched_det_lines, key=lambda x: (x["bbox"][1], x["bbox"][0]))
+                    ]
+                    blocks.append({
+                        "original_label": "text",
+                        "bbox": bbox,
+                        "line_bboxes_150": line_bboxes,
+                        "surya_text": "",
+                        "type": None,
+                    })
+            else:
+                for d in det_lines:
+                    if d["assigned"]:
+                        continue
+                    d_area = _bbox_area(d["bbox"])
+                    lx0, ly0, lx1, ly1 = d["bbox"]
+                    cx, cy = (lx0 + lx1) / 2.0, (ly0 + ly1) / 2.0
+                    inside_box = bx0 <= cx <= bx1 and by0 <= cy <= by1
+                    inside_img = d_area > 0.0 and any(
+                        _bbox_intersection_area(d["bbox"], ir) > 0.4 * d_area for ir in norm_images
+                    )
+                    if inside_box or inside_img:
+                        d["assigned"] = True
+                blocks.append({
+                    "original_label": label,
+                    "bbox": bbox,
+                    "line_bboxes_150": [],
+                    "surya_text": "",
+                    "type": None,
+                })
+            continue
+
+        for d in matched_det_lines:
+            d["assigned"] = True
+        if vec_text:
+            blocks.append({
+                "original_label": label,
+                "bbox": bbox,
+                "line_bboxes_150": [],
+                "surya_text": vec_text,
+                "type": None,
+            })
+        else:
+            line_bboxes = [
+                list(d["bbox"])
+                for d in sorted(matched_det_lines, key=lambda x: (x["bbox"][1], x["bbox"][0]))
+            ]
+            blocks.append({
+                "original_label": label,
+                "bbox": bbox,
+                "line_bboxes_150": line_bboxes,
+                "surya_text": "",
+                "type": None,
+            })
+
+    # Recover any remaining unassigned det lines outside layout boxes
+    for d in det_lines:
+        if d["assigned"]:
+            continue
+        lb = d["bbox"]
+        d_area = _bbox_area(lb)
+        if d_area <= 0.0:
+            continue
+        if any(_bbox_intersection_area(lb, tb) > 0.5 * d_area for tb, _ in norm_tables):
+            continue
+        if any(_bbox_intersection_area(lb, ir) > 0.5 * d_area for ir in norm_images):
+            continue
+
+        lx0, ly0, lx1, ly1 = lb
+        lw = max(0.0, lx1 - lx0)
+        target_block: dict[str, Any] | None = None
+        best_gap = float("inf")
+        for blk in blocks:
+            if blk.get("original_label") not in ("text", "paragraph", "section-header"):
+                continue
+            if blk.get("surya_text") or not blk.get("line_bboxes_150"):
+                continue
+            pb = blk["bbox"]
+            pw = max(0.0, pb[2] - pb[0])
+            y_gap = ly0 - pb[3]
+            if not (-0.5 * median_lh <= y_gap <= 1.85 * median_lh):
+                continue
+            x_ov = max(0.0, min(pb[2], lx1) - max(pb[0], lx0))
+            min_w = min(pw, lw)
+            if min_w <= 0.0 or x_ov < 0.25 * min_w:
+                continue
+            if (lx0 - pb[0]) >= 1.5 * median_lh:
+                continue
+            if abs(y_gap) < best_gap:
+                best_gap = abs(y_gap)
+                target_block = blk
+
+        d["assigned"] = True
+        if target_block is not None:
+            target_block["line_bboxes_150"].append(list(lb))
+            pb = target_block["bbox"]
+            target_block["bbox"] = [
+                min(pb[0], lx0),
+                min(pb[1], ly0),
+                max(pb[2], lx1),
+                max(pb[3], ly1),
+            ]
+        else:
+            blocks.append({
+                "original_label": "text",
+                "bbox": list(lb),
+                "line_bboxes_150": [list(lb)],
+                "surya_text": "",
+                "type": None,
+            })
+
+    return blocks
 
 
 def _is_heading_like(txt: str, block: dict, page_w: float) -> bool:
@@ -263,7 +667,7 @@ def _merge_wrapping_paragraphs(para_blocks: list, page_w: float = 1000.0, line_h
         prev_label = prev.get("original_label", "").lower()
         curr_label = blk.get("original_label", "").lower()
 
-        if prev_label in ("text", "paragraph", "section-header") and curr_label in ("text", "paragraph"):
+        if prev_label in _PROSE_MERGE_LABELS and curr_label in _PROSE_MERGE_LABELS:
             prev_txt = prev.get("surya_text", "").strip()
             curr_txt = blk.get("surya_text", "").strip()
 
@@ -274,30 +678,173 @@ def _merge_wrapping_paragraphs(para_blocks: list, page_w: float = 1000.0, line_h
             prev_last_char = prev_txt[-1] if prev_txt else ""
             ends_mid_sentence = (
                 prev_last_char not in terminal_chars
-                or prev_last_char in ('《', '“', '（', '(', '[', '〈')
+                or prev_last_char in _PAIRED_DELIMITER_MAP
+                or _has_unclosed_paired_delimiter(prev_txt)
             )
             prev_bbox = prev.get("bbox", [0, 0, 0, 0])
             curr_bbox = blk.get("bbox", [0, 0, 0, 0])
             y_gap = curr_bbox[1] - prev_bbox[3]
 
             curr_is_list_start = bool(_FOOTNOTE_PREFIX_RE.match(curr_txt) or re.match(r'^[（(]?\d+[)）.]', curr_txt))
-            should_merge = ends_mid_sentence and not curr_is_list_start and 0 <= y_gap <= line_height_thresh
+            should_merge = ends_mid_sentence and not curr_is_list_start and -15.0 <= y_gap <= line_height_thresh
 
             if should_merge:
-                prev_is_cjk = bool(re.match(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]', prev_last_char))
-                curr_is_cjk = bool(re.match(r'[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]', curr_txt[0])) if curr_txt else False
-                separator = "" if (prev_is_cjk and curr_is_cjk) else " "
-                prev["surya_text"] = prev_txt + separator + curr_txt
+                prev["surya_text"] = _join_cjk_pair(prev_txt, curr_txt)
                 prev["bbox"] = [
                     min(prev_bbox[0], curr_bbox[0]),
-                    prev_bbox[1],
+                    min(prev_bbox[1], curr_bbox[1]),
                     max(prev_bbox[2], curr_bbox[2]),
-                    curr_bbox[3]
+                    max(prev_bbox[3], curr_bbox[3]),
                 ]
+                if "line_bboxes_150" in prev or "line_bboxes_150" in blk:
+                    prev.setdefault("line_bboxes_150", [])
+                    prev["line_bboxes_150"].extend(blk.get("line_bboxes_150", []))
                 continue
 
         merged.append(blk)
     return merged
+
+
+def _unwrap_custom_style_div(md_text: str) -> tuple[str, str | None]:
+    """Strip an outer Pandoc custom-style fenced div and return (inner_text, style_name)."""
+    m = _CUSTOM_STYLE_DIV_RE.match(md_text or "")
+    if m:
+        return m.group(2).strip(), m.group(1)
+    return (md_text or "").strip(), None
+
+
+def _is_non_prose_markdown_item(inner_text: str, block: dict[str, Any]) -> bool:
+    if not inner_text:
+        return True
+    orig_label = str(block.get("original_label", "")).lower()
+    if orig_label in ("table", "picture", "figure", "image", "caption", "footnote"):
+        return True
+    if inner_text.startswith(("#", "![", ">", "|", "[^")):
+        return True
+    return False
+
+
+def _has_cross_page_first_line_indent(curr_item: dict[str, Any], next_page_body: list[dict[str, Any]]) -> bool:
+    """Return True if curr_item has a measurable first-line indent relative to page prose margin."""
+    curr_blk = curr_item.get("block") or {}
+    curr_lines = curr_blk.get("line_bboxes_150") or []
+    curr_bbox = curr_blk.get("bbox") or []
+
+    first_line_x0: float | None = None
+    if curr_lines and len(curr_lines[0]) >= 4:
+        first_line_x0 = float(curr_lines[0][0])
+    elif len(curr_bbox) >= 4 and float(curr_bbox[2]) > float(curr_bbox[0]):
+        first_line_x0 = float(curr_bbox[0])
+
+    if first_line_x0 is None:
+        return False
+
+    x0_samples: list[float] = []
+    prose_block_count = 0
+    for item in next_page_body:
+        inner, _ = _unwrap_custom_style_div(str(item.get("md", "")))
+        blk = item.get("block") or {}
+        if _is_non_prose_markdown_item(inner, blk):
+            continue
+        prose_block_count += 1
+        lines = blk.get("line_bboxes_150") or []
+        if lines:
+            for lb in lines:
+                if len(lb) >= 4 and float(lb[2]) > float(lb[0]):
+                    x0_samples.append(float(lb[0]))
+        else:
+            bb = blk.get("bbox") or []
+            if len(bb) >= 4 and float(bb[2]) > float(bb[0]):
+                x0_samples.append(float(bb[0]))
+
+    if not x0_samples or (not curr_lines and prose_block_count < 2):
+        return False
+    page_min_x0 = min(x0_samples)
+    return (first_line_x0 - page_min_x0) >= 28.0
+
+
+def _merge_cross_page_paragraphs(pages_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Merge incomplete prose paragraphs across consecutive page boundaries when the prior
+    page ends mid-sentence (or with an unclosed paired delimiter) and the next page begins
+    with an unindented non-list prose continuation.
+    """
+    if len(pages_data) < 2:
+        return pages_data
+
+    for idx in range(len(pages_data) - 1):
+        prev_page_idx = idx
+        while prev_page_idx >= 0 and not any(
+            str(it.get("md", "")).strip() for it in pages_data[prev_page_idx].get("body", [])
+        ):
+            prev_page_idx -= 1
+        if prev_page_idx < 0:
+            continue
+
+        prev_page = pages_data[prev_page_idx]
+        curr_page = pages_data[idx + 1]
+        prev_body = prev_page.get("body", [])
+        curr_body = curr_page.get("body", [])
+
+        prev_item_idx = next(
+            (j for j in range(len(prev_body) - 1, -1, -1) if str(prev_body[j].get("md", "")).strip()),
+            None,
+        )
+        curr_item_idx = next(
+            (j for j in range(len(curr_body)) if str(curr_body[j].get("md", "")).strip()),
+            None,
+        )
+        if prev_item_idx is None or curr_item_idx is None:
+            continue
+
+        prev_item = prev_body[prev_item_idx]
+        curr_item = curr_body[curr_item_idx]
+        prev_blk = prev_item.get("block") or {}
+        curr_blk = curr_item.get("block") or {}
+
+        prev_text, prev_style = _unwrap_custom_style_div(str(prev_item.get("md", "")))
+        curr_text, curr_style = _unwrap_custom_style_div(str(curr_item.get("md", "")))
+
+        if _is_non_prose_markdown_item(prev_text, prev_blk) or _is_non_prose_markdown_item(curr_text, curr_blk):
+            continue
+
+        prev_page_size = prev_page.get("page_size") or [1000.0, 1000.0]
+        curr_page_size = curr_page.get("page_size") or [1000.0, 1000.0]
+        prev_page_w = float(prev_page_size[0]) if len(prev_page_size) >= 1 else 1000.0
+        curr_page_w = float(curr_page_size[0]) if len(curr_page_size) >= 1 else 1000.0
+
+        if prev_text.startswith("#") or curr_text.startswith("#"):
+            continue
+
+        prev_check = re.sub(r'(?:\[\^[^\]]+\])+\s*$', '', prev_text).rstrip()
+        ends_terminal = bool(_CROSS_PAGE_TERMINAL_RE.search(prev_check))
+        has_unclosed = _has_unclosed_paired_delimiter(prev_check)
+
+        if not has_unclosed and (
+            _is_heading_like(prev_text, prev_blk, prev_page_w)
+            or _is_heading_like(curr_text, curr_blk, curr_page_w)
+        ):
+            continue
+
+        if ends_terminal and not has_unclosed:
+            continue
+
+        if _CROSS_PAGE_LIST_PREFIX_RE.match(curr_text):
+            continue
+        if _has_cross_page_first_line_indent(curr_item, curr_body):
+            continue
+
+        merged_text = _join_cjk_pair(prev_text, curr_text)
+        style_to_apply = prev_style or curr_style
+        if style_to_apply:
+            prev_item["md"] = f'::: {{custom-style="{style_to_apply}"}}\n{merged_text}\n:::'
+        else:
+            prev_item["md"] = merged_text
+        if isinstance(prev_blk, dict) and "surya_text" in prev_blk:
+            prev_blk["surya_text"] = merged_text
+        curr_body.pop(curr_item_idx)
+
+    return pages_data
 
 
 def extract_block_text(block):
@@ -418,7 +965,7 @@ def parse_footnote_entries(text):
 def sort_blocks_2d_reading_order(para_blocks, page_w, page_h):
     """
     智能 2D 自然閱讀順序排序：
-    1. 過濾極外側邊緣切口章名標籤與極底端純頁碼
+    1. 過濾極外側邊緣切口章名標籤
     2. 自動辨識圖文卡片（垂直緊密相連之圖片與標題/說明文字群組）
     3. 依水平橫向分帶 (Band) 劃分多欄/網格卡片，橫帶內依欄位由左至右、欄內自上而下排版
     """
@@ -437,11 +984,6 @@ def sort_blocks_2d_reading_order(para_blocks, page_w, page_h):
         if bbox[0] > page_w * 0.88 and w < 25 and b.get("original_label") in ("text", "caption", "header"):
             txt = b.get("surya_text", "").replace(" ", "")
             if re.match(r'^第[一二三四五六七八九十]+章$', txt):
-                continue
-        # 底端獨立頁碼
-        if bbox[1] > page_h * 0.90 and (bbox[3] - bbox[1]) < 25:
-            txt = b.get("surya_text", "").strip()
-            if re.match(r'^\d{1,4}$', txt):
                 continue
         valid_blocks.append(b)
 
@@ -971,6 +1513,403 @@ def build_ocr_layout_contracts(pages_data: list[dict[str, Any]]) -> list[Any]:
     return validate_layout_records(raw_records)
 
 
+def _collect_image_blocks_from_surya(pdf_info_list: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Collect image/figure blocks from OCR page metadata for raster image extraction."""
+    image_labels = {"image", "figure", "chart", "vision_figure", "picture"}
+    blocks: list[dict[str, Any]] = []
+    for page_info in pdf_info_list:
+        page_idx = int(page_info.get("page_idx", 0))
+        page_num = page_idx + 1
+        page_size = page_info.get("page_size", [1000.0, 1000.0])
+        page_w = float(page_size[0]) if len(page_size) >= 1 else 1000.0
+        page_h = float(page_size[1]) if len(page_size) >= 2 else 1000.0
+        for block_idx, block in enumerate(page_info.get("para_blocks", [])):
+            orig_label = str(block.get("original_label", "")).lower()
+            bbox = block.get("bbox", [])
+            if orig_label in image_labels and isinstance(bbox, (list, tuple)) and len(bbox) >= 4:
+                blocks.append({
+                    "page_num": page_num,
+                    "block_idx": block_idx,
+                    "bbox": [float(v) for v in bbox[:4]],
+                    "page_w": page_w,
+                    "page_h": page_h,
+                })
+    return blocks
+
+
+def _release_vram_cache() -> None:
+    """Force garbage collection and empty CUDA cache between Surya macro-batch phases."""
+    gc.collect()
+    try:
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except Exception:
+        pass
+
+
+def _configure_local_surya_checkpoints() -> None:
+    """Configure local PyTorch Surya checkpoint paths before importing surya.settings."""
+    if getattr(sys, "frozen", False):
+        project_root = Path(sys.executable).parent.resolve()
+    else:
+        project_root = Path(__file__).parent.parent.parent.resolve()
+
+    surya_pt_dir = project_root / "models" / "surya_pt"
+    det_dir = surya_pt_dir / "det"
+    if (surya_pt_dir / "rec").exists():
+        layout_cfg = surya_pt_dir / "layout" / "config.json"
+        is_legacy = False
+        if layout_cfg.exists():
+            try:
+                with open(layout_cfg, "r", encoding="utf-8") as f:
+                    cfg_json = json.load(f)
+                    if "Segformer" in str(cfg_json.get("architectures", [])):
+                        is_legacy = True
+            except Exception:
+                is_legacy = True
+        if not is_legacy:
+            if not os.environ.get("RECOGNITION_MODEL_CHECKPOINT"):
+                os.environ["RECOGNITION_MODEL_CHECKPOINT"] = str(surya_pt_dir / "rec")
+            if not os.environ.get("LAYOUT_MODEL_CHECKPOINT"):
+                os.environ["LAYOUT_MODEL_CHECKPOINT"] = str(surya_pt_dir / "layout")
+            if det_dir.exists() and not os.environ.get("DETECTOR_MODEL_CHECKPOINT"):
+                os.environ["DETECTOR_MODEL_CHECKPOINT"] = str(det_dir)
+            if not os.environ.get("ORDER_MODEL_CHECKPOINT"):
+                os.environ["ORDER_MODEL_CHECKPOINT"] = str(surya_pt_dir / "order")
+    elif det_dir.exists() and not os.environ.get("DETECTOR_MODEL_CHECKPOINT"):
+        os.environ["DETECTOR_MODEL_CHECKPOINT"] = str(det_dir)
+
+
+def _sync_surya_settings() -> None:
+    """Sync Surya settings checkpoints and disable vertical layout slicing for 150 DPI pages."""
+    if settings is None:
+        return
+    if os.environ.get("RECOGNITION_MODEL_CHECKPOINT"):
+        settings.RECOGNITION_MODEL_CHECKPOINT = os.environ["RECOGNITION_MODEL_CHECKPOINT"]
+    if os.environ.get("LAYOUT_MODEL_CHECKPOINT"):
+        settings.LAYOUT_MODEL_CHECKPOINT = os.environ["LAYOUT_MODEL_CHECKPOINT"]
+    if os.environ.get("DETECTOR_MODEL_CHECKPOINT"):
+        settings.DETECTOR_MODEL_CHECKPOINT = os.environ["DETECTOR_MODEL_CHECKPOINT"]
+    settings.LAYOUT_SLICE_MIN = {"height": 4000, "width": 4000}
+    settings.LAYOUT_SLICE_SIZE = {"height": 3000, "width": 3000}
+
+
+def _apply_surya_runtime_patches() -> None:
+    """Apply idempotent transformers/Surya compatibility monkey-patches."""
+    from surya.model.recognition.config import SuryaOCRConfig
+
+    if not getattr(SuryaOCRConfig.__init__, "_ocr_patched", False):
+        orig_init = SuryaOCRConfig.__init__
+
+        def patched_init(self, **kwargs):
+            encoder_config = kwargs.pop("encoder", {})
+            decoder_config = kwargs.pop("decoder", {"pad_token_id": 0, "bos_token_id": 1, "eos_token_id": 2})
+            text_encoder_config = kwargs.pop("text_encoder", {})
+            orig_init(self, encoder=encoder_config, decoder=decoder_config, text_encoder=text_encoder_config, **kwargs)
+
+        setattr(patched_init, "_ocr_patched", True)
+        SuryaOCRConfig.__init__ = patched_init
+
+    if not getattr(getattr(SuryaOCRConfig, "get_text_config", None), "_ocr_patched", False):
+        def patched_get_text_config(self, **kwargs):
+            return self.decoder if hasattr(self, "decoder") else None
+
+        setattr(patched_get_text_config, "_ocr_patched", True)
+        setattr(SuryaOCRConfig, "get_text_config", patched_get_text_config)
+
+    import surya.model.detection.processor as _det_proc
+    import numpy as np
+
+    if not getattr(_det_proc.make_list_of_images, "_ocr_patched", False):
+        orig_make_list = _det_proc.make_list_of_images
+
+        def patched_make_list(images, *args, **kwargs):
+            images_list = orig_make_list(images, *args, **kwargs)
+            return [np.array(img) if hasattr(img, "mode") else img for img in images_list]
+
+        setattr(patched_make_list, "_ocr_patched", True)
+        _det_proc.make_list_of_images = patched_make_list
+
+
+def _run_phase_a_layout_det_macro_batch(
+    doc: Any,
+    macro_start: int,
+    macro_end: int,
+    chunk_size: int,
+    total_pages: int,
+    fitz_mod: Any,
+    image_cls: Any,
+) -> list[dict[str, Any]]:
+    """Run 150 DPI layout + text-line detection for one macro-batch and unload models."""
+    layout_ckpt = settings.LAYOUT_MODEL_CHECKPOINT if settings is not None else None
+    layout_model = load_layout_model(checkpoint=layout_ckpt) if layout_ckpt else load_layout_model()
+    layout_processor = load_layout_processor()
+
+    det_model: Any = None
+    det_processor: Any = None
+    if load_det_model is not None and load_det_processor is not None and batch_text_detection is not None:
+        det_ckpt = settings.DETECTOR_MODEL_CHECKPOINT if settings is not None else None
+        det_model = load_det_model(checkpoint=det_ckpt) if det_ckpt else load_det_model()
+        det_processor = load_det_processor(checkpoint=det_ckpt) if det_ckpt else load_det_processor()
+
+    macro_page_records: list[dict[str, Any]] = []
+    try:
+        from src.extraction.table_reconstructor import extract_reconstructed_tables_from_page
+    except Exception:
+        extract_reconstructed_tables_from_page = None
+
+    try:
+        for chunk_start in range(macro_start, macro_end, chunk_size):
+            chunk_end = min(chunk_start + chunk_size, macro_end)
+            chunk_imgs_150: list[Any] = []
+            try:
+                for p_idx in range(chunk_start, chunk_end):
+                    p_doc_page: Any = doc[p_idx]
+                    pix = p_doc_page.get_pixmap(dpi=150)
+                    chunk_imgs_150.append(image_cls.frombytes("RGB", (pix.width, pix.height), pix.samples))
+
+                pct = 20 + int(25 * (chunk_start / max(1, total_pages)))
+                print(json.dumps({"progress": pct, "message": f"[INFO] [Phase A: 版面與文字行偵測] 正在處理第 {chunk_start + 1}~{chunk_end} 頁 (共 {total_pages} 頁)..."}))
+                sys.stdout.flush()
+
+                chunk_layouts = batch_layout_detection(chunk_imgs_150, layout_model, layout_processor)
+                if det_model is not None and det_processor is not None and batch_text_detection is not None:
+                    chunk_dets = batch_text_detection(chunk_imgs_150, det_model, det_processor, batch_size=_det_batch)
+                else:
+                    chunk_dets = [None] * len(chunk_imgs_150)
+
+                for offset, (img_150, layout_res, det_res) in enumerate(zip(chunk_imgs_150, chunk_layouts, chunk_dets)):
+                    page_idx = chunk_start + offset
+                    p_page: Any = doc[page_idx]
+                    sx = float(img_150.width) / max(1.0, float(p_page.rect.width))
+                    sy = float(img_150.height) / max(1.0, float(p_page.rect.height))
+
+                    page_3line_tables = []
+                    if extract_reconstructed_tables_from_page is not None:
+                        try:
+                            page_3line_tables = extract_reconstructed_tables_from_page(p_page)
+                        except Exception:
+                            page_3line_tables = []
+                    table_zones_150 = [
+                        {
+                            "bbox": [
+                                (float(rtbl.bbox[0]) - float(p_page.rect.x0)) * sx,
+                                (float(rtbl.bbox[1]) - float(p_page.rect.y0)) * sy,
+                                (float(rtbl.bbox[2]) - float(p_page.rect.x0)) * sx,
+                                (float(rtbl.bbox[3]) - float(p_page.rect.y0)) * sy,
+                            ],
+                            "markdown": rtbl.markdown,
+                        }
+                        for rtbl in page_3line_tables
+                    ]
+
+                    image_rects_150: list[list[float]] = []
+                    try:
+                        for img_info in p_page.get_images():
+                            for img_rect in p_page.get_image_rects(img_info[0]):
+                                image_rects_150.append([
+                                    (float(img_rect.x0) - float(p_page.rect.x0)) * sx,
+                                    (float(img_rect.y0) - float(p_page.rect.y0)) * sy,
+                                    (float(img_rect.x1) - float(p_page.rect.x0)) * sx,
+                                    (float(img_rect.y1) - float(p_page.rect.y0)) * sy,
+                                ])
+                    except Exception:
+                        pass
+
+                    layout_bboxes = list(getattr(layout_res, "bboxes", []) or [])
+                    det_bboxes = list(getattr(det_res, "bboxes", []) or []) if det_res is not None else []
+                    vec_text_lookup: dict[int, str] = {}
+                    for idx, box in enumerate(layout_bboxes):
+                        box_b = _extract_bbox_from_item(box)
+                        if box_b is None:
+                            continue
+                        r = fitz_mod.Rect(
+                            float(p_page.rect.x0) + box_b[0] / sx,
+                            float(p_page.rect.y0) + box_b[1] / sy,
+                            float(p_page.rect.x0) + box_b[2] / sx,
+                            float(p_page.rect.y0) + box_b[3] / sy,
+                        )
+                        vec_text = p_page.get_text("text", clip=r).strip()
+                        if vec_text:
+                            vec_text_lookup[idx] = vec_text
+
+                    reconciled_blocks = _reconcile_layout_and_det_lines(
+                        layout_bboxes=layout_bboxes,
+                        det_bboxes=det_bboxes,
+                        page_w=float(img_150.width),
+                        page_h=float(img_150.height),
+                        image_rects_150=image_rects_150,
+                        table_zones_150=table_zones_150,
+                        vec_text_lookup=vec_text_lookup,
+                    )
+                    macro_page_records.append({
+                        "page_idx": page_idx,
+                        "img_150_w": float(img_150.width),
+                        "img_150_h": float(img_150.height),
+                        "blocks": reconciled_blocks,
+                    })
+            finally:
+                for c_img in chunk_imgs_150:
+                    try:
+                        c_img.close()
+                    except Exception:
+                        pass
+                chunk_imgs_150.clear()
+                _release_vram_cache()
+    finally:
+        del layout_model, layout_processor
+        if det_model is not None:
+            del det_model
+        if det_processor is not None:
+            del det_processor
+        _release_vram_cache()
+
+    return macro_page_records
+
+
+def _block_needs_ocr(blk: dict[str, Any]) -> bool:
+    orig_label = str(blk.get("original_label", "")).lower()
+    return (orig_label not in ("picture", "figure", "image")) and not bool(blk.get("surya_text"))
+
+
+def _finalize_page_blocks(rec_item: dict[str, Any]) -> dict[str, Any]:
+    blocks = rec_item["blocks"]
+    for blk in blocks:
+        blk["surya_text"] = _clean_hallucinations(str(blk.get("surya_text", "")))
+    img_w = float(rec_item["img_150_w"])
+    img_h = float(rec_item["img_150_h"])
+    para_blocks = sort_blocks_2d_reading_order(blocks, img_w, img_h)
+    para_blocks = _merge_wrapping_paragraphs(para_blocks, page_w=img_w)
+    return {
+        "page_idx": rec_item["page_idx"],
+        "page_size": [img_w, img_h],
+        "para_blocks": para_blocks,
+    }
+
+
+def _run_phase_b_rec_macro_batch(
+    doc: Any,
+    macro_page_records: list[dict[str, Any]],
+    macro_start: int,
+    chunk_size: int,
+    total_pages: int,
+    image_cls: Any,
+) -> list[dict[str, Any]]:
+    """Run 200 DPI line recognition for one macro-batch and unload recognition model."""
+    any_needs_ocr = any(_block_needs_ocr(blk) for rec in macro_page_records for blk in rec["blocks"])
+    if not any_needs_ocr:
+        return [_finalize_page_blocks(rec) for rec in macro_page_records]
+
+    rec_ckpt = settings.RECOGNITION_MODEL_CHECKPOINT if settings is not None else None
+    rec_model = load_rec_model(checkpoint=rec_ckpt) if rec_ckpt else load_rec_model()
+    rec_processor = load_rec_processor()
+    results: list[dict[str, Any]] = []
+
+    try:
+        from surya.ocr import batch_recognition
+
+        for rec_chunk_start in range(0, len(macro_page_records), chunk_size):
+            rec_chunk_end = min(rec_chunk_start + chunk_size, len(macro_page_records))
+            sub_records = macro_page_records[rec_chunk_start:rec_chunk_end]
+            pct = 45 + int(25 * ((macro_start + rec_chunk_start) / max(1, total_pages)))
+            print(json.dumps({"progress": pct, "message": f"[INFO] [Phase B: 高解析文字識別] 正在處理第 {macro_start + rec_chunk_start + 1}~{macro_start + rec_chunk_end} 頁 (共 {total_pages} 頁)..."}))
+            sys.stdout.flush()
+
+            ocr_slice_tasks: list[tuple[int, int, int]] = []
+            all_slices_to_rec: list[Any] = []
+            opened_200_imgs: list[Any] = []
+
+            try:
+                for p_off, rec_item in enumerate(sub_records):
+                    blocks = rec_item["blocks"]
+                    if not any(_block_needs_ocr(blk) for blk in blocks):
+                        continue
+                    p_doc_page: Any = doc[rec_item["page_idx"]]
+                    pix_200 = p_doc_page.get_pixmap(dpi=200)
+                    img_200 = image_cls.frombytes("RGB", (pix_200.width, pix_200.height), pix_200.samples)
+                    opened_200_imgs.append(img_200)
+
+                    sx_200 = float(img_200.width) / max(1.0, float(rec_item["img_150_w"]))
+                    sy_200 = float(img_200.height) / max(1.0, float(rec_item["img_150_h"]))
+
+                    for blk_idx, blk in enumerate(blocks):
+                        if not _block_needs_ocr(blk):
+                            continue
+                        line_bboxes_150 = blk.get("line_bboxes_150") or []
+                        slices: list[Any] = []
+                        if line_bboxes_150:
+                            for lb in line_bboxes_150:
+                                scaled_lb = _scale_bbox(
+                                    lb,
+                                    sx_200,
+                                    sy_200,
+                                    max_w=float(img_200.width),
+                                    max_h=float(img_200.height),
+                                )
+                                x0 = max(0, int(math.floor(scaled_lb[0])))
+                                y0 = max(0, int(math.floor(scaled_lb[1])) - 2)
+                                x1 = min(img_200.width, int(math.ceil(scaled_lb[2])))
+                                y1 = min(img_200.height, int(math.ceil(scaled_lb[3])) + 2)
+                                if x1 > x0 and y1 > y0:
+                                    slices.append(img_200.crop((x0, y0, x1, y1)))
+                        if not slices:
+                            scaled_blk = _scale_bbox(
+                                blk["bbox"],
+                                sx_200,
+                                sy_200,
+                                max_w=float(img_200.width),
+                                max_h=float(img_200.height),
+                            )
+                            bx0 = max(0, int(math.floor(scaled_blk[0])))
+                            by0 = max(0, int(math.floor(scaled_blk[1])))
+                            bx1 = min(img_200.width, int(math.ceil(scaled_blk[2])))
+                            by1 = min(img_200.height, int(math.ceil(scaled_blk[3])))
+                            if bx1 > bx0 and by1 > by0:
+                                box_crop = img_200.crop((bx0, by0, bx1, by1))
+                                if (by1 - by0) >= 45:
+                                    slices = _slice_box_into_lines(box_crop)
+                                else:
+                                    slices = [box_crop]
+
+                        if slices:
+                            ocr_slice_tasks.append((p_off, blk_idx, len(slices)))
+                            all_slices_to_rec.extend(slices)
+
+                if all_slices_to_rec:
+                    all_langs: Any = [["zh"]] * len(all_slices_to_rec)
+                    all_preds, _ = batch_recognition(
+                        all_slices_to_rec, all_langs, rec_model, rec_processor, batch_size=_rec_batch
+                    )
+                    s_idx = 0
+                    for p_off, blk_idx, count in ocr_slice_tasks:
+                        preds = all_preds[s_idx : s_idx + count]
+                        s_idx += count
+                        sub_records[p_off]["blocks"][blk_idx]["surya_text"] = _join_ocr_line_slices(preds)
+            finally:
+                for sl_img in all_slices_to_rec:
+                    try:
+                        sl_img.close()
+                    except Exception:
+                        pass
+                for im200 in opened_200_imgs:
+                    try:
+                        im200.close()
+                    except Exception:
+                        pass
+                all_slices_to_rec.clear()
+                opened_200_imgs.clear()
+                _release_vram_cache()
+
+            for rec_item in sub_records:
+                results.append(_finalize_page_blocks(rec_item))
+    finally:
+        del rec_model, rec_processor
+        _release_vram_cache()
+
+    return results
+
+
 def main(args=None):
     import argparse
     import json
@@ -1003,38 +1942,14 @@ def main(args=None):
         except Exception:
             pass
 
+    _configure_local_surya_checkpoints()
     _ensure_accelerator_configured()
     if not _ensure_surya_loaded():
         print(json.dumps({"progress": 0, "message": "[ERROR] Surya OCR is not installed. Please run: pip install 'surya-ocr<0.7.0' pymupdf"}))
         sys.stdout.flush()
         sys.exit(1)
-        
-    # 支援離線本地模型載入 (PyTorch版)
-    # 解析專案根目錄
-    if getattr(sys, 'frozen', False):
-        _PROJECT_ROOT = Path(sys.executable).parent.resolve()
-    else:
-        _PROJECT_ROOT = Path(__file__).parent.parent.parent.resolve()
-        
-    surya_pt_dir = _PROJECT_ROOT / "models" / "surya_pt"
-    
-    if (surya_pt_dir / "rec").exists():
-        layout_cfg = surya_pt_dir / "layout" / "config.json"
-        is_legacy = False
-        if layout_cfg.exists():
-            try:
-                with open(layout_cfg, "r", encoding="utf-8") as f:
-                    cfg_json = json.load(f)
-                    if "Segformer" in str(cfg_json.get("architectures", [])):
-                        is_legacy = True
-            except Exception:
-                is_legacy = True
-        if not is_legacy:
-            os.environ["RECOGNITION_MODEL_CHECKPOINT"] = str(surya_pt_dir / "rec")
-            os.environ["LAYOUT_MODEL_CHECKPOINT"] = str(surya_pt_dir / "layout")
-            os.environ["DETECTOR_MODEL_CHECKPOINT"] = str(surya_pt_dir / "det")
-            os.environ["ORDER_MODEL_CHECKPOINT"] = str(surya_pt_dir / "order")
-    
+
+    _sync_surya_settings()
 
     print(json.dumps({"progress": 5, "message": "[INFO] Initializing Surya OCR engine (v0.6.x)..."}))
     sys.stdout.flush()
@@ -1043,37 +1958,7 @@ def main(args=None):
         print(json.dumps({"progress": 5, "message": "[WARN] 偵測不到網際網路連線，若為首次執行將無法下載模型！"}))
         sys.stdout.flush()
 
-    # Monkey-patch SuryaOCRConfig to avoid KeyError with new transformers versions
-
-    from surya.model.recognition.config import SuryaOCRConfig
-    orig_init = SuryaOCRConfig.__init__
-    def patched_init(self, **kwargs):
-        encoder_config = kwargs.pop("encoder", {})
-        decoder_config = kwargs.pop("decoder", {"pad_token_id": 0, "bos_token_id": 1, "eos_token_id": 2})
-        text_encoder_config = kwargs.pop("text_encoder", {})
-        orig_init(self, encoder=encoder_config, decoder=decoder_config, text_encoder=text_encoder_config, **kwargs)
-    SuryaOCRConfig.__init__ = patched_init
-    
-    # Fix for transformers >= 4.41.0 "Multiple valid text configs were found"
-    def patched_get_text_config(self, **kwargs):
-        return self.decoder if hasattr(self, "decoder") else None
-    setattr(SuryaOCRConfig, "get_text_config", patched_get_text_config)
-
-    # Fix for transformers >= 4.41.0 "AttributeError: 'Image' object has no attribute 'ndim'"
-    import surya.model.detection.processor
-    import numpy as np
-    orig_make_list = surya.model.detection.processor.make_list_of_images
-    def patched_make_list(images, *args, **kwargs):
-        images_list = orig_make_list(images, *args, **kwargs)
-        return [np.array(img) if hasattr(img, "mode") else img for img in images_list]
-    surya.model.detection.processor.make_list_of_images = patched_make_list
-
-
-
-    rec_model = load_rec_model()
-    rec_processor = load_rec_processor()
-    layout_model = load_layout_model(checkpoint=settings.LAYOUT_MODEL_CHECKPOINT)
-    layout_processor = load_layout_processor()
+    _apply_surya_runtime_patches()
 
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
@@ -1103,199 +1988,34 @@ def main(args=None):
         try:
             with fitz.open(pdf_path) as doc:
                 total_pages = len(doc)
-                print(json.dumps({"progress": 20, "message": f"[INFO] PDF 共 {total_pages} 頁，開始分批 (Chunk) 版面分析與 OCR..."}))
+                print(json.dumps({"progress": 20, "message": f"[INFO] PDF 共 {total_pages} 頁，開始雙解析度宏批次 (Macro-Batch) 版面偵測與 OCR..."}))
                 sys.stdout.flush()
 
+                macro_batch_size = 24 if _device == "cuda" else 9
                 chunk_size = 6 if _device == "cuda" else 3
-                pdf_info_list = []
+                pdf_info_list: list[dict[str, Any]] = []
 
-                for chunk_start in range(0, total_pages, chunk_size):
-                    chunk_end = min(chunk_start + chunk_size, total_pages)
-                    chunk_imgs = []
-                    for p_idx in range(chunk_start, chunk_end):
-                        p_doc_page: Any = doc[p_idx]
-                        pix = p_doc_page.get_pixmap(dpi=150)
-                        chunk_imgs.append(Image.frombytes("RGB", (pix.width, pix.height), pix.samples))
-
-                    pct = 20 + int(30 * (chunk_start / max(1, total_pages)))
-                    print(json.dumps({"progress": pct, "message": f"[INFO] 正在處理第 {chunk_start + 1}~{chunk_end} 頁 (共 {total_pages} 頁)..."}))
-                    sys.stdout.flush()
-
-                    chunk_layouts = batch_layout_detection(chunk_imgs, layout_model, layout_processor)
-
-                    ocr_slice_tasks = []
-                    all_slices_to_rec = []
-                    page_box_texts = [{} for _ in range(len(chunk_imgs))]
-                    page_box_labels = [{} for _ in range(len(chunk_imgs))]
-
-                    for offset, (img, layout) in enumerate(zip(chunk_imgs, chunk_layouts)):
-                        page_idx = chunk_start + offset
-                        p_page: Any = doc[page_idx]
-                        sx = img.width / max(1.0, p_page.rect.width)
-                        sy = img.height / max(1.0, p_page.rect.height)
-
-                        try:
-                            from src.extraction.table_reconstructor import extract_reconstructed_tables_from_page
-                            page_3line_tables = extract_reconstructed_tables_from_page(p_page)
-                        except Exception:
-                            page_3line_tables = []
-
-                        for idx, box in enumerate(layout.bboxes):
-                            poly = box.polygon
-                            if not poly or len(poly) == 0:
-                                continue
-                            xs = [p[0] for p in poly]
-                            ys = [p[1] for p in poly]
-                            bbox = [min(xs), min(ys), max(xs), max(ys)]
-                            label = box.label.lower()
-
-                            r = fitz.Rect(
-                                p_page.rect.x0 + bbox[0] / sx,
-                                p_page.rect.y0 + bbox[1] / sy,
-                                p_page.rect.x0 + bbox[2] / sx,
-                                p_page.rect.y0 + bbox[3] / sy,
-                            )
-                            r_area = max(0.0, float(r.width) * float(r.height))
-                            vec_text = p_page.get_text("text", clip=r).strip()
-
-                            # Check if box overlaps a reconstructed 3-line table on this page
-                            matched_3line_md = None
-                            for rtbl in page_3line_tables:
-                                tr = fitz.Rect(rtbl.bbox)
-                                if r.intersects(tr):
-                                    inter = r & tr
-                                    inter_area = max(0.0, float(inter.width) * float(inter.height))
-                                    tr_area = max(0.0, float(tr.width) * float(tr.height))
-                                    if inter_area > 0.25 * min(max(r_area, 1.0), max(tr_area, 1.0)):
-                                        matched_3line_md = rtbl.markdown
-                                        break
-
-                            if matched_3line_md:
-                                page_box_labels[offset][idx] = "table"
-                                page_box_texts[offset][idx] = matched_3line_md
-                                continue
-
-                            has_overlapping_image = False
-                            for img_info in p_page.get_images():
-                                for img_rect in p_page.get_image_rects(img_info[0]):
-                                    if r.intersects(img_rect):
-                                        inter = r & img_rect
-                                        inter_area = max(0.0, float(inter.width) * float(inter.height))
-                                        img_rect_area = max(0.0, float(img_rect.width) * float(img_rect.height))
-                                        if inter_area > 0.25 * min(r_area, img_rect_area):
-                                            has_overlapping_image = True
-                                            break
-                                if has_overlapping_image:
-                                    break
-
-                            # 判斷是否為誤標為 Picture 的短文字裝飾標題（如 ADR-006「（一）组方思路」）；保留真實向量圖表
-                            if label in ('picture', 'figure', 'image'):
-                                is_short_banner_title = (
-                                    bool(vec_text)
-                                    and len(vec_text) <= 25
-                                    and "\n" not in vec_text
-                                    and r.height < 48.0
-                                )
-                                if is_short_banner_title and not has_overlapping_image:
-                                    label = "text"
-                                    page_box_texts[offset][idx] = vec_text
-                                    page_box_labels[offset][idx] = label
-                                else:
-                                    page_box_texts[offset][idx] = ""
-                                    page_box_labels[offset][idx] = label
-                                continue
-
-                            page_box_labels[offset][idx] = label
-
-                            if vec_text:
-                                page_box_texts[offset][idx] = vec_text
-                            else:
-                                # 需要進行 OCR 識別（掃描檔或無向量字元）
-                                box_crop = img.crop((bbox[0], bbox[1], bbox[2], bbox[3]))
-                                box_h = max(1, int(bbox[3] - bbox[1]))
-                                if box_h >= 35:
-                                    slices = _slice_box_into_lines(box_crop)
-                                else:
-                                    slices = [box_crop]
-                                ocr_slice_tasks.append((offset, idx, len(slices)))
-                                all_slices_to_rec.extend(slices)
-
-                    if all_slices_to_rec:
-                        from surya.ocr import batch_recognition
-                        all_langs: Any = [["zh"]] * len(all_slices_to_rec)
-                        all_preds, _ = batch_recognition(
-                            all_slices_to_rec, all_langs, rec_model, rec_processor, batch_size=_rec_batch
+                for macro_start in range(0, total_pages, macro_batch_size):
+                    macro_end = min(macro_start + macro_batch_size, total_pages)
+                    macro_page_records = _run_phase_a_layout_det_macro_batch(
+                        doc=doc,
+                        macro_start=macro_start,
+                        macro_end=macro_end,
+                        chunk_size=chunk_size,
+                        total_pages=total_pages,
+                        fitz_mod=fitz,
+                        image_cls=Image,
+                    )
+                    pdf_info_list.extend(
+                        _run_phase_b_rec_macro_batch(
+                            doc=doc,
+                            macro_page_records=macro_page_records,
+                            macro_start=macro_start,
+                            chunk_size=chunk_size,
+                            total_pages=total_pages,
+                            image_cls=Image,
                         )
-                        s_idx = 0
-                        for offset, orig_idx, count in ocr_slice_tasks:
-                            preds = all_preds[s_idx : s_idx + count]
-                            s_idx += count
-                            combined = _join_ocr_line_slices(preds)
-                            page_box_texts[offset][orig_idx] = combined
-
-                    for offset, (img, layout) in enumerate(zip(chunk_imgs, chunk_layouts)):
-                        page_idx = chunk_start + offset
-                        para_blocks = []
-                        for idx, box in enumerate(layout.bboxes):
-                            poly = box.polygon
-                            if not poly or len(poly) == 0:
-                                continue
-                            xs = [p[0] for p in poly]
-                            ys = [p[1] for p in poly]
-                            bbox = [min(xs), min(ys), max(xs), max(ys)]
-
-                            box_text = page_box_texts[offset].get(idx, "")
-                            box_text = _clean_hallucinations(box_text)
-                            box_label = page_box_labels[offset].get(idx, box.label.lower())
-
-                            para_blocks.append({
-                                "original_label": box_label,
-                                "bbox": bbox,
-                                "surya_text": box_text,
-                                "type": None
-                            })
-
-                        # 依照 2D 自然幾何閱讀順序（水平橫帶與圖文卡片聚類）排序
-                        para_blocks = sort_blocks_2d_reading_order(para_blocks, img.width, img.height)
-                        # 合併因圖文環繞或切口被中斷之同一段落
-                        para_blocks = _merge_wrapping_paragraphs(para_blocks, page_w=img.width)
-
-                        pdf_info_list.append({
-                            "page_idx": page_idx,
-                            "page_size": [img.width, img.height],
-                            "para_blocks": para_blocks
-                        })
-
-                    # 顯式釋放當前批次之記憶體資源
-                    for c_img in chunk_imgs:
-                        try:
-                            c_img.close()
-                        except Exception:
-                            pass
-                    del chunk_imgs, chunk_layouts, all_slices_to_rec, ocr_slice_tasks, page_box_texts, page_box_labels
-                    import gc
-                    gc.collect()
-                    try:
-                        import torch
-                        if torch.cuda.is_available():
-                            torch.cuda.empty_cache()
-                    except Exception:
-                        pass
-
-            # 顯式釋放 Surya 模型佔用之顯存 (VRAM) 與記憶體
-            del rec_model, layout_model, rec_processor, layout_processor
-            rec_model = None
-            layout_model = None
-            rec_processor = None
-            layout_processor = None
-            import gc
-            gc.collect()
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
+                    )
 
             all_page_contents = []
             audit_records = []
@@ -1359,6 +2079,8 @@ def main(args=None):
                         "footnotes": parsed_entries
                     })
 
+                pages_data = _merge_cross_page_paragraphs(pages_data)
+
                 # Validate OCR blocks against strict LayoutRecordContract (P2/P3 Zero Raw-Dict Policy)
                 build_ocr_layout_contracts(pages_data)
 
@@ -1367,11 +2089,8 @@ def main(args=None):
                 images_dir = os.path.join(output_dir, "images", out_stem)
                 image_path_map = {}  # (page_num, block_idx) -> saved path
                 try:
-                    from src.scripts.pdf_image_extractor import (
-                        collect_image_blocks_from_surya,
-                        extract_pdf_images,
-                    )
-                    image_blocks = collect_image_blocks_from_surya(pdf_info_list)
+                    from src.scripts.pdf_image_extractor import extract_pdf_images
+                    image_blocks = _collect_image_blocks_from_surya(pdf_info_list)
                     if image_blocks:
                         image_path_map = extract_pdf_images(
                             pdf_path=pdf_path,
@@ -1488,10 +2207,13 @@ def __getattr__(name: str) -> Any:
         return _ensure_surya_loaded()
     if name in (
         "batch_layout_detection",
+        "batch_text_detection",
         "load_rec_model",
         "load_rec_processor",
         "load_layout_model",
         "load_layout_processor",
+        "load_det_model",
+        "load_det_processor",
         "settings",
     ):
         _ensure_surya_loaded()
@@ -1526,10 +2248,13 @@ def __dir__() -> list[str]:
         | {
             "SURYA_AVAILABLE",
             "batch_layout_detection",
+            "batch_text_detection",
             "load_rec_model",
             "load_rec_processor",
             "load_layout_model",
             "load_layout_processor",
+            "load_det_model",
+            "load_det_processor",
             "settings",
             "HeadingDetector",
             "MarkerDetector",

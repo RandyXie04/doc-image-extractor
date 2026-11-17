@@ -273,3 +273,56 @@ Accepted
 ### Related Bug
 
 BUG-014
+
+---
+
+## ADR-015 — 已裁切頁面之 SuryaOCR 雙解析度（150 DPI det+layout / 200 DPI rec）與零拋棄跨頁續接架構
+
+### Status
+
+Accepted
+
+### Context
+
+在純 OCR 管線（`src/scripts/process_ocr.py`）處理「文字轉曲（outlined/curved）」PDF 時，因頁面缺乏原生向量文字層（`p_page.get_text("text", clip=r)` 為空），所有內文完全依賴 Surya OCR 辨識。經實測與架構檢視發現，既有管線存在五項結構性缺陷，導致頁底段落截斷與漏行：
+
+1. **僅依賴 `layout_model`（150 DPI + `ImageSlicer`）而缺乏 `det` 文字行偵測**：Surya `layout_model` 預設會因 `ImageSlicer` 進行垂直切片，且缺少 `batch_text_detection`（`det_model`）的細粒度文字行邊界對齊，造成頁面底部的文字行常被版面模型截斷、漏框或未能涵蓋末尾短行。
+2. **投影行切片對頁底短尾行與淡筆畫過於嚴苛**：`_slice_box_into_lines` 原設定 `min_line_h=10`、二值化門檻 `arr < 185`、行像素門檻 `max(5, int(box_img.width * 0.01))` 及僅 `±2px` 裁切邊距，當頁底出現 1–3 字短尾行或筆畫較淡時極易被整行捨棄。
+3. **前端 `CropBox` 裁切後的雙重過濾與誤標 `Picture` 丟字**：前端路由（`src/web/routers/ocr_router.py`）已依 `header_ratio` 與 `footer_ratio` 透過 `page.set_cropbox(...)` 物理裁除頁眉頁尾，但後端仍受 Surya `PageFooter` / `PageHeader` 分類與 `sort_blocks_2d_reading_order` 中 `bbox[1] > page_h * 0.90`（`^\d{1,4}$`）規則誤殺頁底文字；同時，無重疊實體圖片的短文字或標題區塊若被版面模型誤標為 `Picture`，原僅於向量文字存在且滿足短橫幅條件時搶救，在轉曲 PDF 下整塊遭到丟棄。
+4. **單解析度 150 DPI 辨識率受限與多模型顯存競爭**：以 150 DPI 影像直接送入 `batch_recognition` 對密集小字與繁簡漢字辨識精度不足，而若將 `layout_model`、`det_model`、`rec_model` 同時常駐 VRAM 又會顯著推升 OOM 風險。
+5. **跨頁未完結段落缺乏接續**：頁底尚未結束的句子（或含未閉合書名號/引號如 `《`）在跨頁後未與次頁頂端無縮排正文無縫合併。
+
+### Decision
+
+1. **雙階段巨集批次（Two-Phase Macro-Batch）與雙解析度執行（150 DPI `layout+det` / 200 DPI `rec`）**：
+   - 於 `main()` 以巨集批次（`macro_batch_size = 24 if _device == "cuda" else 9`，內層 `chunk_size = 6 if _device == "cuda" else 3`）依序執行兩階段推理並嚴格隔離顯存生命週期：
+     - **Phase A（150 DPI `layout` + `det`）**（`_run_phase_a_layout_det_macro_batch`）：透過 `_ensure_surya_loaded()` 延遲載入 `batch_text_detection`、`load_det_model`、`load_det_processor`（並由 `_configure_local_surya_checkpoints()` 在 `models/surya_pt/det` 存在時設定 `DETECTOR_MODEL_CHECKPOINT`）。透過 `_sync_surya_settings()` 將 `settings.LAYOUT_SLICE_MIN` 設為 `{"height": 4000, "width": 4000}`、`settings.LAYOUT_SLICE_SIZE` 設為 `{"height": 3000, "width": 3000}` 以停用 150 DPI 垂直切片，同步執行 `batch_layout_detection` 與 `batch_text_detection` 並交由 `_reconcile_layout_and_det_lines()` 對帳，隨後立即 `del` 模型與處理器並呼叫 `_release_vram_cache()`（`gc.collect()` + `torch.cuda.empty_cache()`）釋放顯存。
+     - **Phase B（200 DPI `rec` 行級辨識）**（`_run_phase_b_rec_macro_batch`）：僅針對含 `_block_needs_ocr()` 區塊的頁面渲染 200 DPI 影像，透過 `_scale_bbox()` 將 150 DPI `line_bboxes_150` 座標縮放至 200 DPI 並加上上下 `±2px` 垂直邊距裁切後送入 `batch_recognition`；若區塊無 `line_bboxes_150` 且縮放高度 `>= 45px`，則回退至強化後的 `_slice_box_into_lines(box_img, min_line_h=8)`（`arr < 195`、`thresh = max(2, int(box_img.width * 0.004))`、`±3px` 垂直填充）。批次結束後立即卸載 `rec_model` / `rec_processor` 並呼叫 `_release_vram_cache()`。
+2. **前端 `CropBox` 內「零拋棄信任（Zero-Drop Trust）」原則**：
+   - 既然頁面已於前端經由 `CropBox` 完成頁眉頁尾裁切，裁切框內所有偵測內容預設皆為有效正文：
+     - `_normalize_layout_label()` 將 `PageFooter` / `PageHeader`（含 `page-footer` / `page-header`）降級為 `"text"`，並將 `listitem` / `list-item` / `textinlinemath` 歸一化為 `"text"`、`sectionheader` 歸一化為 `"section-header"`。
+     - **孤兒 `det` 文字行回收（Orphan `det` Line Recovery）**：在 `_reconcile_layout_and_det_lines()` 中，所有未分配給既有版面區塊、表格（`table_zones_150` 重疊 `<= 50%`）或光柵圖片（`image_rects_150` 重疊 `<= 50%`）的 `det` 文字行一律保留；依全頁行高中位數 `median_lh`（預設回退 `22.0`）檢查垂直距離（`-0.5 * median_lh <= y_gap <= 1.85 * median_lh`）、欄寬 X 重疊（`>= 0.25 * min(pw, lw)`）與非新段縮排（`lx0 - pb[0] < 1.5 * median_lh`），併入上方鄰近正文區塊並擴張 `bbox` 聯集，否則新建 `"text"` 區塊。
+     - **無實體光柵底圖之 `Picture` 文字搶救**：當 `picture` / `figure` / `image` 區塊無重疊 `image_rects_150`（交集 `<= 0.25 * min(r_area, img_area)`）且含 `vec_text` 或 `matched_det_lines` 時，將其 `original_label` 搶救為 `"text"` 並保留 `line_bboxes_150` 送交識別。
+     - 移除 `sort_blocks_2d_reading_order()` 中 `bbox[1] > page_h * 0.90` 之純數字頁碼過濾規則，僅保留極右側邊緣豎排章名切口標過濾（`bbox[0] > page_w * 0.88 and w < 25`）。
+3. **頁內幾何行歸組與跨頁段落續接**：
+   - 更新 `_merge_wrapping_paragraphs()` 接受 `_PROSE_MERGE_LABELS`，允許區塊間微幅重疊（`-15.0 <= y_gap <= line_height_thresh`），並透過 `_has_unclosed_paired_delimiter()` 追蹤 `《〈（(“‘【[「『` 等未閉合成對符號，合併時同步串接 `line_bboxes_150`。
+   - 新增 `_merge_cross_page_paragraphs(pages_data)`，於 `process_page_footnotes()` 之後、`build_ocr_layout_contracts(pages_data)` 之前執行：若前頁最後一個非空散文項未以終止標點（`_CROSS_PAGE_TERMINAL_RE`）結尾或含未閉合成對符號，且次頁首個非空散文項非 `#` / 標題、非表格/插圖/引言/腳注、非清單或腳注前綴（`_CROSS_PAGE_LIST_PREFIX_RE`）且無首行縮排（`_has_cross_page_first_line_indent()` 判定相對頁基準左界 `< 28.0px`），即以 `_join_cjk_pair()` 無縫續接並保留外層 `::: {custom-style="..."}` 容器。
+4. **維持前端 `footer_ratio=0.10` 預設值不變**：
+   - 保持 `src/web/static/ocr_pipeline.html`（`value="0.10"`）、`src/web/routers/ocr_router.py`（`Form(0.1)`）與 `src/scripts/pdf_engine_dispatcher.py`（`default=0.1`）之預設地腳裁切比例不變，確保 PyMuPDF 向量引擎（`src/scripts/book_layout_extractor.py`）與既有前端及 API 契約測試完全不受影響。
+
+### Alternatives
+
+- **替代方案 A：全管線統一以 200 DPI 或 300 DPI 執行 `layout_model` 與 `rec_model`**。高解析度整頁進入 `layout_model` 會大幅增加推論耗時與 VRAM 峰值，且仍可能觸發 `ImageSlicer` 切片造成區塊分裂；以 150 DPI 取得整頁全域版面與文字行框、再於 200 DPI 僅針對行框裁切進行文字辨識，兼具全域視角與高解析辨識率。
+- **替代方案 B：同時常駐 `layout_model`、`det_model` 與 `rec_model` 於記憶體中**。三模型同時駐留將顯著提高 GPU 顯存需求並引發低顯存裝置 OOM；巨集批次雙階段載入與卸載可將顯存占用收斂至單階段上限。
+- **替代方案 C：調降前端預設 `footer_ratio`（例如改為 `0.0`）**。會直接牽動 `book_layout_extractor.py` 向量通道的預設裁切行為並破壞既有前端預設值驗證，故維持前端 `footer_ratio=0.10` 不變，將修復聚焦於純 OCR 後端管線。
+
+### Consequences
+
+- 徹底解決文字轉曲 PDF 於 SuryaOCR 管線發生之頁底段落截斷、短尾行遺漏、`PageFooter` / `Picture` 誤棄與跨頁斷段問題。
+- 透過雙階段巨集批次與 `_release_vram_cache()`，在導入 `det_model` 與 200 DPI 行級識別後仍嚴格控制 VRAM 峰值；若執行環境缺少 `det_model`，管線仍可平滑退回 `det_bboxes=[]` 並使用強化版 `_slice_box_into_lines` 完成識別。
+- `build_ocr_layout_contracts(pages_data)` 強型別契約、前端預設 `footer_ratio=0.10` 與 PyMuPDF 向量通道皆維持 100% 向下相容。
+
+### Related Bug
+
+BUG-015
+

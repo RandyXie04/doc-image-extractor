@@ -17,7 +17,7 @@
             </a>
             <div>
                 <h1>圖片提取</h1>
-                <p class="page-lead">從 PDF 或 DOCX 取出內嵌的原始畫質圖片，打包成一個 ZIP。DOCX 只會取出文件中仍在使用的圖片，已刪除的歷史圖片不會出現。</p>
+                <p class="page-lead">提取 PDF / DOCX 內嵌原始圖片並打包為 ZIP。</p>
             </div>
         </header>
 
@@ -36,7 +36,6 @@
                     <input type="checkbox" id="toGrayscale" name="toGrayscale">
                     <span>
                         <span class="check-title">轉為灰階</span>
-                        <span class="hint" style="display:block;">適用黑白印刷。透明背景會填成白色。</span>
                     </span>
                 </label>
             </div>
@@ -54,7 +53,10 @@
         const statusDiv = document.getElementById('status');
         let currentFile = null;
 
-        dropZone.onclick = () => fileInput.click();
+        dropZone.onclick = (e) => {
+            if (e.target === fileInput) return;
+            fileInput.click();
+        };
         dropZone.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } };
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
         dropZone.ondragleave = () => dropZone.classList.remove('dragover');
@@ -68,11 +70,17 @@
         };
 
         function handleFile(file) {
+            if (!/\.(pdf|docx)$/i.test(file.name)) {
+                toolbox.notify('僅支援 .pdf 或 .docx 檔案', 'error');
+                fileInput.value = '';
+                return;
+            }
             if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
                 fileInput.value = '';
                 return;
             }
             currentFile = file;
+            fileInput.value = '';
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
             fileNameDisplay.innerHTML = `<span class="file-chip"><strong>${toolbox.escape(file.name)}</strong><small>${sizeMB} MB</small></span>`;
             submitBtn.disabled = false;
@@ -85,7 +93,8 @@
             if (!currentFile) return;
 
             submitBtn.disabled = true;
-            statusDiv.innerHTML = '<div class="alert">正在上傳並提取圖片，大型檔案可能需要數十秒。</div>';
+            submitBtn.textContent = '提取中…';
+            statusDiv.innerHTML = '';
 
             const formData = new FormData();
             formData.append('file', currentFile);
@@ -111,7 +120,6 @@
                                     <button type="button" class="btn btn-primary btn-sm" id="saveZipBtn">${toolbox.DOWNLOAD_ICON}另存 ZIP</button>
                                 </li>
                             </ul>
-                            <div class="result-note">檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀，請及時另存。</div>
                         </div>`;
                     document.getElementById('saveZipBtn').onclick = (ev) => toolbox.nativeSave({
                         sourcePath: result.source_path,
@@ -121,11 +129,14 @@
                         mountEl: document.getElementById('resultCard'),
                         label: 'ZIP'
                     });
+                    submitBtn.textContent = '重新提取圖片';
                 } else {
                     statusDiv.innerHTML = `<div class="alert alert-warning"><div class="alert-title">沒有找到內嵌圖片</div>${toolbox.escape(result.message || '此文件沒有可提取的內嵌圖片。若頁面上的圖是向量繪圖，請改用「全自動整稿」。')}</div>`;
+                    submitBtn.textContent = '重新提取圖片';
                 }
             } catch (err) {
                 statusDiv.innerHTML = toolbox.errorPanel('提取失敗', err.message, 'submitBtn.click()');
+                submitBtn.textContent = '開始提取圖片';
             } finally {
                 submitBtn.disabled = false;
             }

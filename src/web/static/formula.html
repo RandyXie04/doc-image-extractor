@@ -17,7 +17,7 @@
             </a>
             <div>
                 <h1>公式提取</h1>
-                <p class="page-lead">精準偵測 PDF 中的獨立公式並無損裁切，轉為 Word 可編輯文件與高畫質圖片包。</p>
+                <p class="page-lead">偵測 PDF 數學公式並裁切輸出圖片包 (.zip)。</p>
             </div>
         </header>
 
@@ -28,17 +28,13 @@
                 </svg>
                 <p class="dropzone-title" id="fileNameDisplay">點擊選擇，或將 PDF 檔案拖曳到這裡</p>
                 <p class="dropzone-sub">支援向量與掃描版 PDF</p>
-                <input type="file" id="fileInput" name="file" accept=".pdf" required>
+                <input type="file" id="fileInput" name="file" accept=".pdf">
             </div>
 
             <div id="previewContainer" class="panel" style="display: none;">
                 <div class="panel-row" style="margin-bottom: 0.75rem;">
                     <div>
                         <h3 class="panel-title">裁切邊界預覽</h3>
-                        <p class="hint" style="margin: 0;">設定頁面邊界，避開頁眉頁尾與邊欄裝飾圖示。</p>
-                        <p class="hint" style="margin: 0.25rem 0 0 0; color: var(--text-muted); font-size: 0.8rem;">
-                            <strong>右界中文保護</strong>：系統自動將公式右側條件說明、單位標註一併納入；若有中文將生成 <code>formula_right_boundary_chinese_review.txt</code> 供覆核。
-                        </p>
                     </div>
                     <div class="pager">
                         <button type="button" id="prevPageBtn" class="btn btn-secondary btn-sm">
@@ -51,13 +47,6 @@
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
                         </button>
                     </div>
-                </div>
-
-                <div class="crop-legend">
-                    <span><span class="swatch swatch-top"></span>頂部頁眉 (<span id="headerVal" class="val-top">0.10</span>)</span>
-                    <span><span class="swatch swatch-bottom"></span>底部頁尾 (<span id="footerVal" class="val-bottom">0.10</span>)</span>
-                    <span><span class="swatch swatch-side"></span>左側邊距 (<span id="leftVal" class="val-side">0.00</span>)</span>
-                    <span><span class="swatch swatch-side"></span>右側邊距 (<span id="rightVal" class="val-side">0.00</span>)</span>
                 </div>
 
                 <div class="slider-grid">
@@ -82,6 +71,13 @@
                 <div class="preview-frame">
                     <img id="previewImage" src="" alt="裁切預覽載入中">
                 </div>
+
+                <div class="crop-legend" style="margin-top: 0.75rem;">
+                    <span><span class="swatch swatch-top"></span>頂部頁眉<span id="headerVal" class="val-top" style="display:none;">0.10</span></span>
+                    <span><span class="swatch swatch-bottom"></span>底部頁尾<span id="footerVal" class="val-bottom" style="display:none;">0.10</span></span>
+                    <span><span class="swatch swatch-side"></span>左側邊距<span id="leftVal" class="val-side" style="display:none;">0.00</span></span>
+                    <span><span class="swatch swatch-side"></span>右側邊距<span id="rightVal" class="val-side" style="display:none;">0.00</span></span>
+                </div>
             </div>
 
             <div class="panel">
@@ -89,8 +85,7 @@
                     <label class="check">
                         <input type="checkbox" name="extract_inline" id="extractInline">
                         <span>
-                            <span class="check-title">包含顯著行內公式 (Inline Math)</span>
-                            <span class="hint" style="display:block;">預設僅提取獨立公式塊。若勾選，段落中長度顯著的公式亦會一併納入。</span>
+                            <span class="check-title">包含段落內長公式</span>
                         </span>
                     </label>
                 </div>
@@ -158,8 +153,11 @@
         const nextPageBtn = document.getElementById('nextPageBtn');
         const previewPageDisplay = document.getElementById('previewPageDisplay');
         const totalPagesDisplay = document.getElementById('totalPagesDisplay');
+        const startPageInput = document.getElementById('startPageInput');
+        const endPageInput = document.getElementById('endPageInput');
 
         let pollingInterval = null;
+        let currentFile = null;
         let currentFileId = null;
         let currentFileName = "";
         let currentFileOrigName = "";
@@ -173,7 +171,10 @@
             if (d && d.mode) appMode = d.mode;
         }).catch(() => {});
 
-        dropZone.onclick = () => fileInput.click();
+        dropZone.onclick = (e) => {
+            if (e.target === fileInput) return;
+            fileInput.click();
+        };
         dropZone.onkeydown = (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fileInput.click(); } };
         dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('dragover'); };
         dropZone.ondragleave = () => dropZone.classList.remove('dragover');
@@ -181,20 +182,32 @@
             e.preventDefault();
             dropZone.classList.remove('dragover');
             if (e.dataTransfer.files.length) {
-                fileInput.files = e.dataTransfer.files;
-                handleFileSelect();
+                handleFileSelect(e.dataTransfer.files[0]);
             }
         };
 
-        fileInput.onchange = handleFileSelect;
+        fileInput.onchange = () => {
+            if (fileInput.files.length) {
+                handleFileSelect(fileInput.files[0]);
+            }
+        };
 
-        async function handleFileSelect() {
-            if (!fileInput.files.length) return;
-            const file = fileInput.files[0];
+        async function handleFileSelect(fileArg) {
+            const file = fileArg || (fileInput.files && fileInput.files[0]);
+            if (!file) return;
             if (window.checkUploadFileSize && !window.checkUploadFileSize(file)) {
                 fileInput.value = "";
                 return;
             }
+            currentFile = file;
+            fileInput.value = "";
+
+            clearInterval(pollingInterval);
+            currentFileId = null;
+            progressArea.style.display = 'none';
+            logDetails.style.display = 'none';
+            statusDiv.innerHTML = '';
+
             currentFileName = file.name;
             currentFileOrigName = file.name.replace(/\.[^/.]+$/, "");
             const sizeMB = (file.size / (1024 * 1024)).toFixed(2);
@@ -220,13 +233,18 @@
                     currentPreviewPage = 1;
                     totalPagesDisplay.textContent = totalPdfPages;
                     previewPageDisplay.textContent = currentPreviewPage;
+                    startPageInput.value = '1';
+                    endPageInput.value = String(totalPdfPages);
 
                     previewContainer.style.display = 'block';
                     updatePreview();
                 }
             } catch (e) {
+                currentFile = null;
+                previewContainer.style.display = 'none';
                 fileNameDisplay.textContent = '點擊選擇，或將 PDF 檔案拖曳到這裡';
                 submitBtn.disabled = true;
+                submitBtn.textContent = '先選擇 PDF 檔案';
                 statusDiv.innerHTML = toolbox.errorPanel('上傳失敗', e.message, 'fileInput.click()');
             }
         }
@@ -281,6 +299,15 @@
                 return;
             }
 
+            const startRaw = startPageInput.value.trim();
+            const endRaw = endPageInput.value.trim();
+            const startNum = startRaw ? parseInt(startRaw, 10) : null;
+            const endNum = endRaw ? parseInt(endRaw, 10) : null;
+            if (startNum !== null && endNum !== null && !Number.isNaN(startNum) && !Number.isNaN(endNum) && startNum > endNum) {
+                toolbox.notify('起始頁碼不可大於結束頁碼', 'warning');
+                return;
+            }
+
             submitBtn.disabled = true;
             statusDiv.innerHTML = '';
             progressArea.style.display = 'block';
@@ -301,10 +328,8 @@
             formData.append('right_ratio', rightSlider.value);
             formData.append('extract_inline', document.getElementById('extractInline').checked);
 
-            const start = document.getElementById('startPageInput').value;
-            const end = document.getElementById('endPageInput').value;
-            formData.append('start_page', start ? parseInt(start, 10) - 1 : 0);
-            formData.append('end_page', end ? parseInt(end, 10) - 1 : 0);
+            formData.append('start_page', startNum !== null && !Number.isNaN(startNum) ? startNum - 1 : 0);
+            formData.append('end_page', endNum !== null && !Number.isNaN(endNum) ? endNum - 1 : 0);
 
             try {
                 const response = await fetch('/api/process', { method: 'POST', body: formData });
@@ -334,11 +359,11 @@
                     if (!response.ok) throw new Error(`狀態查詢異常 (${response.status})`);
                     const data = await response.json();
 
-                    if (data.status === 'processing') {
+                    if (data.status === 'processing' || data.status === 'queued') {
                         const pct = Math.round(data.progress || 0);
                         progressBar.style.width = pct + '%';
                         percentageText.textContent = pct + '%';
-                        statusMessage.textContent = data.message || '處理中…';
+                        statusMessage.textContent = data.message || (data.status === 'queued' ? '任務排隊等待中…' : '處理中…');
 
                         if (data.log) {
                             lastErrorLog = data.log;
@@ -364,15 +389,11 @@
                                     <li>
                                         <div>
                                             <span class="file-name">${toolbox.escape(zipName)}</span>
-                                            <span class="file-desc">包含所有無損裁切的公式圖片 (.png) 與對應的 LaTeX 語法檔案</span>
+                                            <span class="file-desc">公式截圖 (.png) 與右界中文覆核清單</span>
                                         </div>
                                         <button type="button" class="btn btn-primary btn-sm" id="saveZipBtn">${toolbox.DOWNLOAD_ICON}另存 ZIP</button>
                                     </li>
                                 </ul>
-                                <div class="result-note" style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
-                                    <span>檔案保留 ${window.APP_CONFIG.fileRetentionHours} 小時後自動銷毀，請及時另存。</span>
-                                    <button type="button" class="btn btn-secondary btn-sm" id="openFolderBtn">在檔案總管中顯示</button>
-                                </div>
                             </div>`;
 
                         document.getElementById('saveZipBtn').onclick = (ev) => toolbox.nativeSave({
@@ -383,16 +404,6 @@
                             mountEl: document.getElementById('resultCard'),
                             label: '公式 ZIP'
                         });
-
-                        document.getElementById('openFolderBtn').onclick = () => {
-                            if (sourceZipPath) {
-                                toolbox.openFolder(sourceZipPath);
-                            } else {
-                                fetch(`/api/open_folder/${taskId}`, { method: 'POST' }).catch(() => {
-                                    toolbox.notify('無法開啟本機檔案總管', 'warning');
-                                });
-                            }
-                        };
                     } else if (data.status === 'failed') {
                         clearInterval(pollingInterval);
                         submitBtn.disabled = false;
@@ -405,6 +416,13 @@
                             logDetails.open = true;
                         }
                         statusDiv.innerHTML = toolbox.errorPanel('公式提取失敗', data.message || '處理過程中發生異常', 'uploadForm.dispatchEvent(new Event("submit"))');
+                    } else if (data.status === 'cancelled' || data.status === 'not_found') {
+                        clearInterval(pollingInterval);
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = '重新處理';
+                        const msg = data.status === 'cancelled' ? '任務已取消' : '找不到任務狀態（可能已過期）';
+                        statusMessage.textContent = msg;
+                        toolbox.notify(msg, 'warning');
                     }
                 } catch (err) {
                     console.error('Polling error:', err);

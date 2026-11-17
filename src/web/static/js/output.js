@@ -71,7 +71,7 @@
         const original = button ? button.innerHTML : '';
         if (button) {
             button.disabled = true;
-            button.textContent = '請在開啟的視窗中選擇儲存位置…';
+            button.textContent = '選擇儲存位置…';
         }
         const restore = () => {
             if (button) {
@@ -96,20 +96,22 @@
             if (result.status === 'success') {
                 restore();
                 if (mountEl) {
-                    const id = 'saved-' + String(filename || 'file').replace(/[^\w.-]/g, '_');
-                    let info = document.getElementById(id);
+                    let info = /** @type {HTMLElement | null} */ (mountEl.querySelector('.saved-info'));
                     if (!info) {
                         info = document.createElement('div');
-                        info.id = id;
                         info.className = 'saved-info';
                         mountEl.appendChild(info);
                     }
-                    info.innerHTML = `<strong>${tb.escape(label || filename)} 已儲存到</strong><div class="path-box">${tb.escape(result.saved_path)}</div>`;
+                    info.style.display = 'flex';
+                    info.style.justifyContent = 'space-between';
+                    info.style.alignItems = 'center';
+                    info.style.flexWrap = 'wrap';
+                    info.style.gap = '8px';
+                    info.innerHTML = `<div style="min-width:0; flex:1 1 auto;"><strong>${tb.escape(label || filename)} 已儲存到</strong><div class="path-box">${tb.escape(result.saved_path)}</div></div>`;
                     const open = document.createElement('button');
                     open.type = 'button';
                     open.className = 'btn btn-secondary btn-sm';
-                    open.style.marginTop = '8px';
-                    open.textContent = '在檔案總管中顯示';
+                    open.textContent = '開啟資料夾';
                     open.onclick = () => openFolder(result.saved_path);
                     info.appendChild(open);
                 } else {
