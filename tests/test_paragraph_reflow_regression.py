@@ -20,6 +20,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Any
 import fitz
 
 from src.scripts.book_layout_extractor import (
@@ -44,7 +45,7 @@ class TestParagraphReflowRegression(unittest.TestCase):
         Each page is a list of tuples: (text, x, y, font, size).
         """
         pdf_path = self.test_dir / "sample.pdf"
-        doc = fitz.open()
+        doc: Any = fitz.open()
         for lines in pages_lines:
             p = doc.new_page(width=500, height=700)
             for text, x, y, font, size in lines:
