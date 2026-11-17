@@ -51,6 +51,7 @@ class LineRecord:
     spans: List[SpanRecord] = field(default_factory=list)
     block_id: str = ""
     line_order: int = 0
+    merged_line_ids: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -429,6 +430,165 @@ def calculate_boundary_evidence(
     )
 
 
+# ── Physical Line Stitching ───────────────────────────────────────────────────
+
+def _line_y_center(bbox: Tuple[float, float, float, float]) -> float:
+    return (bbox[1] + bbox[3]) * 0.5
+
+
+def _line_height(bbox: Tuple[float, float, float, float]) -> float:
+    return max(0.0, bbox[3] - bbox[1])
+
+
+def _lines_share_row(
+    a_bbox: Tuple[float, float, float, float],
+    b_bbox: Tuple[float, float, float, float],
+    body_size: float,
+    y_overlap_ratio: float,
+) -> bool:
+    """Returns True if two line bboxes belong to the same physical horizontal row."""
+    ay0, ay1 = a_bbox[1], a_bbox[3]
+    by0, by1 = b_bbox[1], b_bbox[3]
+    min_h = min(max(0.0, ay1 - ay0), max(0.0, by1 - by0))
+    if min_h <= max(1.0, body_size * 0.2):
+        return abs(_line_y_center(a_bbox) - _line_y_center(b_bbox)) <= body_size * 0.55
+    overlap = min(ay1, by1) - max(ay0, by0)
+    return overlap >= min_h * y_overlap_ratio
+
+
+def _should_insert_inline_space(
+    prev: LineRecord,
+    curr: LineRecord,
+    gap: float,
+    body_size: float,
+) -> bool:
+    """Returns True when a single space should separate two merged inline fragments."""
+    if gap <= max(2.0, body_size * 0.25):
+        return False
+    left_stripped = prev.text.rstrip()
+    right_stripped = curr.text.lstrip()
+    if not left_stripped or not right_stripped:
+        return False
+    if prev.text[-1].isspace() or curr.text[0].isspace():
+        return False
+    if is_cjk_boundary_character(left_stripped[-1]) or is_cjk_boundary_character(right_stripped[0]):
+        return False
+
+    prev_spans = [s for s in prev.spans if s.text]
+    curr_spans = [s for s in curr.spans if s.text]
+    prev_adj_small = bool(prev_spans and prev_spans[-1].font_size < body_size * 0.8)
+    curr_adj_small = bool(curr_spans and curr_spans[0].font_size < body_size * 0.8)
+    return not (prev_adj_small or curr_adj_small)
+
+
+def _merge_horizontal_fragments(
+    prev: LineRecord,
+    curr: LineRecord,
+    gap: float,
+    body_size: float,
+) -> LineRecord:
+    """Combines two adjacent horizontal LineRecord fragments into one LineRecord."""
+    insert_space = _should_insert_inline_space(prev, curr, gap, body_size)
+    merged_spans: List[SpanRecord] = list(prev.spans)
+    if insert_space and (prev.spans or curr.spans):
+        prev_spans = [s for s in prev.spans if s.text]
+        curr_spans = [s for s in curr.spans if s.text]
+        ref_span = prev_spans[-1] if prev_spans else (curr_spans[0] if curr_spans else None)
+        merged_spans.append(
+            SpanRecord(
+                text=" ",
+                bbox=(
+                    round(prev.bbox[2], 2),
+                    round(min(prev.bbox[1], curr.bbox[1]), 2),
+                    round(curr.bbox[0], 2),
+                    round(max(prev.bbox[3], curr.bbox[3]), 2),
+                ),
+                font_family=ref_span.font_family if ref_span else "SimSun",
+                font_size=ref_span.font_size if ref_span else body_size,
+                font_flags=0,
+            )
+        )
+    merged_spans.extend(curr.spans)
+
+    merged_text = prev.text + (" " if insert_space else "") + curr.text
+    merged_ids = list(prev.merged_line_ids or [prev.line_id]) + list(curr.merged_line_ids or [curr.line_id])
+
+    return LineRecord(
+        line_id=prev.line_id,
+        page_num=prev.page_num,
+        text=merged_text,
+        bbox=union_line_bboxes([prev, curr]),
+        spans=merged_spans,
+        block_id=prev.block_id,
+        line_order=prev.line_order,
+        merged_line_ids=merged_ids,
+    )
+
+
+def stitch_physical_lines(
+    lines: Sequence[LineRecord],
+    body_size: float = 10.5,
+    y_overlap_ratio: float = 0.45,
+    max_inline_gap: Optional[float] = None,
+) -> List[LineRecord]:
+    """
+    Clusters LineRecord fragments belonging to the same physical horizontal line,
+    sorts rows top-to-bottom and fragments left-to-right, and merges adjacent
+    fragments within gap_limit while keeping wide-gap columns/TOC items separate.
+    """
+    if not lines:
+        return []
+
+    safe_body_size = body_size if body_size > 0 else 10.5
+    gap_limit = max_inline_gap if max_inline_gap is not None else max(12.0, safe_body_size * 1.2)
+    ordered_input = sorted(lines, key=lambda ln: (_line_y_center(ln.bbox), ln.bbox[1], ln.bbox[0]))
+
+    rows: List[Tuple[Tuple[float, float, float, float], List[LineRecord]]] = []
+    for ln in ordered_input:
+        ln_yc = _line_y_center(ln.bbox)
+        best_idx = -1
+        best_dist = float("inf")
+        for idx, (anchor_bbox, _) in enumerate(rows):
+            if _lines_share_row(anchor_bbox, ln.bbox, safe_body_size, y_overlap_ratio):
+                dist = abs(_line_y_center(anchor_bbox) - ln_yc)
+                if dist < best_dist:
+                    best_dist = dist
+                    best_idx = idx
+
+        if best_idx >= 0:
+            anchor_bbox, row_items = rows[best_idx]
+            row_items.append(ln)
+            anchor_h = _line_height(anchor_bbox)
+            ln_h = _line_height(ln.bbox)
+            if anchor_h < safe_body_size * 0.8 <= ln_h <= safe_body_size * 2.0:
+                rows[best_idx] = (ln.bbox, row_items)
+        else:
+            rows.append((ln.bbox, [ln]))
+
+    rows.sort(
+        key=lambda row: (
+            row[0][1],
+            _line_y_center(row[0]),
+            min(item.bbox[0] for item in row[1]),
+        )
+    )
+
+    stitched: List[LineRecord] = []
+    for _, row_items in rows:
+        row_items.sort(key=lambda ln: (ln.bbox[0], ln.bbox[1]))
+        merged_row: List[LineRecord] = [row_items[0]]
+        for curr in row_items[1:]:
+            prev = merged_row[-1]
+            gap = curr.bbox[0] - prev.bbox[2]
+            if gap <= gap_limit:
+                merged_row[-1] = _merge_horizontal_fragments(prev, curr, gap, safe_body_size)
+            else:
+                merged_row.append(curr)
+        stitched.extend(merged_row)
+
+    return stitched
+
+
 # ── Page-Local Paragraph Reconstruction Engine ────────────────────────────────
 
 def reconstruct_page_paragraphs(
@@ -449,8 +609,9 @@ def reconstruct_page_paragraphs(
     if not lines:
         return []
 
-    # 1. Deterministic sorting (single-column reading flow by Y0, then X0)
-    sorted_lines = sorted(lines, key=lambda ln: (ln.bbox[1], ln.bbox[0]))
+    # 1. Stitch horizontally fragmented physical lines and sort deterministically
+    _, dom_body_size, _ = compute_character_weighted_typography(lines)
+    sorted_lines = stitch_physical_lines(lines, body_size=dom_body_size)
 
     # 2. Derive robust standard pitch if not explicitly provided
     resolved_pitch = standard_pitch or compute_standard_pitch(sorted_lines)
@@ -469,7 +630,12 @@ def reconstruct_page_paragraphs(
         full_text = join_line_texts(current_lines)
         union_bbox = union_line_bboxes(current_lines)
         dom_font, dom_size, bold_rat = compute_character_weighted_typography(current_lines)
-        source_ids = [ln.line_id for ln in current_lines]
+        source_ids: List[str] = []
+        for ln in current_lines:
+            if ln.merged_line_ids:
+                source_ids.extend(ln.merged_line_ids)
+            else:
+                source_ids.append(ln.line_id)
 
         # Check if single line was marked as standalone block
         is_standalone = (

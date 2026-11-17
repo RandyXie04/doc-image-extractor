@@ -29,6 +29,7 @@ from src.scripts.paragraph_reconstruction import (
     BoundaryEvidence,
     ParagraphRecord,
     reconstruct_page_paragraphs,
+    stitch_physical_lines,
     compute_character_weighted_typography,
     union_line_bboxes,
     join_line_texts,
@@ -360,6 +361,116 @@ class TestParagraphReconstruction(unittest.TestCase):
 
         union_box = union_line_bboxes([l1, l2])
         self.assertEqual(union_box, (60.0, 100.0, 350.0, 138.0))
+
+    # ── Physical Line Stitching Tests ────────────────────────────────────────
+    def test_stitch_superscript_plt_10_9_per_l(self):
+        """Superscript split with slightly smaller y0 (539.51 vs 540.81) must stitch left-to-right."""
+        left = LineRecord(
+            line_id="b1_l0",
+            page_num=127,
+            text="（PLT）低于100×10",
+            bbox=(60.0, 540.81, 165.0, 551.31),
+            spans=[SpanRecord("（PLT）低于100×10", (60.0, 540.81, 165.0, 551.31), "SimSun", 10.5)],
+            block_id="b1",
+            line_order=3,
+        )
+        right = LineRecord(
+            line_id="b2_l0",
+            page_num=127,
+            text="9/L，即有血小板减少。",
+            bbox=(165.2, 539.51, 290.0, 551.31),
+            spans=[
+                SpanRecord("9", (165.2, 539.51, 169.5, 545.63), "SimSun", 6.12),
+                SpanRecord("/L，即有血小板减少。", (169.5, 540.81, 290.0, 551.31), "SimSun", 10.5),
+            ],
+            block_id="b2",
+            line_order=0,
+        )
+
+        # Pass in reversed y0 order (how raw (y0, x0) sort would misorder them)
+        stitched = stitch_physical_lines([right, left], body_size=10.5)
+        self.assertEqual(len(stitched), 1)
+        merged = stitched[0]
+        self.assertEqual(merged.text, "（PLT）低于100×109/L，即有血小板减少。")
+        self.assertNotIn("^", merged.text)
+        self.assertNotIn("<sup>", merged.text)
+        self.assertEqual(merged.line_id, "b1_l0")
+        self.assertEqual(merged.block_id, "b1")
+        self.assertEqual(merged.page_num, 127)
+        self.assertEqual(merged.line_order, 3)
+        self.assertEqual(merged.bbox, (60.0, 539.51, 290.0, 551.31))
+        self.assertEqual([s.text for s in merged.spans], ["（PLT）低于100×10", "9", "/L，即有血小板减少。"])
+
+    def test_stitch_ca_2_plus_superscript(self):
+        """Ca + 2+ superscript split must merge with zero space even when horizontal gap > 2.6pt."""
+        ca = self._make_line("ca", "Ca", 100.0, 200.0, 114.0, 210.5, font="TimesNewRoman", size=10.5, block_id="b10", line_order=0)
+        sup = self._make_line("sup", "2+", 117.0, 198.2, 125.0, 204.3, font="TimesNewRoman", size=6.12, block_id="b11", line_order=0)
+        suffix = self._make_line("suf", "离子浓度", 125.5, 200.0, 168.0, 210.5, font="SimSun", size=10.5, block_id="b12", line_order=0)
+
+        stitched = stitch_physical_lines([sup, ca, suffix], body_size=10.5)
+        self.assertEqual(len(stitched), 1)
+        self.assertEqual(stitched[0].text, "Ca2+离子浓度")
+        self.assertEqual(stitched[0].line_id, "ca")
+        self.assertEqual(stitched[0].block_id, "b10")
+
+    def test_stitch_wide_gap_toc_and_multicolumn_not_merged(self):
+        """Wide-gap TOC page numbers and borderless multi-column lines must remain separate in L-to-R order."""
+        toc_title = self._make_line("toc_t", "第三章 血小板减少的诊断与治疗", 60.0, 120.0, 250.0, 132.0, block_id="b_toc_1")
+        toc_page = self._make_line("toc_p", "127", 411.8, 120.0, 430.0, 132.0, block_id="b_toc_2")
+        col_right = self._make_line("col_r", "Right column text", 280.0, 160.0, 420.0, 172.0, font="TimesNewRoman", block_id="b_col_r")
+        col_left = self._make_line("col_l", "Left column text", 60.0, 160.0, 200.0, 172.0, font="TimesNewRoman", block_id="b_col_l")
+
+        stitched = stitch_physical_lines([toc_page, col_right, toc_title, col_left], body_size=10.5)
+        self.assertEqual(len(stitched), 4)
+        self.assertEqual([ln.line_id for ln in stitched], ["toc_t", "toc_p", "col_l", "col_r"])
+
+    def test_stitch_multiline_block_with_embedded_split_fragment(self):
+        """Multi-line paragraph with an embedded superscript split must stitch and reflow cleanly."""
+        l1 = self._make_line("l1", "临床观察表明患者外周血", 81.0, 522.81, 440.0, 533.31, block_id="b1", line_order=0)
+        l2_a = self._make_line("l2a", "（PLT）低于100×10", 60.0, 540.81, 165.0, 551.31, block_id="b1", line_order=1)
+        l2_b = LineRecord(
+            line_id="l2b",
+            page_num=1,
+            text="9/L，且伴皮肤黏膜出血点时",
+            bbox=(165.1, 539.51, 440.0, 551.31),
+            spans=[
+                SpanRecord("9", (165.1, 539.51, 169.4, 545.63), "SimSun", 6.12),
+                SpanRecord("/L，且伴皮肤黏膜出血点时", (169.4, 540.81, 440.0, 551.31), "SimSun", 10.5),
+            ],
+            block_id="b2",
+            line_order=0,
+        )
+        l3 = self._make_line("l3", "应立即复查血常规并评估治疗方案。", 60.0, 558.81, 280.0, 569.31, block_id="b3", line_order=0)
+
+        stitched = stitch_physical_lines([l3, l2_b, l1, l2_a], body_size=10.5)
+        self.assertEqual(len(stitched), 3)
+        self.assertEqual(
+            [ln.text for ln in stitched],
+            [
+                "临床观察表明患者外周血",
+                "（PLT）低于100×109/L，且伴皮肤黏膜出血点时",
+                "应立即复查血常规并评估治疗方案。",
+            ],
+        )
+
+        paras = reconstruct_page_paragraphs([l3, l2_b, l1, l2_a], self.default_page, standard_pitch=18.0)
+        self.assertEqual(len(paras), 1)
+        self.assertEqual(
+            paras[0].text,
+            "临床观察表明患者外周血（PLT）低于100×109/L，且伴皮肤黏膜出血点时应立即复查血常规并评估治疗方案。",
+        )
+
+    def test_stitch_inline_latin_spacing_and_thin_span_fallback(self):
+        """Latin fragments with gap > 0.25*body_size get one space; CJK and zero-height spans handle cleanly."""
+        w1 = self._make_line("w1", "HLA-B27", 60.0, 100.0, 110.0, 110.5, font="TimesNewRoman")
+        w2 = self._make_line("w2", "positive", 114.0, 100.0, 155.0, 110.5, font="TimesNewRoman")
+        dash = self._make_line("dash", "-", 156.0, 105.2, 160.0, 105.2, font="TimesNewRoman")
+        w3 = self._make_line("w3", "group", 161.0, 100.0, 195.0, 110.5, font="TimesNewRoman")
+
+        stitched = stitch_physical_lines([w2, dash, w1, w3], body_size=10.5)
+        self.assertEqual(len(stitched), 1)
+        self.assertEqual(stitched[0].text, "HLA-B27 positive-group")
+        self.assertEqual([s.text for s in stitched[0].spans], ["HLA-B27", " ", "positive", "-", "group"])
 
 
 if __name__ == "__main__":

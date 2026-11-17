@@ -78,6 +78,24 @@ except ImportError:
     except ImportError:
         update_delimiter_stack = None
 
+try:
+    from src.scripts.paragraph_reconstruction import (
+        LineRecord,
+        SpanRecord,
+        stitch_physical_lines,
+    )
+except ImportError:
+    try:
+        from paragraph_reconstruction import (
+            LineRecord,
+            SpanRecord,
+            stitch_physical_lines,
+        )
+    except ImportError:
+        LineRecord = None
+        SpanRecord = None
+        stitch_physical_lines = None
+
 _fonts_json: Optional[str] = os.path.normpath(
     os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'fonts.json')
 )
@@ -891,6 +909,198 @@ def _compute_page_x_margins(body_blocks: List[Dict[str, Any]], page_w: float) ->
     return base_x0, max_x1
 
 
+def _lines_share_physical_row(
+    bbox_a: Sequence[float],
+    bbox_b: Sequence[float],
+    body_size: float,
+    y_overlap_ratio: float = 0.45,
+) -> bool:
+    """Return True if two line bboxes occupy the same physical horizontal row."""
+    h_a = max(0.0, float(bbox_a[3]) - float(bbox_a[1]))
+    h_b = max(0.0, float(bbox_b[3]) - float(bbox_b[1]))
+    min_h = min(h_a, h_b)
+    if min_h > 0.0:
+        overlap = min(float(bbox_a[3]), float(bbox_b[3])) - max(float(bbox_a[1]), float(bbox_b[1]))
+        if overlap >= min_h * y_overlap_ratio:
+            return True
+    yc_a = (float(bbox_a[1]) + float(bbox_a[3])) / 2.0
+    yc_b = (float(bbox_b[1]) + float(bbox_b[3])) / 2.0
+    return abs(yc_a - yc_b) <= body_size * 0.55
+
+
+def _line_record_to_pymupdf_line(
+    lr: Any,
+    orig_span_by_id: Dict[int, Dict[str, Any]],
+    orig_span_by_sig: Dict[Tuple[str, Tuple[float, ...], str], Dict[str, Any]],
+    orig_line_meta: Dict[str, Dict[str, Any]],
+    body_size: float,
+) -> Dict[str, Any]:
+    """Convert a stitched LineRecord back to a PyMuPDF-compatible line dict."""
+    py_spans: List[Dict[str, Any]] = []
+    for sr in getattr(lr, "spans", []):
+        sig = (sr.text, tuple(round(float(v), 2) for v in sr.bbox), sr.font_family)
+        orig = orig_span_by_id.get(id(sr)) or orig_span_by_sig.get(sig)
+        py_spans.append({
+            "text": sr.text,
+            "bbox": [round(float(v), 2) for v in sr.bbox],
+            "font": sr.font_family,
+            "size": float(sr.font_size),
+            "flags": int(sr.font_flags),
+            "origin": (
+                list(orig["origin"])
+                if (orig and "origin" in orig)
+                else [round(float(sr.bbox[0]), 2), round(float(sr.bbox[3]), 2)]
+            ),
+        })
+
+    # If stitch_physical_lines inserted ASCII space in lr.text without adding a space SpanRecord,
+    # materialize synthetic space spans so span concatenation matches lr.text verbatim.
+    lr_text = getattr(lr, "text", "") or ""
+    if py_spans and lr_text:
+        joined = "".join(sp["text"] for sp in py_spans)
+        if joined != lr_text and joined.replace(" ", "") == lr_text.replace(" ", ""):
+            synced_spans: List[Dict[str, Any]] = []
+            pos = 0
+            for sp in py_spans:
+                sp_txt = sp["text"]
+                if not sp_txt:
+                    continue
+                if pos < len(lr_text) and lr_text[pos] == " " and not sp_txt.startswith(" "):
+                    prev_sp = synced_spans[-1] if synced_spans else sp
+                    prev_bbox = prev_sp["bbox"]
+                    sp_bbox = sp["bbox"]
+                    synced_spans.append({
+                        "text": " ",
+                        "bbox": [
+                            prev_bbox[2],
+                            min(prev_bbox[1], sp_bbox[1]),
+                            max(prev_bbox[2], sp_bbox[0]),
+                            max(prev_bbox[3], sp_bbox[3]),
+                        ],
+                        "font": prev_sp["font"],
+                        "size": prev_sp["size"],
+                        "flags": prev_sp["flags"],
+                        "origin": [prev_bbox[2], prev_bbox[3]],
+                    })
+                    pos += 1
+                synced_spans.append(sp)
+                pos += len(sp_txt)
+            py_spans = synced_spans
+    elif not py_spans and lr_text:
+        py_spans = [{
+            "text": lr_text,
+            "bbox": [round(float(v), 2) for v in lr.bbox],
+            "font": "",
+            "size": float(body_size),
+            "flags": 0,
+            "origin": [round(float(lr.bbox[0]), 2), round(float(lr.bbox[3]), 2)],
+        }]
+
+    l_meta = orig_line_meta.get(getattr(lr, "line_id", ""), {})
+    return {
+        "bbox": [round(float(v), 2) for v in lr.bbox],
+        "wmode": l_meta.get("wmode", 0),
+        "dir": l_meta.get("dir", [1.0, 0.0]),
+        "spans": py_spans,
+    }
+
+
+def _stitch_body_lines_into_blocks(
+    body_blocks: List[Dict[str, Any]],
+    body_size: float,
+) -> List[Dict[str, Any]]:
+    """Expand body blocks into LineRecords, stitch physical line fragments, and repack into blocks."""
+    if not body_blocks or stitch_physical_lines is None or LineRecord is None or SpanRecord is None:
+        return list(body_blocks)
+
+    line_records: List[Any] = []
+    orig_span_by_id: Dict[int, Dict[str, Any]] = {}
+    orig_span_by_sig: Dict[Tuple[str, Tuple[float, ...], str], Dict[str, Any]] = {}
+    orig_line_meta: Dict[str, Dict[str, Any]] = {}
+
+    for b_idx, block in enumerate(body_blocks):
+        block_id = f"b{b_idx}"
+        blk_bbox = block.get("bbox", [0.0, 0.0, 0.0, 0.0])
+        for l_idx, line in enumerate(block.get("lines", [])):
+            span_records: List[Any] = []
+            for sp in line.get("spans", []):
+                txt = sp.get("text", "")
+                if not txt:
+                    continue
+                sp_bbox = sp.get("bbox") or line.get("bbox") or blk_bbox
+                sr = SpanRecord(
+                    text=txt,
+                    bbox=(float(sp_bbox[0]), float(sp_bbox[1]), float(sp_bbox[2]), float(sp_bbox[3])),
+                    font_family=str(sp.get("font") or ""),
+                    font_size=float(sp.get("size") or body_size or 10.5),
+                    font_flags=int(sp.get("flags") or 0),
+                )
+                span_records.append(sr)
+                orig_span_by_id[id(sr)] = sp
+                orig_span_by_sig[(sr.text, tuple(round(v, 2) for v in sr.bbox), sr.font_family)] = sp
+            if not span_records:
+                continue
+            ln_bbox = line.get("bbox") or _union_bboxes([sr.bbox for sr in span_records]) or blk_bbox
+            ln_id = f"{block_id}_l{l_idx}"
+            orig_line_meta[ln_id] = {
+                "wmode": line.get("wmode", 0),
+                "dir": line.get("dir", [1.0, 0.0]),
+            }
+            line_records.append(
+                LineRecord(
+                    line_id=ln_id,
+                    page_num=0,
+                    text="".join(sr.text for sr in span_records),
+                    bbox=(float(ln_bbox[0]), float(ln_bbox[1]), float(ln_bbox[2]), float(ln_bbox[3])),
+                    spans=span_records,
+                    block_id=block_id,
+                    line_order=l_idx,
+                )
+            )
+
+    if not line_records:
+        return []
+
+    stitched_lines = stitch_physical_lines(line_records, body_size=body_size)
+
+    repacked_blocks: List[Dict[str, Any]] = []
+    cur_block_id: Optional[str] = None
+    cur_lrs: List[Any] = []
+    cur_py_lines: List[Dict[str, Any]] = []
+
+    def _flush_repacked() -> None:
+        if not cur_py_lines:
+            return
+        blk_bbox = _union_bboxes([ln["bbox"] for ln in cur_py_lines]) or list(cur_py_lines[0]["bbox"])
+        repacked_blocks.append({
+            "type": 0,
+            "bbox": blk_bbox,
+            "lines": cur_py_lines,
+        })
+
+    for lr in stitched_lines:
+        py_line = _line_record_to_pymupdf_line(
+            lr, orig_span_by_id, orig_span_by_sig, orig_line_meta, body_size
+        )
+        same_block = bool(
+            cur_lrs
+            and lr.block_id
+            and lr.block_id == cur_block_id
+            and not _lines_share_physical_row(cur_lrs[-1].bbox, lr.bbox, body_size)
+        )
+        if same_block:
+            cur_lrs.append(lr)
+            cur_py_lines.append(py_line)
+        else:
+            _flush_repacked()
+            cur_block_id = lr.block_id
+            cur_lrs = [lr]
+            cur_py_lines = [py_line]
+
+    _flush_repacked()
+    return repacked_blocks
+
+
 def _build_interleaved_flow_items(
     body_blocks: List[Dict[str, Any]],
     figure_blocks: List[Dict[str, Any]],
@@ -913,8 +1123,7 @@ def _build_interleaved_flow_items(
         {"type": "reconstructed_table", "bbox": list(rtbl.bbox), "data": rtbl}
         for rtbl in reconstructed_tables
     )
-    flow_items.sort(key=lambda item: (item["bbox"][1], item["bbox"][0]))
-    return flow_items
+    return _sort_blocks_by_row_and_x(flow_items, y_tol=5.0)
 
 
 def _is_standard_regex_heading_text(text: str) -> bool:
@@ -2014,6 +2223,7 @@ def _process_single_pdf_page_layout(
     body_blocks, footnote_blocks, figure_blocks = _partition_page_blocks(
         blocks, page_w, page_h, body_size, enable_footnotes, strip_headers_heuristic, table_bboxes, audit_data
     )
+    body_blocks = _stitch_body_lines_into_blocks(body_blocks, body_size)
     page_footnotes = _parse_page_footnotes_from_blocks(footnote_blocks)
     base_x0, max_x1 = _compute_page_x_margins(body_blocks, page_w)
     flow_items = _build_interleaved_flow_items(body_blocks, figure_blocks, page_tables, reconstructed_tables)
