@@ -6,6 +6,7 @@
 - 驗證 PDF 圖片提取及灰階轉換
 """
 
+import io
 import os
 import shutil
 import tempfile
@@ -17,8 +18,10 @@ import docx
 import fitz
 
 from src.scripts.extract_images import (
+    IMAGE_EXTENSIONS,
     extract_from_docx,
     extract_from_pdf,
+    extract_from_pdf_with_manifest,
     convert_to_grayscale_helper,
     process_document_images,
 )
@@ -67,7 +70,7 @@ class TestExtractImages(unittest.TestCase):
         self.assertEqual(count, 1)
         files = os.listdir(out_dir)
         self.assertEqual(len(files), 1)
-        self.assertEqual(files[0], "image1.png")
+        self.assertEqual(files[0], "image_0001.png")
 
     def test_docx_transparent_png_grayscale_preserves_alpha(self):
         """測試含 Alpha 透明通道的 PNG 轉灰階時保留透明度，透明處不轉黑"""
@@ -85,7 +88,7 @@ class TestExtractImages(unittest.TestCase):
         count = extract_from_docx(doc_path, out_dir, to_grayscale=True)
         self.assertEqual(count, 1)
 
-        result_path = os.path.join(out_dir, "image1.png")
+        result_path = os.path.join(out_dir, "image_0001.png")
         res = Image.open(result_path)
 
         # 模式應為 LA (灰階 + Alpha)
@@ -153,14 +156,14 @@ class TestExtractImages(unittest.TestCase):
         count_every = extract_from_docx(doc_path, out_every)
         self.assertEqual(count_every, 2)
         files_every = sorted(os.listdir(out_every))
-        self.assertEqual(files_every, ["image1.png", "image2.png"])
+        self.assertEqual(files_every, ["image_0001.png", "image_0002.png"])
 
         # 2. 指定 unique 模式時僅提取 1 張圖
         out_unique = os.path.join(self.test_dir, "out_unique")
         count_unique = extract_from_docx(doc_path, out_unique, duplicate_policy="unique")
         self.assertEqual(count_unique, 1)
         files_unique = sorted(os.listdir(out_unique))
-        self.assertEqual(files_unique, ["image1.png"])
+        self.assertEqual(files_unique, ["image_0001.png"])
 
     def test_docx_alternate_content_fallback_not_double_counted(self):
         """測試 Word 的 AlternateContent (Choice + Fallback) 不會被誤判為重複引用兩次"""
@@ -199,7 +202,7 @@ class TestExtractImages(unittest.TestCase):
         count = extract_from_docx(ac_docx, out_ac)
         # 即使含 Choice 與 Fallback，單一圖片應仍只提取 1 張，不可誤計為 2 張
         self.assertEqual(count, 1)
-        self.assertEqual(os.listdir(out_ac), ["image1.png"])
+        self.assertEqual(os.listdir(out_ac), ["image_0001.png"])
 
     def test_docx_process_document_images_pipeline(self):
         """測試 process_document_images 整合流程自動打包多引用圖片"""
@@ -220,7 +223,271 @@ class TestExtractImages(unittest.TestCase):
 
         with zipfile.ZipFile(out_zip, "r") as z:
             extracted_names = sorted(z.namelist())
-            self.assertEqual(extracted_names, ["image1.png", "image2.png"])
+            self.assertEqual(extracted_names, ["image_0001.png", "image_0002.png"])
+
+    def test_docx_vml_bmp_and_dib_normalization(self):
+        """測試 VML v:imagedata .bmp 與 .dib (含檔頭及無檔頭) 正規化輸出為 .bmp"""
+        self.assertIn(".dib", IMAGE_EXTENSIONS)
+
+        bmp_buf = io.BytesIO()
+        Image.new("RGB", (24, 24), (10, 120, 230)).save(bmp_buf, format="BMP")
+        bmp_bytes = bmp_buf.getvalue()
+
+        headered_dib_bytes = bmp_bytes
+        raw_dib_bytes = bmp_bytes[14:]  # 剝除 BITMAPFILEHEADER 的純 DIB
+
+        docx_path = os.path.join(self.test_dir, "vml_dib.docx")
+        with zipfile.ZipFile(docx_path, "w") as z:
+            z.writestr(
+                "word/document.xml",
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"/>',
+            )
+            z.writestr(
+                "word/drawings/vmlDrawing1.vml",
+                '<xml xmlns:v="urn:schemas-microsoft-com:vml" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                '<v:shape id="s1"><v:imagedata r:id="rId1"/></v:shape>'
+                '<v:shape id="s2"><v:imagedata r:id="rId2"/></v:shape>'
+                '<v:shape id="s3"><v:imagedata r:id="rId3"/></v:shape>'
+                "</xml>",
+            )
+            z.writestr(
+                "word/drawings/_rels/vmlDrawing1.vml.rels",
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/pic1.bmp"/>'
+                '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/pic2.dib"/>'
+                '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/pic3.dib"/>'
+                "</Relationships>",
+            )
+            z.writestr("word/media/pic1.bmp", bmp_bytes)
+            z.writestr("word/media/pic2.dib", headered_dib_bytes)
+            z.writestr("word/media/pic3.dib", raw_dib_bytes)
+
+        out_dir = os.path.join(self.test_dir, "out_vml_dib")
+        count = extract_from_docx(docx_path, out_dir)
+        self.assertEqual(count, 3)
+        files = sorted(os.listdir(out_dir))
+        self.assertEqual(files, ["image_0001.bmp", "image_0002.bmp", "image_0003.bmp"])
+        for fname in files:
+            with Image.open(os.path.join(out_dir, fname)) as im:
+                self.assertEqual(im.format, "BMP")
+                self.assertEqual(im.size, (24, 24))
+
+        out_gray = os.path.join(self.test_dir, "out_vml_dib_gray")
+        count_gray = extract_from_docx(docx_path, out_gray, to_grayscale=True)
+        self.assertEqual(count_gray, 3)
+        for fname in sorted(os.listdir(out_gray)):
+            with Image.open(os.path.join(out_gray, fname)) as im:
+                self.assertEqual(im.format, "BMP")
+                self.assertEqual(im.mode, "L")
+
+    def test_docx_rels_normalization_strict_ooxml_and_fallback(self):
+        """測試 .rels 反斜線、大小寫、word/media 相對路徑、Strict OOXML 及 parsed_any_xml=True 時的備用回退"""
+        bmp_buf = io.BytesIO()
+        Image.new("RGB", (18, 18), (50, 60, 70)).save(bmp_buf, format="BMP")
+        bmp_bytes = bmp_buf.getvalue()
+
+        # 1. Strict OOXML + 反斜線 + 大小寫不一致 + word/media/ 無前導斜線
+        docx_norm = os.path.join(self.test_dir, "rels_norm.docx")
+        with zipfile.ZipFile(docx_norm, "w") as z:
+            z.writestr(
+                "word/document.xml",
+                '<w:document xmlns:w="http://purl.oclc.org/ooxml/wordprocessingml/main" '
+                'xmlns:r="http://purl.oclc.org/ooxml/officeDocument/relationships">'
+                '<w:body><w:p><w:r><w:pict r:id="rId1"/><w:pict r:id="rId2"/></w:r></w:p></w:body>'
+                "</w:document>",
+            )
+            z.writestr(
+                "word/_rels/document.xml.rels",
+                '<Relationships xmlns="http://purl.oclc.org/ooxml/officeDocument/relationships">'
+                '<Relationship Id="rId1" Target="MEDIA\\Image%20One.BMP"/>'
+                '<Relationship Id="rId2" Target="word/media/ImageTwo.BMP"/>'
+                "</Relationships>",
+            )
+            z.writestr("word/media/image one.bmp", bmp_bytes)
+            z.writestr("word/media/imagetwo.bmp", bmp_bytes)
+
+        out_norm = os.path.join(self.test_dir, "out_norm")
+        self.assertEqual(extract_from_docx(docx_norm, out_norm), 2)
+        self.assertEqual(sorted(os.listdir(out_norm)), ["image_0001.bmp", "image_0002.bmp"])
+
+        # 2. parsed_any_xml=True 但 active_images 為空時，仍應回退掃描 word/media/
+        docx_fallback = os.path.join(self.test_dir, "fallback.docx")
+        with zipfile.ZipFile(docx_fallback, "w") as z:
+            z.writestr(
+                "word/document.xml",
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                "<w:body><w:p><w:r><w:t>No image ref in XML</w:t></w:r></w:p></w:body>"
+                "</w:document>",
+            )
+            z.writestr("word/media/orphan.bmp", bmp_bytes)
+            z.writestr("word/media/not_image.txt", b"ignored")
+
+        out_fb = os.path.join(self.test_dir, "out_fb")
+        self.assertEqual(extract_from_docx(docx_fallback, out_fb), 1)
+        self.assertEqual(os.listdir(out_fb), ["image_0001.bmp"])
+
+    def test_docx_alternate_content_non_raster_choice_keeps_bmp_fallback(self):
+        """測試 AlternateContent 的 Choice 不含圖片關聯時保留 Fallback 內的 BMP"""
+        bmp_buf = io.BytesIO()
+        Image.new("RGB", (20, 20), (15, 180, 90)).save(bmp_buf, format="BMP")
+
+        docx_path = os.path.join(self.test_dir, "ac_non_raster.docx")
+        with zipfile.ZipFile(docx_path, "w") as z:
+            z.writestr(
+                "word/document.xml",
+                '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" '
+                'xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" '
+                'xmlns:v="urn:schemas-microsoft-com:vml" '
+                'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                "<w:body><w:p><w:r>"
+                "<mc:AlternateContent>"
+                '<mc:Choice Requires="wps"><w:drawing><w:t>Vector shape only</w:t></w:drawing></mc:Choice>'
+                '<mc:Fallback><w:pict><v:shape><v:imagedata r:id="rId1"/></v:shape></w:pict></mc:Fallback>'
+                "</mc:AlternateContent>"
+                "</w:r></w:p></w:body></w:document>",
+            )
+            z.writestr(
+                "word/_rels/document.xml.rels",
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Target="media/fallback.bmp"/>'
+                "</Relationships>",
+            )
+            z.writestr("word/media/fallback.bmp", bmp_buf.getvalue())
+
+        out_dir = os.path.join(self.test_dir, "out_ac_bmp")
+        count = extract_from_docx(docx_path, out_dir)
+        self.assertEqual(count, 1)
+        self.assertEqual(os.listdir(out_dir), ["image_0001.bmp"])
+
+    def test_docx_existing_slot_advances_without_inflating_count(self):
+        """測試目標目錄已有 image_0001.png 時自動遞增槽位且回傳實際提取數"""
+        img_path = os.path.join(self.test_dir, "s.png")
+        Image.new("RGB", (20, 20), (1, 2, 3)).save(img_path)
+
+        doc_path = os.path.join(self.test_dir, "slot.docx")
+        doc = docx.Document()
+        doc.add_paragraph().add_run().add_picture(img_path)
+        doc.save(doc_path)
+
+        out_dir = os.path.join(self.test_dir, "out_slot")
+        os.makedirs(out_dir, exist_ok=True)
+        with open(os.path.join(out_dir, "image_0001.png"), "wb") as f:
+            f.write(b"existing")
+
+        count = extract_from_docx(doc_path, out_dir)
+        self.assertEqual(count, 1)
+        self.assertEqual(sorted(os.listdir(out_dir)), ["image_0001.png", "image_0002.png"])
+
+    def test_pdf_devicegray_la_and_inverted_decode(self):
+        """測試 PDF DeviceGray (n=1)、DeviceGray+SMask (LA, n=2) 與反轉 Decode 圖片在灰階與彩色模式均不崩潰"""
+        pdf_path = os.path.join(self.test_dir, "gray_la.pdf")
+        doc = fitz.open()
+        page = doc.new_page(width=400, height=500)
+
+        pix_gray = fitz.Pixmap(fitz.csGRAY, fitz.IRect(0, 0, 24, 24), False)
+        pix_gray.set_rect(pix_gray.irect, (120,))
+        page.insert_image(fitz.Rect(20, 20, 80, 80), pixmap=pix_gray)
+
+        pix_la = fitz.Pixmap(fitz.csGRAY, fitz.IRect(0, 0, 24, 24), True)
+        pix_la.set_rect(pix_la.irect, (80, 200))
+        page.insert_image(fitz.Rect(20, 120, 80, 180), pixmap=pix_la)
+
+        pix_inv = fitz.Pixmap(fitz.csGRAY, fitz.IRect(0, 0, 24, 24), False)
+        pix_inv.set_rect(pix_inv.irect, (0,))
+        page.insert_image(fitz.Rect(20, 220, 80, 280), pixmap=pix_inv)
+
+        imgs = page.get_images(full=True)
+        doc.xref_set_key(imgs[0][0], "ColorSpace", "/DeviceGray")
+        doc.xref_set_key(imgs[1][0], "ColorSpace", "/DeviceGray")
+        doc.xref_set_key(imgs[2][0], "ColorSpace", "/DeviceGray")
+        doc.xref_set_key(imgs[2][0], "Decode", "[1 0]")
+        doc.save(pdf_path)
+        doc.close()
+
+        for gray_flag, subdir in [(False, "out_pdf_color"), (True, "out_pdf_gray")]:
+            out_dir = os.path.join(self.test_dir, subdir)
+            count = extract_from_pdf(pdf_path, out_dir, to_grayscale=gray_flag)
+            self.assertEqual(count, 3)
+            files = sorted(os.listdir(out_dir))
+            self.assertEqual(
+                files,
+                ["image_p0001_001.png", "image_p0001_002.png", "image_p0001_003.tif"],
+            )
+            with Image.open(os.path.join(out_dir, "image_p0001_001.png")) as im1:
+                self.assertEqual(im1.mode, "L")
+            with Image.open(os.path.join(out_dir, "image_p0001_002.png")) as im2:
+                self.assertEqual(im2.mode, "LA")
+            with Image.open(os.path.join(out_dir, "image_p0001_003.tif")) as im3:
+                self.assertEqual(im3.mode, "L")
+
+    def test_pdf_small_16x16_threshold(self):
+        """測試預設 min_width=16, min_height=16 可提取 16x16 小圖並過濾 15x15"""
+        img16 = os.path.join(self.test_dir, "img16.png")
+        img15 = os.path.join(self.test_dir, "img15.png")
+        Image.new("RGB", (16, 16), (255, 0, 0)).save(img16)
+        Image.new("RGB", (15, 15), (0, 255, 0)).save(img15)
+
+        pdf_path = os.path.join(self.test_dir, "small.pdf")
+        doc = fitz.open()
+        page = doc.new_page()
+        page.insert_image(fitz.Rect(20, 20, 40, 40), filename=img15)
+        page.insert_image(fitz.Rect(60, 20, 80, 40), filename=img16)
+        doc.save(pdf_path)
+        doc.close()
+
+        out_dir = os.path.join(self.test_dir, "out_small")
+        count = extract_from_pdf(pdf_path, out_dir)
+        self.assertEqual(count, 1)
+        self.assertEqual(os.listdir(out_dir), ["image_p0001_001.png"])
+
+    def test_pdf_duplicate_xref_reading_order_and_manifest(self):
+        """測試同頁重複 xref 不覆寫、依閱讀順序 (y0, x0) 排序，並驗證 manifest 結構"""
+        img_dup = os.path.join(self.test_dir, "dup.png")
+        img_mid = os.path.join(self.test_dir, "mid.png")
+        Image.new("RGB", (24, 24), (200, 10, 10)).save(img_dup)
+        Image.new("RGB", (24, 24), (10, 200, 10)).save(img_mid)
+
+        pdf_path = os.path.join(self.test_dir, "order.pdf")
+        doc = fitz.open()
+        page = doc.new_page(width=400, height=600)
+        # 故意先插入下方 (y0=300)，再插中間 (y0=200)，最後插上方重複圖 (y0=100)
+        page.insert_image(fitz.Rect(50, 300, 100, 350), filename=img_dup)
+        page.insert_image(fitz.Rect(50, 200, 100, 250), filename=img_mid)
+        page.insert_image(fitz.Rect(50, 100, 100, 150), filename=img_dup)
+        doc.save(pdf_path)
+        doc.close()
+
+        out_every = os.path.join(self.test_dir, "out_order_every")
+        count, manifest = extract_from_pdf_with_manifest(pdf_path, out_every)
+        self.assertEqual(count, 3)
+        self.assertEqual(len(manifest), 3)
+        self.assertEqual(
+            sorted(os.listdir(out_every)),
+            ["image_p0001_001.png", "image_p0001_002.png", "image_p0001_003.png"],
+        )
+
+        # 驗證閱讀順序 (y0: 100 -> 200 -> 300) 與 manifest 欄位
+        self.assertEqual([m["seq"] for m in manifest], [1, 2, 3])
+        self.assertTrue(all(m["page_num"] == 1 for m in manifest))
+        self.assertTrue(all(os.path.isfile(m["path"]) for m in manifest))
+        y0s = [m["bbox"][1] for m in manifest]
+        self.assertEqual(y0s, [100.0, 200.0, 300.0])
+
+        # 頂部/底部為紅色 dup，中間為綠色 mid
+        with Image.open(manifest[0]["path"]) as im_top:
+            self.assertEqual(im_top.convert("RGB").getpixel((12, 12)), (200, 10, 10))
+        with Image.open(manifest[1]["path"]) as im_mid:
+            self.assertEqual(im_mid.convert("RGB").getpixel((12, 12)), (10, 200, 10))
+        with Image.open(manifest[2]["path"]) as im_bot:
+            self.assertEqual(im_bot.convert("RGB").getpixel((12, 12)), (200, 10, 10))
+
+        # unique 模式應只保留 2 張不重複 xref
+        out_unique = os.path.join(self.test_dir, "out_order_unique")
+        count_u, manifest_u = extract_from_pdf_with_manifest(pdf_path, out_unique, duplicate_policy="unique")
+        self.assertEqual(count_u, 2)
+        self.assertEqual(len(manifest_u), 2)
+        self.assertEqual(sorted(os.listdir(out_unique)), ["image_p0001_001.png", "image_p0001_002.png"])
 
 
 if __name__ == "__main__":

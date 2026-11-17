@@ -242,7 +242,7 @@ class TestSymbolMapperAndOcrFixes(unittest.TestCase):
 
             extracted_files = os.listdir(out_dir)
             self.assertEqual(len(extracted_files), 1)
-            self.assertTrue(extracted_files[0].startswith("page_0002_"))
+            self.assertTrue(extracted_files[0].startswith("image_p0002_"))
 
     def test_reconcile_layout_and_det_recovers_bottom_orphan_lines(self):
         """驗證雙解析度對帳能救回被版面模型遺漏或截斷的頁底孤兒文字行，並依幾何位置併入上方段落或獨立成塊"""

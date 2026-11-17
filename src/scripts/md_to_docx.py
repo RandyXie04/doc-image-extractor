@@ -1,7 +1,9 @@
 import os
 import glob
+import re
 import sys
 import argparse
+from typing import Optional
 if hasattr(sys.stdout, "reconfigure"):
     getattr(sys.stdout, "reconfigure")(encoding='utf-8')
 from pathlib import Path
@@ -101,6 +103,64 @@ def apply_table_styles_to_docx(docx_path: str) -> None:
     except Exception as e:
         print(f"[Warning] 表格樣式後處理失敗: {e}")
 
+_INTERNAL_IMAGE_EXTENSIONS = (
+    ".png", ".jpg", ".jpeg", ".webp", ".bmp", ".dib", ".tif", ".tiff", ".gif"
+)
+
+
+def _should_clear_image_alt_text(alt_text: str) -> bool:
+    """Return True if alt_text is an internal extracted filename (image_*/page_* or image extension)."""
+    if not alt_text:
+        return False
+    lowered = alt_text.strip().lower()
+    return lowered.startswith(("image_", "page_")) or lowered.endswith(_INTERNAL_IMAGE_EXTENSIONS)
+
+
+def _resolve_img_path(
+    m: re.Match,
+    md_base_dir: str,
+    default_img_width: Optional[str] = None,
+) -> str:
+    """Resolve a Markdown image match, clearing internal filename alt text and normalizing relative paths."""
+    alt_text = m.group(1)
+    img_path_raw = m.group(2)
+    attrs = m.group(3) or ''
+
+    # 若 alt_text 是內部圖檔名稱（以 image_/page_ 開頭或含常見圖片副檔名），清空之
+    if _should_clear_image_alt_text(alt_text):
+        alt_text = ''
+
+    # 若尚未指定 width 屬性，且有預設寬度，則自動補上
+    if default_img_width and 'width=' not in attrs:
+        if attrs.strip():
+            attrs = attrs.rstrip('}') + f' width={default_img_width}}}'
+        else:
+            attrs = f'{{width={default_img_width}}}'
+
+    # 若已是絕對路徑或網路 URL，則不處理路徑
+    if os.path.isabs(img_path_raw) or img_path_raw.startswith(('http://', 'https://')):
+        return f"![{alt_text}]({img_path_raw}){attrs}"
+
+    abs_img = os.path.normpath(os.path.join(md_base_dir, img_path_raw))
+    if os.path.exists(abs_img):
+        # 使用正斜線以確保跨平台相容性
+        return f"![{alt_text}]({abs_img.replace(os.sep, '/')}){attrs}"
+    return f"![{alt_text}]({img_path_raw}){attrs}"
+
+
+def rewrite_markdown_image_paths(
+    md_content: str,
+    md_base_dir: str,
+    default_img_width: Optional[str] = None,
+) -> str:
+    """Rewrite Markdown image tags to clear internal alt text, inject default width, and resolve paths."""
+    return re.sub(
+        r'!\[([^\]]*)\]\(([^)]+)\)(\{[^}]*\})?',
+        lambda m: _resolve_img_path(m, md_base_dir=md_base_dir, default_img_width=default_img_width),
+        md_content,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description="Convert Markdown to Word Document.")
     parser.add_argument('--files', '--target', nargs='+', help="Specific markdown files to convert")
@@ -159,7 +219,6 @@ def main():
     print(f"Found {len(md_files)} Markdown files to convert.")
     
     import uuid
-    import re
     import tempfile
     import json
     
@@ -236,33 +295,11 @@ def main():
             md_base_dir = os.path.dirname(os.path.abspath(md_path))
             default_img_width = args.image_width if getattr(args, 'image_width', None) and args.image_width.lower() != 'none' else None
 
-            def _resolve_img_path(m):
-                alt_text = m.group(1)
-                img_path_raw = m.group(2)
-                attrs = m.group(3) or ''
-
-                # 若 alt_text 是內部圖檔名稱（例如以 image_ 開頭或含常見圖片副檔名），清空之
-                if alt_text and (alt_text.startswith('image_') or any(alt_text.lower().endswith(ext) for ext in ['.png', '.jpg', '.jpeg', '.webp'])):
-                    alt_text = ''
-
-                # 若尚未指定 width 屬性，且有預設寬度，則自動補上
-                if default_img_width and 'width=' not in attrs:
-                    if attrs.strip():
-                        attrs = attrs.rstrip('}') + f' width={default_img_width}}}'
-                    else:
-                        attrs = f'{{width={default_img_width}}}'
-
-                # 若已是絕對路徑或網路 URL，則不處理路徑
-                if os.path.isabs(img_path_raw) or img_path_raw.startswith(('http://', 'https://')):
-                    return f"![{alt_text}]({img_path_raw}){attrs}"
-
-                abs_img = os.path.normpath(os.path.join(md_base_dir, img_path_raw))
-                if os.path.exists(abs_img):
-                    # 使用正斜線以確保跨平台相容性
-                    return f"![{alt_text}]({abs_img.replace(os.sep, '/')}){attrs}"
-                return f"![{alt_text}]({img_path_raw}){attrs}"
-
-            md_content = re.sub(r'!\[([^\]]*)\]\(([^)]+)\)(\{[^}]*\})?', _resolve_img_path, md_content)
+            md_content = rewrite_markdown_image_paths(
+                md_content,
+                md_base_dir=md_base_dir,
+                default_img_width=default_img_width,
+            )
             
             # 清理未指定任何路徑之空白圖片標記（如 ![img]()），避免 Pandoc 輸出警告並殘留 'img' 文字
             md_content = re.sub(r'(?m)^\s*!\[[^\]]*\]\(\s*\)(?:\{[^\n}]*\})?\s*\n?', '', md_content)
