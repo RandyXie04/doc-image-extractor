@@ -312,3 +312,356 @@ class TestThreeLineTableAndHeadingFixes:
         assert len(disc_paras) == 1
         assert disc_paras[0].text.strip() == "4 　讨论"
         assert disc_paras[0].style is not None and disc_paras[0].style.name in ("Heading 2", "標題 2")
+
+
+def _draw_full_grid_table(page: Any, x_edges: list[float], y_edges: list[float], rows_data: list[list[str]]) -> None:
+    """Draw a full-grid vector table (horizontal + vertical lines) and place cell text."""
+    for y in y_edges:
+        page.draw_line(fitz.Point(x_edges[0], y), fitz.Point(x_edges[-1], y), color=(0, 0, 0), width=0.6)
+    for x in x_edges:
+        page.draw_line(fitz.Point(x, y_edges[0]), fitz.Point(x, y_edges[-1]), color=(0, 0, 0), width=0.6)
+    for r_idx, row_vals in enumerate(rows_data):
+        y_text = y_edges[r_idx] + 15.0
+        for c_idx, txt in enumerate(row_vals):
+            page.insert_text((x_edges[c_idx] + 4.0, y_text), txt, fontsize=9.0, fontname="china-ss")
+
+
+class TestBorderedMultiPageAndTocTableGuards:
+    """Regression suite for full-grid multi-page tables, TOC rule false positives, and 续表 merging."""
+
+    def test_full_grid_bordered_multipage_table_not_sliced_and_merged(self, tmp_path):
+        """
+        Full-grid vertical-bordered tables across pages must NOT be sliced by
+        detect_three_line_table_regions, and must coalesce across '续表' boundaries
+        while stripping duplicate headers.
+        """
+        from src.scripts.book_layout_extractor import _parse_pdf_layout_flow
+
+        pdf_path = tmp_path / "multipage_grid.pdf"
+        doc: Any = fitz.open()
+        x_edges = [60.0, 105.0, 210.0, 320.0, 440.0]
+
+        # Page 1: Caption + 6-row full-grid table
+        p1 = doc.new_page(width=500.0, height=700.0)
+        p1.insert_text((130.0, 70.0), "106味药食同源中药信息一览表", fontsize=11.0, fontname="china-ss")
+        p1_rows = [
+            ["序号", "药材名称", "产地", "功效"],
+            ["1", "八角茴香", "广西", "温阳散寒"],
+            ["2", "白扁豆", "安徽", "健脾化湿"],
+            ["3", "白扁豆花", "浙江", "解暑化湿"],
+            ["4", "白果", "江苏", "敛肺定喘"],
+            ["5", "百合", "湖南", "养阴润肺"],
+        ]
+        _draw_full_grid_table(p1, x_edges, [90.0 + 25.0 * i for i in range(len(p1_rows) + 1)], p1_rows)
+
+        # Page 2: '续表' + repeated header + rows 6..8 + trailing attribution
+        p2 = doc.new_page(width=500.0, height=700.0)
+        p2.insert_text((60.0, 75.0), "续表", fontsize=10.0, fontname="china-ss")
+        p2_rows = [
+            ["序号", "药材名称", "产地", "功效"],
+            ["6", "白芷", "四川", "解表散寒"],
+            ["7", "薄荷", "江苏", "疏散风热"],
+            ["8", "紫苏", "浙江", "解表散寒"],
+        ]
+        _draw_full_grid_table(p2, x_edges, [90.0 + 25.0 * i for i in range(len(p2_rows) + 1)], p2_rows)
+        p2.insert_text((360.0, 240.0), "（胡少博）", fontsize=10.0, fontname="china-ss")
+
+        doc.save(str(pdf_path))
+        doc.close()
+
+        with fitz.open(str(pdf_path)) as opened:
+            assert detect_three_line_table_regions(opened[0]) == []
+            assert detect_three_line_table_regions(opened[1]) == []
+
+            md_pages, _, _, layout_records = _parse_pdf_layout_flow(opened, enable_footnotes=False)
+
+        table_recs = [r for r in layout_records if r["type"] == "table"]
+        assert len(table_recs) == 1
+        md = table_recs[0]["raw_md"]
+        lines = md.splitlines()
+        assert len(lines) == 10  # 1 header + 1 separator + 8 data rows
+        assert "续表" not in "\n".join(md_pages)
+        for idx in range(1, 9):
+            assert any(ln.startswith(f"| {idx} |") for ln in lines[2:])
+        assert sum(1 for ln in lines if "药材名称" in ln) == 1
+        assert any("（胡少博）" in r.get("raw_text", "") for r in layout_records)
+
+    def test_bordered_table_and_three_line_table_coexist_on_same_page(self, tmp_path):
+        """A full-grid bordered table right above a three-line table must not block or bleed into it."""
+        from src.scripts.book_layout_extractor import _parse_pdf_layout_flow
+
+        pdf_path = tmp_path / "coexist.pdf"
+        doc: Any = fitz.open()
+        page = doc.new_page(width=515.9, height=728.5)
+
+        # Full-grid table at top (y=80..155)
+        _draw_full_grid_table(
+            page,
+            [70.0, 180.0, 320.0, 440.0],
+            [80.0, 105.0, 130.0, 155.0],
+            [["分级", "指标A", "指标B"], ["0级", "正常", "正常"], ["I级", "轻度", "轻度"]],
+        )
+
+        # Borderless three-line table below (y=195..290)
+        page.draw_line(fitz.Point(76.0, 195.0), fitz.Point(458.0, 195.0), width=1.0)
+        page.draw_line(fitz.Point(76.0, 215.0), fitz.Point(458.0, 215.0), width=0.5)
+        page.draw_line(fitz.Point(76.0, 285.0), fitz.Point(458.0, 285.0), width=1.0)
+        for cx, txt in [(85.0, "组别"), (210.0, "时间"), (340.0, "数值")]:
+            page.insert_text((cx, 208.0), txt, fontsize=9.0, fontname="china-ss")
+        for ry, row_t in [(235.0, ("甲组", "治疗前", "12.5")), (265.0, ("乙组", "治疗后", "8.3"))]:
+            for cx, txt in zip([85.0, 210.0, 340.0], row_t):
+                page.insert_text((cx, ry), txt, fontsize=9.0, fontname="china-ss")
+
+        doc.save(str(pdf_path))
+        doc.close()
+
+        with fitz.open(str(pdf_path)) as opened:
+            three_line_regs = detect_three_line_table_regions(opened[0])
+            assert len(three_line_regs) == 1
+            assert three_line_regs[0].top_rule_y >= 190.0
+
+            _, _, _, layout_records = _parse_pdf_layout_flow(opened, enable_footnotes=False)
+        table_recs = [r for r in layout_records if r["type"] == "table"]
+        assert len(table_recs) == 2
+        assert "分级" in table_recs[0]["raw_md"]
+        assert "甲组" in table_recs[1]["raw_md"]
+
+    def test_toc_decorative_horizontal_rules_not_detected_as_tables(self, tmp_path):
+        """Decorative TOC horizontal rules framing chapter lines must produce 0 three-line tables."""
+        pdf_path = tmp_path / "toc_rules.pdf"
+        doc: Any = fitz.open()
+        page = doc.new_page(width=490.4, height=697.3)
+        page.insert_text((370.0, 100.0), "目 录", fontsize=16.0, fontname="china-ss")
+
+        # Chapter 1 pair of decorative horizontal rules
+        page.draw_line(fitz.Point(70.9, 109.2), fitz.Point(331.0, 109.2), color=(0.6, 0.8, 0.5), width=1.0)
+        page.insert_text((70.9, 124.0), "第一章　总　论 1", fontsize=11.0, fontname="china-ss")
+        page.draw_line(fitz.Point(70.9, 132.5), fitz.Point(331.0, 132.5), color=(0.6, 0.8, 0.5), width=1.0)
+        page.insert_text((70.9, 148.0), "　第一节　药食同源的概念 1", fontsize=10.0, fontname="china-ss")
+        page.insert_text((70.9, 170.0), "　第二节　药食同源的渊源 4", fontsize=10.0, fontname="china-ss")
+
+        # Chapter 2 pair of decorative horizontal rules
+        page.draw_line(fitz.Point(70.9, 237.0), fitz.Point(331.0, 237.0), color=(0.6, 0.8, 0.5), width=1.0)
+        page.insert_text((70.9, 252.0), "第二章　消化系统不良反应 22", fontsize=11.0, fontname="china-ss")
+        page.draw_line(fitz.Point(70.9, 260.3), fitz.Point(331.0, 260.3), color=(0.6, 0.8, 0.5), width=1.0)
+
+        # Appendix single framed entry followed by bibliography rule (mimicking P.11 edge case)
+        page.draw_line(fitz.Point(70.9, 391.7), fitz.Point(331.0, 391.7), color=(0.6, 0.8, 0.5), width=1.0)
+        page.insert_text((70.9, 406.0), "附　录 283", fontsize=11.0, fontname="china-ss")
+        page.draw_line(fitz.Point(70.9, 415.1), fitz.Point(331.0, 415.1), color=(0.6, 0.8, 0.5), width=1.0)
+        page.draw_line(fitz.Point(70.9, 434.3), fitz.Point(331.0, 434.3), color=(0.6, 0.8, 0.5), width=1.0)
+        page.insert_text((70.9, 449.0), "参考文献 293", fontsize=11.0, fontname="china-ss")
+
+        # Page 2 of TOC without '目 录' heading and without dot leaders
+        page2 = doc.new_page(width=490.4, height=697.3)
+        page2.draw_line(fitz.Point(70.9, 109.2), fitz.Point(331.0, 109.2), color=(0.6, 0.8, 0.5), width=1.0)
+        page2.insert_text((70.9, 124.0), "一、总论概要 12", fontsize=11.0, fontname="china-ss")
+        page2.draw_line(fitz.Point(70.9, 132.5), fitz.Point(331.0, 132.5), color=(0.6, 0.8, 0.5), width=1.0)
+        page2.insert_text((70.9, 148.0), "1.1 核心理论 15", fontsize=10.0, fontname="china-ss")
+        page2.draw_line(fitz.Point(70.9, 165.0), fitz.Point(331.0, 165.0), color=(0.6, 0.8, 0.5), width=1.0)
+
+        doc.save(str(pdf_path))
+        doc.close()
+
+        with fitz.open(str(pdf_path)) as opened:
+            assert detect_three_line_table_regions(opened[0]) == []
+            assert detect_three_line_table_regions(opened[1]) == []
+
+    def test_cross_page_merge_guards_and_clean_cjk_cell_joining(self):
+        """
+        Tests merge_gfm_tables_if_compatible, clean_table_cell_text, and process_ocr
+        _merge_cross_page_tables / _reconcile_layout_and_det_lines deduplication.
+        """
+        from src.extraction.table_reconstructor import (
+            clean_table_cell_text,
+            merge_gfm_tables_if_compatible,
+        )
+        from src.scripts.process_ocr import (
+            _merge_cross_page_tables,
+            _reconcile_layout_and_det_lines,
+        )
+
+        # Clean cell joining: removes CJK justification spaces/newlines, preserves ASCII spacing
+        assert clean_table_cell_text("解表散 寒，祛\n风止痛") == "解表散寒，祛风止痛"
+        assert clean_table_cell_text("同“\n紫苏”") == "同“紫苏”"
+        assert clean_table_cell_text("1. 八珍粥\n2. 桂圆红枣粥") == "1. 八珍粥 2. 桂圆红枣粥"
+
+        t1 = "| 序号 | 名称 |\n| :--- | ---: |\n| 1 | 八角茴香 |"
+        t2_same_hdr = "| 序号 | 名称 |\n| --- | --- |\n| 2 | 白扁豆 |"
+        t2_data_only = "| 2 | 白扁豆 |\n| --- | --- |\n| 3 | 百合 |"
+        t2_diff_no_mark = "| 甲 | 乙 |\n| --- | --- |\n| 2 | 白扁豆 |"
+        t2_diff_cols = "| 序号 | 名称 | 备注 |\n| --- | --- | --- |\n| 2 | 白扁豆 | 无 |"
+        t_empty_hdr = "|  |  |\n| --- | --- |\n| a | b |"
+
+        # 1. Matching header merges even without 续表, stripping duplicate header & keeping alignment
+        merged_same = merge_gfm_tables_if_compatible(t1, t2_same_hdr, has_continuation_marker=False)
+        assert merged_same is not None
+        assert "| :--- | ---: |" in merged_same
+        assert "| 2 | 白扁豆 |" in merged_same
+        assert merged_same.count("| 序号 | 名称 |") == 1
+
+        # 2. Data-only continuation merges when 续表 is present without dropping row 2
+        merged_data_only = merge_gfm_tables_if_compatible(t1, t2_data_only, has_continuation_marker=True)
+        assert merged_data_only is not None
+        assert "| 2 | 白扁豆 |" in merged_data_only
+        assert "| 3 | 百合 |" in merged_data_only
+
+        # 3. Negative guards: different headers, all-empty headers without 续表, or column mismatch
+        assert merge_gfm_tables_if_compatible(t1, t2_diff_no_mark, has_continuation_marker=False) is None
+        assert merge_gfm_tables_if_compatible(t1, t2_diff_cols, has_continuation_marker=True) is None
+        assert merge_gfm_tables_if_compatible(t_empty_hdr, t_empty_hdr, has_continuation_marker=False) is None
+
+        # 4. process_ocr _merge_cross_page_tables: merges across margin footer/header + '續表', blocks merge across prose
+        pages = [
+            {
+                "page_num": 1,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {"orig_idx": 0, "md": t1, "block": {"original_label": "table", "bbox": [50.0, 100.0, 450.0, 580.0]}},
+                    {"orig_idx": 1, "md": "·283·", "block": {"original_label": "text", "bbox": [220.0, 640.0, 270.0, 655.0]}},
+                ],
+                "footnotes": [],
+            },
+            {
+                "page_num": 2,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {"orig_idx": 0, "md": "药食同源抗癌手册", "block": {"original_label": "text", "bbox": [75.0, 60.0, 160.0, 75.0]}},
+                    {"orig_idx": 1, "md": "續表", "block": {"original_label": "text", "bbox": [75.0, 90.0, 105.0, 105.0]}},
+                    {"orig_idx": 2, "md": t2_same_hdr, "block": {"original_label": "table", "bbox": [50.0, 110.0, 450.0, 580.0]}},
+                    {"orig_idx": 3, "md": "·284·", "block": {"original_label": "text", "bbox": [220.0, 640.0, 270.0, 655.0]}},
+                ],
+                "footnotes": [],
+            },
+            {
+                "page_num": 3,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {"orig_idx": 0, "md": "续表", "block": {"original_label": "text", "bbox": [75.0, 90.0, 105.0, 105.0]}},
+                    {"orig_idx": 1, "md": t2_data_only, "block": {"original_label": "table", "bbox": [50.0, 110.0, 450.0, 300.0]}},
+                ],
+                "footnotes": [],
+            },
+            {
+                "page_num": 4,
+                "page_size": [500.0, 700.0],
+                "body": [
+                    {"orig_idx": 0, "md": "正文中断段落。", "block": {"original_label": "text", "bbox": [75.0, 100.0, 300.0, 120.0]}},
+                    {"orig_idx": 1, "md": t2_same_hdr, "block": {"original_label": "table", "bbox": [50.0, 140.0, 450.0, 300.0]}},
+                ],
+                "footnotes": [],
+            },
+        ]
+        merged_pages = _merge_cross_page_tables(pages)
+        assert len(merged_pages[0]["body"]) == 1  # '·283·' stripped when bridged
+        assert "| 2 | 白扁豆 |" in merged_pages[0]["body"][0]["md"]
+        assert "| 3 | 百合 |" in merged_pages[0]["body"][0]["md"]
+        assert merged_pages[1]["body"] == []
+        assert merged_pages[2]["body"] == []
+        assert len(merged_pages[3]["body"]) == 2  # blocked by intervening prose
+
+        # 5. _reconcile_layout_and_det_lines must not duplicate a table overlapped by 2 layout boxes
+        layout_boxes = [
+            {"bbox": [50.0, 50.0, 450.0, 150.0], "label": "Table"},
+            {"bbox": [50.0, 140.0, 450.0, 260.0], "label": "Table"},
+        ]
+        table_zones = [{"bbox": [50.0, 50.0, 450.0, 260.0], "markdown": t1}]
+        reconciled = _reconcile_layout_and_det_lines(
+            layout_bboxes=layout_boxes,
+            det_bboxes=[],
+            page_w=500.0,
+            page_h=700.0,
+            table_zones_150=table_zones,
+        )
+        assert sum(1 for b in reconciled if b.get("original_label") == "table") == 1
+
+    def test_real_book_toc_table6_appendix_and_repaired_docx_if_available(self):
+        """
+        Real-data regression gate on 0c7c0906-...pdf (uncropped and default 10% crop)
+        and repaired DOCX if present in data/01_input.
+        """
+        from src.scripts.book_layout_extractor import _parse_pdf_layout_flow
+        from docx.oxml.ns import qn
+
+        data_dir = Path(__file__).resolve().parent.parent / "data" / "01_input"
+        real_pdf = data_dir / "0c7c0906-fc71-4677-bc29-76577e951601.pdf"
+        if not real_pdf.exists():
+            pytest.skip("Real book PDF fixture not present in data/01_input")
+
+        with fitz.open(str(real_pdf)) as doc:
+            # 1. TOC pp. 9-11 must have 0 tables
+            for p_idx in (8, 9, 10):
+                assert detect_three_line_table_regions(doc[p_idx]) == []
+            _, _, _, toc_recs = _parse_pdf_layout_flow(doc, enable_footnotes=False, page_range=(9, 11))
+            assert [r for r in toc_recs if r["type"] == "table"] == []
+
+            # 2. Table 6 on p. 128
+            assert detect_three_line_table_regions(doc[127]) == []
+            _, _, _, t6_recs = _parse_pdf_layout_flow(doc, enable_footnotes=False, page_range=(128, 128))
+            t6_tbls = [r for r in t6_recs if r["type"] == "table"]
+            assert len(t6_tbls) == 1
+            assert "白细胞（109/L）" in t6_tbls[0]["raw_md"]
+
+            # 3. Table 10 on pp. 188-189 (inset border sliver column collapsed, merged across 续表)
+            _, _, _, t10_recs = _parse_pdf_layout_flow(doc, enable_footnotes=False, page_range=(188, 189))
+            t10_tbls = [r for r in t10_recs if r["type"] == "table"]
+            assert len(t10_tbls) == 1
+            assert t10_tbls[0]["raw_md"].splitlines()[0] == "| 证型 | 治则 | 单药 | 食疗方案 |"
+
+            # 4. Appendix pp. 295-304 UNCROPPED must merge into 1 table (106 herbs)
+            for p_idx in range(294, 304):
+                assert detect_three_line_table_regions(doc[p_idx]) == []
+            md_uncropped, _, _, app_recs_uncropped = _parse_pdf_layout_flow(
+                doc, enable_footnotes=False, page_range=(295, 304)
+            )
+            app_tbls_uncropped = [r for r in app_recs_uncropped if r["type"] == "table"]
+            assert len(app_tbls_uncropped) == 1
+            lines_uncropped = app_tbls_uncropped[0]["raw_md"].splitlines()
+            assert len(lines_uncropped) == 108  # 1 header + 1 sep + 106 herbs
+            for i in range(1, 107):
+                assert lines_uncropped[i + 1].startswith(f"| {i} |")
+            joined_uncropped = "\n".join(md_uncropped)
+            assert "续表" not in joined_uncropped
+            assert "药食同源抗癌手册" not in joined_uncropped
+            assert "·283·" not in joined_uncropped
+            assert "（胡少博）" in joined_uncropped
+
+            # 5. Appendix pp. 295-304 with default 10% UI crop must also merge cleanly
+            for p_idx in range(294, 304):
+                mb = doc[p_idx].mediabox
+                doc[p_idx].set_cropbox(
+                    fitz.Rect(mb.x0, mb.y0 + mb.height * 0.10, mb.x1, mb.y1 - mb.height * 0.10)
+                )
+            md_pages, _, _, app_recs = _parse_pdf_layout_flow(doc, enable_footnotes=False, page_range=(295, 304))
+
+        app_tbls = [r for r in app_recs if r["type"] == "table"]
+        assert len(app_tbls) == 1
+        lines = app_tbls[0]["raw_md"].splitlines()
+        assert len(lines) == 108
+        for i in range(1, 107):
+            assert lines[i + 1].startswith(f"| {i} |")
+        assert "续表" not in "\n".join(md_pages)
+
+        orig_docx = data_dir / "药食同源抗癌手册_王文达_吴蕾蕾（正文缩小字号，绿色）_表格fix.docx"
+        rep_docx = data_dir / "药食同源抗癌手册_王文达_吴蕾蕾（正文缩小字号，绿色）_表格fix_repaired.docx"
+        if orig_docx.exists() and rep_docx.exists():
+            d_orig = docx.Document(str(orig_docx))
+            d_rep = docx.Document(str(rep_docx))
+            assert len(d_rep.tables) == 17
+            for i in range(16):
+                assert d_orig.tables[i]._tbl.xml == d_rep.tables[i]._tbl.xml
+            orig_body = list(d_orig.element.body)
+            rep_body = list(d_rep.element.body)
+            assert all(orig_body[i].xml == rep_body[i].xml for i in range(2673))
+            assert len(orig_body) - 2771 == len(rep_body) - 2674
+            assert all(orig_body[2771 + k].xml == rep_body[2674 + k].xml for k in range(len(orig_body) - 2771))
+            app_tbl = d_rep.tables[16]
+            trs = app_tbl._tbl.findall(qn("w:tr"))
+            assert len(trs) == 107
+            assert trs[0].find(qn("w:trPr")).find(qn("w:tblHeader")) is not None
+            assert all(tr.find(qn("w:trPr")).find(qn("w:tblHeader")) is None for tr in trs[1:])
+            assert all(tr.find(qn("w:trPr")).find(qn("w:cantSplit")) is not None for tr in trs)
+            tblW = app_tbl._tbl.tblPr.find(qn("w:tblW"))
+            assert tblW is not None and tblW.get(qn("w:w")) == "5000" and tblW.get(qn("w:type")) == "pct"
+            seqs = ["".join(t.text or "" for t in tr.findall(qn("w:tc"))[0].iter(qn("w:t"))) for tr in trs[1:]]
+            assert seqs == [str(i) for i in range(1, 107)]

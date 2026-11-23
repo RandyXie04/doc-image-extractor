@@ -58,6 +58,261 @@ class ReconstructedTable:
 
 
 _TABLE_CAPTION_RE = re.compile(r"^\s*表\s*\d+")
+_CJK_SPURIOUS_SPACE_RE = re.compile(
+    r"(?<=[\u4e00-\u9fff\u3400-\u4dbf\u3001-\u303f\uff01-\uffef\u2018-\u201f\u2014\u2026\u00b7])[ \t]+(?=[\u4e00-\u9fff\u3400-\u4dbf\u3001-\u303f\uff01-\uffef\u2018-\u201f\u2014\u2026\u00b7])"
+)
+_CJK_EDGE_CHAR_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\u3001-\u303f\uff01-\uffef\u2018-\u201f\u2014\u2026\u00b7]")
+_XU_BIAO_RE = re.compile(r"^[（(]?\s*(?:续\s*表|續\s*表)\s*[）)]?[：:.]?\s*$")
+_TOC_DOT_LEADER_RE = re.compile(r"[\.…·\u0107\x08\-_]{2,}\s*\d+\s*$")
+_TOC_CHAPTER_PAGE_RE = re.compile(
+    r"^\s*(?:"
+    r"第\s*[一二三四五六七八九十百零\d]+\s*[章节節篇卷回讲講]"
+    r"|附\s*录|主要?参考文献|参考文献|后\s*记|结\s*语|前\s*言|序\s*言|引\s*言"
+    r"|[一二三四五六七八九十百]+[、.．]\s*[^\d\n]"
+    r"|\d+\.\d+(?:\.\d+)?[\s\u3000]+[^\d\n]"
+    r"|(?:Chapter|Part|Section|Appendix)\s+\d+"
+    r").*\s+\d{1,4}\s*$",
+    re.I,
+)
+_TOC_HEADING_RE = re.compile(r"^\s*(?:目[\s\u3000]*录|目[\s\u3000]*錄|TABLE\s+OF\s+CONTENTS|CONTENTS)\s*$", re.I)
+_GFM_SEP_CELL_RE = re.compile(r"^:?-{2,}:?$")
+
+
+def clean_table_cell_text(cell: Optional[str]) -> str:
+    """
+    Normalizes PDF table cell text by stripping spurious justification spaces between
+    CJK characters/punctuation and joining wrapped CJK lines without inserting extra spaces,
+    while preserving ASCII word/list spacing (e.g. '1. 八珍粥 2. 桂圆红枣粥').
+    """
+    if not cell:
+        return ""
+    cleaned_lines: List[str] = []
+    for raw_line in str(cell).splitlines():
+        s = _CJK_SPURIOUS_SPACE_RE.sub("", raw_line.strip())
+        if s:
+            cleaned_lines.append(s)
+    if not cleaned_lines:
+        return ""
+    joined = cleaned_lines[0]
+    for nxt in cleaned_lines[1:]:
+        if _CJK_EDGE_CHAR_RE.match(joined[-1]) and _CJK_EDGE_CHAR_RE.match(nxt[0]):
+            joined += nxt
+        else:
+            joined += " " + nxt
+    return re.sub(r"\s{2,}", " ", joined).strip()
+
+
+def normalize_pymupdf_table_rows(
+    rows: Sequence[Sequence[Any]],
+    table_obj: Any = None,
+) -> List[List[str]]:
+    """
+    Cleans cell text via clean_table_cell_text() and collapses phantom narrow sliver columns
+    (e.g., <12pt inset border artifacts where one column has an empty header and cells across
+    every row are mutually exclusive with the adjacent column).
+    """
+    if not rows:
+        return []
+    ncols = max((len(r) for r in rows if r), default=0)
+    if ncols == 0:
+        return []
+
+    cleaned: List[List[str]] = []
+    for r in rows:
+        row_cells = [clean_table_cell_text(r[c] if c < len(r) else "") for c in range(ncols)]
+        cleaned.append(row_cells)
+
+    if ncols < 2 or len(cleaned) < 2:
+        return cleaned
+
+    min_widths: List[Optional[float]] = [None] * ncols
+    t_rows = getattr(table_obj, "rows", None) if table_obj is not None else None
+    if t_rows:
+        for c_idx in range(ncols):
+            ws: List[float] = []
+            for tr in t_rows:
+                cells = getattr(tr, "cells", None)
+                if cells and c_idx < len(cells) and cells[c_idx] is not None:
+                    box = cells[c_idx]
+                    if len(box) >= 4:
+                        ws.append(float(box[2]) - float(box[0]))
+            if ws:
+                min_widths[c_idx] = min(ws)
+
+    changed = True
+    while changed and len(cleaned[0]) >= 2:
+        changed = False
+        cur_cols = len(cleaned[0])
+        for c_idx in range(cur_cols - 1):
+            hdr_left = cleaned[0][c_idx]
+            hdr_right = cleaned[0][c_idx + 1]
+            if hdr_left and hdr_right:
+                continue
+            disjoint = all(not (r[c_idx] and r[c_idx + 1]) for r in cleaned)
+            if not disjoint:
+                continue
+            mw_l = min_widths[c_idx]
+            mw_r = min_widths[c_idx + 1]
+            has_sliver = (
+                (mw_l is not None and mw_l < 12.0)
+                or (mw_r is not None and mw_r < 12.0)
+            )
+            if t_rows and not has_sliver:
+                continue
+            if not t_rows and (hdr_left or hdr_right):
+                # Without geometry info, only collapse completely empty trailing/leading column
+                empty_l = all(not r[c_idx] for r in cleaned)
+                empty_r = all(not r[c_idx + 1] for r in cleaned)
+                if not (empty_l or empty_r):
+                    continue
+            merged_rows: List[List[str]] = []
+            for r in cleaned:
+                merged_cell = r[c_idx] or r[c_idx + 1]
+                merged_rows.append(r[:c_idx] + [merged_cell] + r[c_idx + 2:])
+            cleaned = merged_rows
+            if mw_l is not None and mw_r is not None:
+                merged_w: Optional[float] = mw_l + mw_r
+            else:
+                merged_w = mw_r if mw_l is None else mw_l
+            min_widths = min_widths[:c_idx] + [merged_w] + min_widths[c_idx + 2:]
+            changed = True
+            break
+
+    return cleaned
+
+
+def is_continuation_table_marker(text: str) -> bool:
+    """Return True when text represents a standalone continuation-table marker ('续表' / '續表')."""
+    if not text:
+        return False
+    stripped = text.strip().lstrip("#").strip()
+    return bool(_XU_BIAO_RE.match(stripped))
+
+
+def _split_gfm_pipe_row(line: str) -> Optional[List[str]]:
+    s = line.strip()
+    if not s.startswith("|"):
+        return None
+    parts = re.split(r"(?<!\\)\|", s)
+    if parts and parts[0] == "":
+        parts = parts[1:]
+    if parts and parts[-1] == "":
+        parts = parts[:-1]
+    if not parts:
+        return None
+    return [p.strip() for p in parts]
+
+
+def _parse_gfm_pipe_table(md_text: str) -> Optional[Tuple[List[str], List[str], List[List[str]]]]:
+    lines = [ln.strip() for ln in (md_text or "").splitlines() if ln.strip()]
+    if len(lines) < 2:
+        return None
+    headers = _split_gfm_pipe_row(lines[0])
+    sep = _split_gfm_pipe_row(lines[1])
+    if not headers or not sep or len(headers) != len(sep):
+        return None
+    if not all(_GFM_SEP_CELL_RE.match(c.replace(" ", "")) for c in sep):
+        return None
+    body_rows: List[List[str]] = []
+    for ln in lines[2:]:
+        row = _split_gfm_pipe_row(ln)
+        if row is None:
+            return None
+        if len(row) < len(headers):
+            row = row + [""] * (len(headers) - len(row))
+        elif len(row) > len(headers):
+            row = row[:len(headers)]
+        body_rows.append(row)
+    return headers, sep, body_rows
+
+
+def merge_gfm_tables_if_compatible(
+    prev_md: str,
+    curr_md: str,
+    has_continuation_marker: bool = False,
+) -> Optional[str]:
+    """
+    Merge two GFM pipe tables if column counts match AND (has_continuation_marker OR header rows match).
+    Strips duplicate header rows automatically when headers match; preserves data-only continuations
+    when has_continuation_marker is True and the continuation starts with a data row.
+    """
+    parsed_prev = _parse_gfm_pipe_table(prev_md)
+    parsed_curr = _parse_gfm_pipe_table(curr_md)
+    if parsed_prev is None or parsed_curr is None:
+        return None
+
+    prev_headers, prev_sep, prev_rows = parsed_prev
+    curr_headers, _, curr_rows = parsed_curr
+    if len(prev_headers) != len(curr_headers) or not prev_headers:
+        return None
+
+    norm_prev = [re.sub(r"\s+", "", h) for h in prev_headers]
+    norm_curr = [re.sub(r"\s+", "", h) for h in curr_headers]
+    has_nonempty_header = any(norm_prev)
+    headers_match = has_nonempty_header and (norm_prev == norm_curr)
+
+    if not (has_continuation_marker or headers_match):
+        return None
+
+    rows_to_append = curr_rows if headers_match else [curr_headers] + curr_rows
+    md_lines = [
+        "| " + " | ".join(prev_headers) + " |",
+        "| " + " | ".join(prev_sep) + " |",
+    ]
+    for row in prev_rows + rows_to_append:
+        md_lines.append("| " + " | ".join(row) + " |")
+    return "\n".join(md_lines)
+
+
+def rect_union_intersection_area(
+    target_bbox: Sequence[float],
+    rects: Sequence[Sequence[float]],
+) -> float:
+    """Computes the exact area of `target_bbox ∩ (⋃ rects)` using a pure sweep-line."""
+    if len(target_bbox) < 4 or not rects:
+        return 0.0
+    tx0, ty0, tx1, ty1 = float(target_bbox[0]), float(target_bbox[1]), float(target_bbox[2]), float(target_bbox[3])
+    if tx1 <= tx0 or ty1 <= ty0:
+        return 0.0
+
+    inters: List[Tuple[float, float, float, float]] = []
+    for r in rects:
+        if len(r) < 4:
+            continue
+        ix0 = max(tx0, float(r[0]))
+        iy0 = max(ty0, float(r[1]))
+        ix1 = min(tx1, float(r[2]))
+        iy1 = min(ty1, float(r[3]))
+        if ix1 > ix0 and iy1 > iy0:
+            inters.append((ix0, iy0, ix1, iy1))
+
+    if not inters:
+        return 0.0
+    if len(inters) == 1:
+        r0 = inters[0]
+        return (r0[2] - r0[0]) * (r0[3] - r0[1])
+
+    xs = sorted({x for r in inters for x in (r[0], r[2])})
+    total_area = 0.0
+    for i in range(len(xs) - 1):
+        xa, xb = xs[i], xs[i + 1]
+        if xb <= xa:
+            continue
+        y_intervals = sorted((r[1], r[3]) for r in inters if r[0] <= xa and r[2] >= xb)
+        if not y_intervals:
+            continue
+        cur_y0, cur_y1 = y_intervals[0]
+        y_len = 0.0
+        for ya, yb in y_intervals[1:]:
+            if ya <= cur_y1:
+                if yb > cur_y1:
+                    cur_y1 = yb
+            else:
+                y_len += cur_y1 - cur_y0
+                cur_y0, cur_y1 = ya, yb
+        y_len += cur_y1 - cur_y0
+        total_area += (xb - xa) * y_len
+    return total_area
 
 
 def is_valid_pymupdf_table(
@@ -134,6 +389,171 @@ def _extract_horizontal_segments(page: Any) -> List[Tuple[float, float, float]]:
     return raw_segments
 
 
+def _extract_vertical_segments(page: Any, page_w: float) -> List[Tuple[float, float, float]]:
+    """
+    Extracts vertical border segments (x, y0, y1) from page.get_drawings()
+    to distinguish vertical-bordered grid tables from borderless three-line tables.
+    """
+    try:
+        drawings = page.get_drawings()
+    except Exception:
+        return []
+
+    v_segments: List[Tuple[float, float, float]] = []
+    for d in drawings:
+        stroke_opacity = d.get("stroke_opacity")
+        if stroke_opacity is not None and float(stroke_opacity) <= 0.0:
+            continue
+        stroke_color = d.get("color")
+        stroke_width = d.get("width")
+        is_visible_stroke = (
+            (stroke_color is not None or d.get("type") in ("s", "fs"))
+            and (stroke_width is None or float(stroke_width) > 0.0)
+            and stroke_color != (1.0, 1.0, 1.0)
+        )
+        for item in d.get("items", []):
+            kind = item[0]
+            if kind == "l":
+                p1, p2 = item[1], item[2]
+                if abs(p1.x - p2.x) <= 2.0 and abs(p2.y - p1.y) >= 10.0:
+                    x_val = (float(p1.x) + float(p2.x)) * 0.5
+                    y_min = min(float(p1.y), float(p2.y))
+                    y_max = max(float(p1.y), float(p2.y))
+                    v_segments.append((x_val, y_min, y_max))
+            elif kind == "re":
+                r = item[1]
+                rw = float(r.width)
+                rh = float(r.height)
+                if rw <= 3.0 and rh >= 10.0:
+                    v_segments.append(((float(r.x0) + float(r.x1)) * 0.5, float(r.y0), float(r.y1)))
+                elif is_visible_stroke and rh >= 10.0 and 12.0 <= rw < page_w * 0.92:
+                    v_segments.append((float(r.x0), float(r.y0), float(r.y1)))
+                    v_segments.append((float(r.x1), float(r.y0), float(r.y1)))
+
+    return v_segments
+
+
+def _extract_valid_bordered_table_bboxes(
+    page: Any,
+    page_w: float,
+    page_h: float,
+) -> List[Tuple[float, float, float, float]]:
+    """Returns bboxes of valid bordered tables detected by PyMuPDF page.find_tables()."""
+    try:
+        tabs = page.find_tables()
+    except Exception:
+        return []
+    if not (tabs and getattr(tabs, "tables", None)):
+        return []
+
+    bboxes: List[Tuple[float, float, float, float]] = []
+    for t in tabs.tables:
+        try:
+            cells = t.extract()
+        except Exception:
+            cells = []
+        if is_valid_pymupdf_table(cells, t.bbox, page_w, page_h):
+            bboxes.append((float(t.bbox[0]), float(t.bbox[1]), float(t.bbox[2]), float(t.bbox[3])))
+    return bboxes
+
+
+def _has_vertical_borders(
+    v_segments: Sequence[Tuple[float, float, float]],
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+) -> bool:
+    """Return True if at least 2 vertical border segments overlap the candidate table box."""
+    if not v_segments:
+        return False
+    hits = 0
+    for vx, vy0, vy1 in v_segments:
+        if x0 - 4.0 <= vx <= x1 + 4.0:
+            v_overlap = min(vy1, y1 + 2.0) - max(vy0, y0 - 2.0)
+            if v_overlap >= 8.0:
+                hits += 1
+                if hits >= 2:
+                    return True
+    return False
+
+
+def _is_toc_false_positive_region(
+    blocks: Sequence[dict],
+    x0: float,
+    y0: float,
+    x1: float,
+    y1: float,
+) -> bool:
+    """
+    Detects Table-of-Contents decorative horizontal-rule bands (e.g., chapter bars
+    framing '第一章 ... 1' without vertical dividers) that mimic three-line rule spacing.
+    """
+    if not blocks:
+        return False
+
+    is_toc_page = False
+    region_lines: List[Tuple[float, float, str]] = []
+    for b in blocks:
+        if b.get("type", 0) != 0:
+            continue
+        bb = b.get("bbox", [0, 0, 0, 0])
+        full_txt = "".join(
+            s.get("text", "")
+            for l in b.get("lines", [])
+            for s in l.get("spans", [])
+        ).strip()
+        if not full_txt:
+            continue
+        if _TOC_HEADING_RE.match(full_txt):
+            is_toc_page = True
+
+        for ln in b.get("lines", []):
+            lb = ln.get("bbox", bb)
+            l_txt = "".join(s.get("text", "") for s in ln.get("spans", [])).strip()
+            if not l_txt:
+                continue
+            l_cy = (float(lb[1]) + float(lb[3])) * 0.5
+            l_x0 = float(lb[0])
+            if (y0 - 4.0 <= l_cy <= y1 + 4.0) and (float(lb[2]) >= x0 - 8.0 and l_x0 <= x1 + 8.0):
+                region_lines.append((l_cy, l_x0, l_txt))
+
+    if not region_lines:
+        return False
+
+    region_lines.sort(key=lambda item: (item[0], item[1]))
+    banded_lines: List[List[Tuple[float, float, str]]] = []
+    for item in region_lines:
+        if not banded_lines or abs(item[0] - banded_lines[-1][0][0]) > 5.5:
+            banded_lines.append([item])
+        else:
+            banded_lines[-1].append(item)
+
+    line_texts: List[str] = []
+    for grp in banded_lines:
+        grp.sort(key=lambda item: item[1])
+        combined = " ".join(part[2] for part in grp).strip()
+        if combined:
+            line_texts.append(combined)
+
+    if not line_texts:
+        return False
+
+    toc_hits = sum(
+        1 for ln in line_texts
+        if _TOC_DOT_LEADER_RE.search(ln) or _TOC_CHAPTER_PAGE_RE.match(ln)
+    )
+    if toc_hits >= 2 or (toc_hits >= 1 and toc_hits == len(line_texts)):
+        return True
+
+    if is_toc_page:
+        page_num_end_hits = sum(1 for ln in line_texts if re.search(r"\s+\d{1,4}\s*$", ln))
+        if page_num_end_hits >= 2 and page_num_end_hits >= len(line_texts) * 0.5:
+            return True
+
+    return False
+
+
 def detect_three_line_table_regions(
     page: Any,
     blocks: Optional[Sequence[dict]] = None,
@@ -142,13 +562,41 @@ def detect_three_line_table_regions(
     Detects academic three-line tables (三線表) on a fitz.Page by clustering horizontal rules
     (top rule, header bottom rule, optional sub-header rule, and table bottom rule) and extracting
     segmented X column boundaries directly from the vector line segments.
+    Excludes full-grid vertical-bordered tables, PyMuPDF bordered tables, and TOC decorative rule bands.
     """
     raw_segments = _extract_horizontal_segments(page)
     if not raw_segments:
         return []
 
     page_w = float(page.rect.width) if hasattr(page, "rect") else 530.0
+    page_h = float(page.rect.height) if hasattr(page, "rect") else 800.0
     min_rule_width = page_w * 0.35
+
+    bordered_bboxes = _extract_valid_bordered_table_bboxes(page, page_w, page_h)
+    v_segments = _extract_vertical_segments(page, page_w)
+
+    if bordered_bboxes:
+        filtered_segments: List[Tuple[float, float, float]] = []
+        for sy, sx0, sx1 in raw_segments:
+            sx_mid = (sx0 + sx1) * 0.5
+            inside_bordered = any(
+                (bx0 - 2.0 <= sx_mid <= bx1 + 2.0) and (by0 - 2.0 <= sy <= by1 + 2.0)
+                for bx0, by0, bx1, by1 in bordered_bboxes
+            )
+            if not inside_bordered:
+                filtered_segments.append((sy, sx0, sx1))
+        raw_segments = filtered_segments
+        if not raw_segments:
+            return []
+
+    resolved_blocks: Sequence[dict]
+    if blocks is not None:
+        resolved_blocks = blocks
+    else:
+        try:
+            resolved_blocks = page.get_text("dict").get("blocks", [])
+        except Exception:
+            resolved_blocks = []
 
     # Group segments by Y coordinate (within 2.0pt tolerance)
     raw_segments.sort(key=lambda s: (s[0], s[1]))
@@ -218,23 +666,29 @@ def detect_three_line_table_regions(
         if not (10.0 <= (rule_mid[0] - rule_top[0]) <= 85.0 and (rule_bot[0] - rule_mid[0]) >= 18.0):
             continue
 
-        used_indices.update({idx_top, idx_mid, idx_bot})
-        sub_y: Optional[float] = None
-        for idx_s, s_rule in sub_rules:
-            if rule_top[0] + 4.0 < s_rule[0] < rule_mid[0] - 4.0:
-                sub_y = s_rule[0]
-                used_indices.add(idx_s)
-                break
-
-        best_hints = max((rule_top[4], rule_mid[4], rule_bot[4]), key=len)
         x0 = min(rule_top[1], rule_mid[1], rule_bot[1])
         x1 = max(rule_top[2], rule_mid[2], rule_bot[2])
         y0 = rule_top[0]
         y1 = rule_bot[0]
+        cand_bbox = (round(x0 - 4.0, 2), round(y0 - 3.0, 2), round(x1 + 4.0, 2), round(y1 + 3.0, 2))
+
+        if _has_vertical_borders(v_segments, x0, y0, x1, y1):
+            continue
+
+        if bordered_bboxes:
+            cand_area = max((cand_bbox[2] - cand_bbox[0]) * (cand_bbox[3] - cand_bbox[1]), 1.0)
+            union_ov = rect_union_intersection_area(cand_bbox, bordered_bboxes)
+            if union_ov / cand_area > 0.30:
+                continue
+            if any(
+                rect_union_intersection_area(bb, [cand_bbox]) / max((bb[2] - bb[0]) * (bb[3] - bb[1]), 1.0) > 0.30
+                for bb in bordered_bboxes
+            ):
+                continue
 
         caption_txt = ""
-        if blocks:
-            for b in blocks:
+        if resolved_blocks:
+            for b in resolved_blocks:
                 if b.get("type", 0) != 0:
                     continue
                 bb = b.get("bbox", [0, 0, 0, 0])
@@ -248,9 +702,22 @@ def detect_three_line_table_regions(
                         caption_txt = txt
                         break
 
+        if not caption_txt and _is_toc_false_positive_region(resolved_blocks, x0, y0, x1, y1):
+            continue
+
+        used_indices.update({idx_top, idx_mid, idx_bot})
+        sub_y: Optional[float] = None
+        for idx_s, s_rule in sub_rules:
+            if rule_top[0] + 4.0 < s_rule[0] < rule_mid[0] - 4.0:
+                sub_y = s_rule[0]
+                used_indices.add(idx_s)
+                break
+
+        best_hints = max((rule_top[4], rule_mid[4], rule_bot[4]), key=len)
+
         regions.append(
             TableRegion(
-                bbox=(round(x0 - 4.0, 2), round(y0 - 3.0, 2), round(x1 + 4.0, 2), round(y1 + 3.0, 2)),
+                bbox=cand_bbox,
                 top_rule_y=round(y0, 2),
                 mid_rule_y=round(rule_mid[0], 2),
                 bot_rule_y=round(y1, 2),

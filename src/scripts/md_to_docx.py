@@ -34,11 +34,175 @@ except OSError:
     except Exception as e:
         print(f"Error downloading pandoc: {e}")
 
+def _is_xu_biao_paragraph(p_elem, qn) -> bool:
+    if p_elem.tag != qn('w:p'):
+        return False
+    if (
+        p_elem.find('.//' + qn('w:drawing')) is not None
+        or p_elem.find('.//' + qn('w:pict')) is not None
+        or p_elem.find('.//' + qn('w:object')) is not None
+        or p_elem.find('.//' + qn('w:sectPr')) is not None
+    ):
+        return False
+    txt = "".join(t.text or "" for t in p_elem.iter(qn('w:t'))).strip()
+    if not txt:
+        return True  # empty spacer paragraph
+    try:
+        from src.extraction.table_reconstructor import is_continuation_table_marker
+        return is_continuation_table_marker(txt)
+    except Exception:
+        return bool(re.match(r'^[（(]?\s*(?:续\s*表|續\s*表)\s*[）)]?[：:.]?\s*$', txt))
+
+
+def _coalesce_adjacent_docx_tables(doc, qn) -> int:
+    """
+    Coalesce adjacent compatible <w:tbl> elements separated only by empty <w:p> or at most one
+    '续表'/'續表' <w:p> when column counts match and (has '续表'/'續表' or header rows match).
+    Strips repeated header rows and intervening '续表'/empty paragraphs when merging.
+    """
+    body = doc.element.body
+    children = list(body)
+    prev_tbl = None
+    between_elems = []
+    merged_count = 0
+
+    def _tbl_col_count(tbl_el) -> int:
+        tblGrid = tbl_el.find(qn('w:tblGrid'))
+        if tblGrid is not None:
+            cols = tblGrid.findall(qn('w:gridCol'))
+            if cols:
+                return len(cols)
+        trs = tbl_el.findall(qn('w:tr'))
+        return len(trs[0].findall(qn('w:tc'))) if trs else 0
+
+    def _row_cells_norm(tr_el) -> list[str]:
+        return [
+            re.sub(r'\s+', '', "".join(t.text or "" for t in tc.iter(qn('w:t'))))
+            for tc in tr_el.findall(qn('w:tc'))
+        ]
+
+    def _sync_moved_row_widths(prev_tbl_el, curr_tbl_el, moved_trs, cols_cnt: int) -> None:
+        # Upgrade uniform equal-width Pandoc grid (e.g. <=72-col tables) if continuation has proportional grid
+        prev_grid = prev_tbl_el.find(qn('w:tblGrid'))
+        curr_grid = curr_tbl_el.find(qn('w:tblGrid'))
+        if prev_grid is not None and curr_grid is not None:
+            p_cols = prev_grid.findall(qn('w:gridCol'))
+            c_cols = curr_grid.findall(qn('w:gridCol'))
+            if len(p_cols) == len(c_cols) == cols_cnt and cols_cnt > 1:
+                p_ws = [g.get(qn('w:w')) for g in p_cols]
+                c_ws = [g.get(qn('w:w')) for g in c_cols]
+                if len(set(p_ws)) == 1 and len(set(c_ws)) > 1:
+                    for p_g, c_w in zip(p_cols, c_ws):
+                        if c_w is not None:
+                            p_g.set(qn('w:w'), c_w)
+
+        prev_trs_now = prev_tbl_el.findall(qn('w:tr'))
+        if not prev_trs_now:
+            return
+        tmpl_tcs = prev_trs_now[0].findall(qn('w:tc'))
+        if len(tmpl_tcs) != cols_cnt:
+            return
+        tmpl_tcws = []
+        for tc in tmpl_tcs:
+            tcPr = tc.find(qn('w:tcPr'))
+            tcW = tcPr.find(qn('w:tcW')) if tcPr is not None else None
+            if tcW is not None and not (tcW.get(qn('w:type')) == 'auto' and tcW.get(qn('w:w')) == '0'):
+                tmpl_tcws.append((tcW.get(qn('w:w')), tcW.get(qn('w:type'))))
+            else:
+                tmpl_tcws.append(None)
+        if not any(tmpl_tcws):
+            return
+        for tr in moved_trs:
+            tcs = tr.findall(qn('w:tc'))
+            if len(tcs) != cols_cnt:
+                continue
+            for tc, tmpl_w in zip(tcs, tmpl_tcws):
+                if tmpl_w is None:
+                    continue
+                tcPr = tc.find(qn('w:tcPr'))
+                if tcPr is None:
+                    continue
+                tcW = tcPr.find(qn('w:tcW'))
+                if tcW is not None:
+                    if tmpl_w[0] is not None:
+                        tcW.set(qn('w:w'), tmpl_w[0])
+                    if tmpl_w[1] is not None:
+                        tcW.set(qn('w:type'), tmpl_w[1])
+
+    for el in children:
+        if el.tag == qn('w:tbl'):
+            if prev_tbl is None:
+                prev_tbl = el
+                between_elems = []
+                continue
+
+            # Validate intervening paragraphs
+            xu_biao_hits = 0
+            valid_gap = True
+            for b_el in between_elems:
+                if not _is_xu_biao_paragraph(b_el, qn):
+                    valid_gap = False
+                    break
+                b_txt = "".join(t.text or "" for t in b_el.iter(qn('w:t'))).strip()
+                if b_txt:
+                    xu_biao_hits += 1
+                    if xu_biao_hits > 1:
+                        valid_gap = False
+                        break
+
+            if not valid_gap:
+                prev_tbl = el
+                between_elems = []
+                continue
+
+            prev_trs = prev_tbl.findall(qn('w:tr'))
+            curr_trs = el.findall(qn('w:tr'))
+            if not prev_trs or not curr_trs:
+                prev_tbl = el
+                between_elems = []
+                continue
+
+            prev_cols = _tbl_col_count(prev_tbl)
+            curr_cols = _tbl_col_count(el)
+            if prev_cols == 0 or prev_cols != curr_cols:
+                prev_tbl = el
+                between_elems = []
+                continue
+
+            prev_hdr = _row_cells_norm(prev_trs[0])
+            curr_hdr = _row_cells_norm(curr_trs[0])
+            headers_match = bool(
+                prev_hdr and any(prev_hdr) and len(prev_hdr) == len(curr_hdr) and prev_hdr == curr_hdr
+            )
+            has_xu_biao = xu_biao_hits > 0
+            if not (has_xu_biao or headers_match):
+                prev_tbl = el
+                between_elems = []
+                continue
+
+            rows_to_move = curr_trs[1:] if headers_match else curr_trs
+            _sync_moved_row_widths(prev_tbl, el, rows_to_move, prev_cols)
+            for tr in rows_to_move:
+                prev_tbl.append(tr)
+            for b_el in between_elems:
+                body.remove(b_el)
+            body.remove(el)
+            between_elems = []
+            merged_count += 1
+        else:
+            if prev_tbl is not None:
+                between_elems.append(el)
+
+    return merged_count
+
+
 def apply_table_styles_to_docx(docx_path: str) -> None:
     """
     修改表格製作樣式：
-    1. 表格樣式設為「表格格線」 (Table Grid)
-    2. 表格內文字段落無任何特殊樣式設定 (重設為預設內文 Normal，移除 Compact 或其他 pStyle)
+    1. 合併僅相隔空段或「續表」的跨頁相容表格（移除重複表頭）
+    2. 表格樣式設為「表格格線」 (Table Grid)，寬度正規化為 100% 頁寬 (5000 pct)
+    3. 首列設定跨頁重複標題 (<w:tblHeader/>)，所有列設定禁止跨頁斷裂 (<w:cantSplit/>)
+    4. 表格內文字段落無任何特殊樣式設定 (重設為預設內文 Normal，移除 Compact 或其他 pStyle)
     """
     if not os.path.exists(docx_path):
         return
@@ -55,6 +219,8 @@ def apply_table_styles_to_docx(docx_path: str) -> None:
         if not doc.tables:
             return
 
+        _coalesce_adjacent_docx_tables(doc, qn)
+
         grid_style = None
         for s_name in ['Table Grid', '表格格線', 'TableGrid']:
             if s_name in doc.styles:
@@ -63,11 +229,51 @@ def apply_table_styles_to_docx(docx_path: str) -> None:
 
         def _set_tbl_style_xml(table_elem):
             tblPr = table_elem._tbl.tblPr
+            if tblPr is None:
+                tblPr = OxmlElement('w:tblPr')
+                table_elem._tbl.insert(0, tblPr)
             tblStyle = tblPr.find(qn('w:tblStyle'))
             if tblStyle is None:
                 tblStyle = OxmlElement('w:tblStyle')
                 tblPr.insert(0, tblStyle)
             tblStyle.set(qn('w:val'), 'TableGrid')
+
+        def _normalize_table_width(table_elem):
+            tblPr = table_elem._tbl.tblPr
+            if tblPr is None:
+                tblPr = OxmlElement('w:tblPr')
+                table_elem._tbl.insert(0, tblPr)
+            tblW = tblPr.find(qn('w:tblW'))
+            if tblW is None:
+                tblW = OxmlElement('w:tblW')
+                tblStyle = tblPr.find(qn('w:tblStyle'))
+                insert_idx = list(tblPr).index(tblStyle) + 1 if tblStyle is not None else 0
+                tblPr.insert(insert_idx, tblW)
+            tblW.set(qn('w:w'), '5000')
+            tblW.set(qn('w:type'), 'pct')
+
+        def _apply_row_repeat_and_cant_split(table_elem):
+            trs = table_elem._tbl.findall(qn('w:tr'))
+            for r_idx, tr in enumerate(trs):
+                trPr = tr.find(qn('w:trPr'))
+                if trPr is None:
+                    trPr = OxmlElement('w:trPr')
+                    tr.insert(0, trPr)
+                existing_hdr = trPr.find(qn('w:tblHeader'))
+                if r_idx == 0:
+                    if trPr.find(qn('w:cantSplit')) is None:
+                        cant = OxmlElement('w:cantSplit')
+                        if existing_hdr is not None:
+                            trPr.insert(list(trPr).index(existing_hdr), cant)
+                        else:
+                            trPr.append(cant)
+                    if existing_hdr is None:
+                        trPr.append(OxmlElement('w:tblHeader'))
+                else:
+                    if existing_hdr is not None:
+                        trPr.remove(existing_hdr)
+                    if trPr.find(qn('w:cantSplit')) is None:
+                        trPr.append(OxmlElement('w:cantSplit'))
 
         def _format_table(tbl):
             if grid_style is not None:
@@ -78,8 +284,16 @@ def apply_table_styles_to_docx(docx_path: str) -> None:
             else:
                 _set_tbl_style_xml(tbl)
 
+            _normalize_table_width(tbl)
+            _apply_row_repeat_and_cant_split(tbl)
+
             for row in tbl.rows:
                 for cell in row.cells:
+                    tcPr = cell._tc.tcPr
+                    if tcPr is not None:
+                        tcW = tcPr.find(qn('w:tcW'))
+                        if tcW is not None and tcW.get(qn('w:type')) == 'auto' and tcW.get(qn('w:w')) == '0':
+                            tcPr.remove(tcW)
                     for p in cell.paragraphs:
                         try:
                             p.style = 'Normal'

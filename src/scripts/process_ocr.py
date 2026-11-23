@@ -429,6 +429,7 @@ def _reconcile_layout_and_det_lines(
             norm_images.append(ib)
 
     blocks: list[dict[str, Any]] = []
+    emitted_table_indices: set[int] = set()
     for idx, raw_box in enumerate(layout_bboxes):
         bbox = _extract_bbox_from_item(raw_box)
         if bbox is None:
@@ -442,17 +443,19 @@ def _reconcile_layout_and_det_lines(
         r_area = _bbox_area(bbox)
         vec_text = (vec_text_lookup or {}).get(idx, "").strip()
 
+        matched_tr_idx: int | None = None
         matched_md: str | None = None
         matched_tr_bbox: list[float] | None = None
-        for tr_bbox, tr_md in norm_tables:
+        for tr_idx, (tr_bbox, tr_md) in enumerate(norm_tables):
             tr_area = _bbox_area(tr_bbox)
             min_area = min(r_area, tr_area)
             if min_area > 0.0 and _bbox_intersection_area(bbox, tr_bbox) > 0.25 * min_area:
+                matched_tr_idx = tr_idx
                 matched_md = tr_md
                 matched_tr_bbox = tr_bbox
                 break
 
-        if matched_md is not None:
+        if matched_md is not None and matched_tr_idx is not None:
             for d in det_lines:
                 if d["assigned"]:
                     continue
@@ -462,13 +465,15 @@ def _reconcile_layout_and_det_lines(
                     or (matched_tr_bbox is not None and _bbox_intersection_area(d["bbox"], matched_tr_bbox) > 0.25 * d_area)
                 ):
                     d["assigned"] = True
-            blocks.append({
-                "original_label": "table",
-                "bbox": bbox,
-                "line_bboxes_150": [],
-                "surya_text": matched_md,
-                "type": None,
-            })
+            if matched_tr_idx not in emitted_table_indices:
+                emitted_table_indices.add(matched_tr_idx)
+                blocks.append({
+                    "original_label": "table",
+                    "bbox": list(matched_tr_bbox) if matched_tr_bbox is not None else bbox,
+                    "line_bboxes_150": [],
+                    "surya_text": matched_md,
+                    "type": None,
+                })
             continue
 
         has_overlapping_image = False
@@ -565,6 +570,25 @@ def _reconcile_layout_and_det_lines(
                 "surya_text": "",
                 "type": None,
             })
+
+    # Emit any reconstructed/bordered tables not matched by a layout box
+    for tr_idx, (tr_bbox, tr_md) in enumerate(norm_tables):
+        if tr_idx in emitted_table_indices or not tr_md.strip():
+            continue
+        emitted_table_indices.add(tr_idx)
+        for d in det_lines:
+            if d["assigned"]:
+                continue
+            d_area = _bbox_area(d["bbox"])
+            if d_area > 0.0 and _bbox_intersection_area(d["bbox"], tr_bbox) > 0.25 * d_area:
+                d["assigned"] = True
+        blocks.append({
+            "original_label": "table",
+            "bbox": list(tr_bbox),
+            "line_bboxes_150": [],
+            "surya_text": tr_md,
+            "type": None,
+        })
 
     # Recover any remaining unassigned det lines outside layout boxes
     for d in det_lines:
@@ -843,6 +867,178 @@ def _merge_cross_page_paragraphs(pages_data: list[dict[str, Any]]) -> list[dict[
         if isinstance(prev_blk, dict) and "surya_text" in prev_blk:
             prev_blk["surya_text"] = merged_text
         curr_body.pop(curr_item_idx)
+
+    return pages_data
+
+
+_OCR_MARGIN_FOOTER_RE = re.compile(
+    r"^(?:[·•\-—\s]*\d{1,4}[·•\-—\s]*|(?:第\s*)?\d{1,4}\s*[页頁]|\d+\s*/\s*\d+)$"
+)
+
+
+def _is_ocr_table_item(item: dict[str, Any]) -> bool:
+    blk = item.get("block") or {}
+    if str(blk.get("original_label", "")).lower() == "table":
+        return True
+    md_str = str(item.get("md", "")).strip()
+    return md_str.startswith("|") and "\n|" in md_str
+
+
+def _ocr_item_plain_text(item: dict[str, Any]) -> str:
+    raw_md = str(item.get("md", "")).strip()
+    inner_txt, _ = _unwrap_custom_style_div(raw_md)
+    inner_txt = inner_txt.lstrip("#").strip()
+    return re.sub(r'\s*\{custom-style="[^"]+"\}\s*$', "", inner_txt).strip()
+
+
+def _is_ocr_margin_footer_item(item: dict[str, Any], page_h: float) -> bool:
+    blk = item.get("block") or {}
+    bbox = blk.get("bbox")
+    if not isinstance(bbox, (list, tuple)) or len(bbox) < 4 or page_h <= 0.0:
+        return False
+    if float(bbox[1]) < page_h * 0.87:
+        return False
+    txt = _ocr_item_plain_text(item)
+    if not txt or "\n" in txt or len(txt) > 30:
+        return False
+    return bool(_OCR_MARGIN_FOOTER_RE.match(txt))
+
+
+def _is_ocr_margin_header_item(item: dict[str, Any], page_h: float, has_xu_biao_after: bool) -> bool:
+    blk = item.get("block") or {}
+    bbox = blk.get("bbox")
+    if not isinstance(bbox, (list, tuple)) or len(bbox) < 4 or page_h <= 0.0:
+        return False
+    if float(bbox[3]) > page_h * 0.13:
+        return False
+    txt = _ocr_item_plain_text(item)
+    if not txt or "\n" in txt or len(txt) > 45:
+        return False
+    if re.match(r"^\s*表\s*\d+", txt) or re.search(r"[。！？!?…；;]$", txt):
+        return False
+    if re.match(r"^(?:\d+[.、．]|[（(]\d+[)）])", txt):
+        return False
+    return bool(has_xu_biao_after or not txt.startswith("#"))
+
+
+def _merge_cross_page_tables(pages_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """
+    Merge split GFM tables across consecutive pages when intervening blocks contain
+    at most a '续表'/'續表' marker (or zero body paragraphs, ignoring margin running headers/footers),
+    column counts match, and either a continuation marker is present or headers match.
+    """
+    if len(pages_data) < 2:
+        return pages_data
+    try:
+        from src.extraction.table_reconstructor import (
+            is_continuation_table_marker,
+            merge_gfm_tables_if_compatible,
+        )
+    except Exception:
+        return pages_data
+
+    for idx in range(len(pages_data) - 1):
+        skipped_footer_pages: list[dict[str, Any]] = []
+        prev_page: dict[str, Any] | None = None
+        prev_page_idx = idx
+        while prev_page_idx >= 0:
+            cand_page = pages_data[prev_page_idx]
+            cand_body = [it for it in cand_page.get("body", []) if str(it.get("md", "")).strip()]
+            if not cand_body:
+                if cand_page.get("footnotes"):
+                    break
+                prev_page_idx -= 1
+                continue
+            cand_ps = cand_page.get("page_size") or [1000.0, 1000.0]
+            cand_ph = float(cand_ps[1]) if len(cand_ps) >= 2 else 1000.0
+            if not cand_page.get("footnotes") and all(_is_ocr_margin_footer_item(it, cand_ph) for it in cand_body):
+                skipped_footer_pages.append(cand_page)
+                prev_page_idx -= 1
+                continue
+            prev_page = cand_page
+            break
+
+        if prev_page is None or prev_page.get("footnotes"):
+            continue
+        curr_page = pages_data[idx + 1]
+        prev_body: list[dict[str, Any]] = prev_page.get("body", [])
+        curr_body: list[dict[str, Any]] = curr_page.get("body", [])
+        prev_ps = prev_page.get("page_size") or [1000.0, 1000.0]
+        prev_ph = float(prev_ps[1]) if len(prev_ps) >= 2 else 1000.0
+        curr_ps = curr_page.get("page_size") or [1000.0, 1000.0]
+        curr_ph = float(curr_ps[1]) if len(curr_ps) >= 2 else 1000.0
+
+        prev_item_idx: int | None = None
+        prev_trailing_footer_indices: list[int] = []
+        for j in range(len(prev_body) - 1, -1, -1):
+            it = prev_body[j]
+            if not str(it.get("md", "")).strip():
+                continue
+            if _is_ocr_table_item(it):
+                prev_item_idx = j
+                break
+            if _is_ocr_margin_footer_item(it, prev_ph):
+                prev_trailing_footer_indices.append(j)
+                continue
+            break
+        if prev_item_idx is None:
+            continue
+        prev_item = prev_body[prev_item_idx]
+        prev_md = str(prev_item.get("md", "")).strip()
+
+        curr_table_idx: int | None = None
+        xu_biao_indices: list[int] = []
+        margin_hdr_indices: list[int] = []
+        intervening_valid = True
+        for j, it in enumerate(curr_body):
+            raw_md = str(it.get("md", "")).strip()
+            if not raw_md:
+                continue
+            if _is_ocr_table_item(it):
+                curr_table_idx = j
+                break
+            inner_txt = _ocr_item_plain_text(it)
+            if is_continuation_table_marker(inner_txt):
+                xu_biao_indices.append(j)
+                if len(xu_biao_indices) > 1:
+                    intervening_valid = False
+                    break
+                continue
+            next_it = next((curr_body[k] for k in range(j + 1, len(curr_body)) if str(curr_body[k].get("md", "")).strip()), None)
+            has_xu_biao_next = bool(next_it is not None and is_continuation_table_marker(_ocr_item_plain_text(next_it)))
+            if _is_ocr_margin_header_item(it, curr_ph, has_xu_biao_next):
+                margin_hdr_indices.append(j)
+                if len(margin_hdr_indices) > 1:
+                    intervening_valid = False
+                    break
+                continue
+            intervening_valid = False
+            break
+
+        if not intervening_valid or curr_table_idx is None:
+            continue
+
+        curr_item = curr_body[curr_table_idx]
+        curr_md = str(curr_item.get("md", "")).strip()
+        merged_md = merge_gfm_tables_if_compatible(
+            prev_md,
+            curr_md,
+            has_continuation_marker=bool(xu_biao_indices),
+        )
+        if merged_md is None:
+            continue
+
+        prev_item["md"] = merged_md
+        prev_blk = prev_item.get("block")
+        if isinstance(prev_blk, dict):
+            prev_blk["surya_text"] = merged_md
+
+        for j in sorted(prev_trailing_footer_indices, reverse=True):
+            prev_body.pop(j)
+        for fp in skipped_footer_pages:
+            fp["body"].clear()
+        for j in range(curr_table_idx, -1, -1):
+            curr_body.pop(j)
 
     return pages_data
 
@@ -1655,9 +1851,19 @@ def _run_phase_a_layout_det_macro_batch(
 
     macro_page_records: list[dict[str, Any]] = []
     try:
-        from src.extraction.table_reconstructor import extract_reconstructed_tables_from_page
+        from src.extraction.table_reconstructor import (
+            clean_table_cell_text,
+            extract_reconstructed_tables_from_page,
+            is_valid_pymupdf_table,
+            normalize_pymupdf_table_rows,
+            rect_union_intersection_area,
+        )
     except Exception:
+        clean_table_cell_text = None
         extract_reconstructed_tables_from_page = None
+        is_valid_pymupdf_table = None
+        normalize_pymupdf_table_rows = None
+        rect_union_intersection_area = None
 
     try:
         for chunk_start in range(macro_start, macro_end, chunk_size):
@@ -1685,24 +1891,75 @@ def _run_phase_a_layout_det_macro_batch(
                     sx = float(img_150.width) / max(1.0, float(p_page.rect.width))
                     sy = float(img_150.height) / max(1.0, float(p_page.rect.height))
 
+                    table_zones_150: list[dict[str, Any]] = []
+                    bordered_pdf_bboxes: list[tuple[float, float, float, float]] = []
+                    try:
+                        p_w = float(p_page.rect.width)
+                        p_h = float(p_page.rect.height)
+                        tabs = p_page.find_tables()
+                        if tabs and getattr(tabs, "tables", None):
+                            for tbl_obj in tabs.tables:
+                                tbl_rows = tbl_obj.extract()
+                                valid_tbl = (
+                                    is_valid_pymupdf_table(tbl_rows, tbl_obj.bbox, p_w, p_h)
+                                    if is_valid_pymupdf_table is not None
+                                    else bool(tbl_rows)
+                                )
+                                if not valid_tbl or not tbl_rows:
+                                    continue
+                                if normalize_pymupdf_table_rows is not None:
+                                    cleaned_tbl_rows = normalize_pymupdf_table_rows(tbl_rows, table_obj=tbl_obj)
+                                else:
+                                    cleaned_tbl_rows = [
+                                        [
+                                            clean_table_cell_text(cell)
+                                            if clean_table_cell_text is not None
+                                            else (cell or "").replace("\n", " ").strip()
+                                            for cell in row
+                                        ]
+                                        for row in tbl_rows
+                                    ]
+                                md_rows: list[str] = []
+                                for r_idx, row in enumerate(cleaned_tbl_rows):
+                                    cells = [c_txt.replace("|", "\\|") for c_txt in row]
+                                    md_rows.append("| " + " | ".join(cells) + " |")
+                                    if r_idx == 0:
+                                        md_rows.append("|" + "|".join([" --- " for _ in cells]) + "|")
+                                tb = (float(tbl_obj.bbox[0]), float(tbl_obj.bbox[1]), float(tbl_obj.bbox[2]), float(tbl_obj.bbox[3]))
+                                bordered_pdf_bboxes.append(tb)
+                                table_zones_150.append({
+                                    "bbox": [
+                                        (tb[0] - float(p_page.rect.x0)) * sx,
+                                        (tb[1] - float(p_page.rect.y0)) * sy,
+                                        (tb[2] - float(p_page.rect.x0)) * sx,
+                                        (tb[3] - float(p_page.rect.y0)) * sy,
+                                    ],
+                                    "markdown": "\n".join(md_rows),
+                                })
+                    except Exception:
+                        pass
+
                     page_3line_tables = []
                     if extract_reconstructed_tables_from_page is not None:
                         try:
                             page_3line_tables = extract_reconstructed_tables_from_page(p_page)
                         except Exception:
                             page_3line_tables = []
-                    table_zones_150 = [
-                        {
+                    for rtbl in page_3line_tables:
+                        rb = (float(rtbl.bbox[0]), float(rtbl.bbox[1]), float(rtbl.bbox[2]), float(rtbl.bbox[3]))
+                        if bordered_pdf_bboxes and rect_union_intersection_area is not None:
+                            r_area = max((rb[2] - rb[0]) * (rb[3] - rb[1]), 1.0)
+                            if rect_union_intersection_area(rb, bordered_pdf_bboxes) / r_area > 0.30:
+                                continue
+                        table_zones_150.append({
                             "bbox": [
-                                (float(rtbl.bbox[0]) - float(p_page.rect.x0)) * sx,
-                                (float(rtbl.bbox[1]) - float(p_page.rect.y0)) * sy,
-                                (float(rtbl.bbox[2]) - float(p_page.rect.x0)) * sx,
-                                (float(rtbl.bbox[3]) - float(p_page.rect.y0)) * sy,
+                                (rb[0] - float(p_page.rect.x0)) * sx,
+                                (rb[1] - float(p_page.rect.y0)) * sy,
+                                (rb[2] - float(p_page.rect.x0)) * sx,
+                                (rb[3] - float(p_page.rect.y0)) * sy,
                             ],
                             "markdown": rtbl.markdown,
-                        }
-                        for rtbl in page_3line_tables
-                    ]
+                        })
 
                     image_rects_150: list[list[float]] = []
                     try:
@@ -2079,6 +2336,7 @@ def main(args=None):
                         "footnotes": parsed_entries
                     })
 
+                pages_data = _merge_cross_page_tables(pages_data)
                 pages_data = _merge_cross_page_paragraphs(pages_data)
 
                 # Validate OCR blocks against strict LayoutRecordContract (P2/P3 Zero Raw-Dict Policy)

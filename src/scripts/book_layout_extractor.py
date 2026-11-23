@@ -57,18 +57,33 @@ except ImportError:
 
 try:
     from src.extraction.table_reconstructor import (
+        clean_table_cell_text,
+        is_continuation_table_marker,
         is_valid_pymupdf_table,
         extract_reconstructed_tables_from_page,
+        merge_gfm_tables_if_compatible,
+        normalize_pymupdf_table_rows,
+        rect_union_intersection_area,
     )
 except ImportError:
     try:
         from extraction.table_reconstructor import (
+            clean_table_cell_text,
+            is_continuation_table_marker,
             is_valid_pymupdf_table,
             extract_reconstructed_tables_from_page,
+            merge_gfm_tables_if_compatible,
+            normalize_pymupdf_table_rows,
+            rect_union_intersection_area,
         )
     except ImportError:
+        clean_table_cell_text = None
+        is_continuation_table_marker = None
         is_valid_pymupdf_table = None
         extract_reconstructed_tables_from_page = None
+        merge_gfm_tables_if_compatible = None
+        normalize_pymupdf_table_rows = None
+        rect_union_intersection_area = None
 
 try:
     from src.scripts.paragraph_reconstruction import update_delimiter_stack
@@ -414,11 +429,21 @@ def _table_to_markdown(table, page_footnotes: list, page_num: int) -> str:
     if not rows:
         return ""
 
+    if normalize_pymupdf_table_rows is not None:
+        cleaned_rows = normalize_pymupdf_table_rows(rows, table_obj=table)
+    else:
+        cleaned_rows = [
+            [
+                clean_table_cell_text(c) if clean_table_cell_text is not None else (c or "").replace("\n", " ").strip()
+                for c in row
+            ]
+            for row in rows
+        ]
+
     md_rows = []
-    for r_idx, row in enumerate(rows):
+    for r_idx, row in enumerate(cleaned_rows):
         cells = []
-        for cell in row:
-            cell_text = (cell or "").replace("\n", " ").strip()
+        for cell_text in row:
             # Replace footnote markers inside cells
             cell_text = _replace_fn_markers_in_text(cell_text, page_footnotes, page_num)
             # Escape pipe characters inside cells
@@ -706,13 +731,36 @@ def _init_layout_audit_data(
 
 
 def _block_overlaps_any_table(bbox_list: List[Any], block_bbox: Sequence[float]) -> bool:
-    """Return True if block_bbox overlaps any known table region by >30%."""
+    """Return True if block_bbox overlaps the union of known table regions by >30%."""
+    if not bbox_list:
+        return False
     b = fitz.Rect(block_bbox)
+    b_area = max(b.width * b.height, 1.0)
+    if rect_union_intersection_area is not None:
+        b_coords = (float(b.x0), float(b.y0), float(b.x1), float(b.y1))
+        tr_coords = [(float(tr.x0), float(tr.y0), float(tr.x1), float(tr.y1)) for tr in bbox_list]
+        return rect_union_intersection_area(b_coords, tr_coords) / b_area > 0.30
     for tr in bbox_list:
         inter = b & tr
         if inter.is_empty:
             continue
-        if (inter.width * inter.height) / max(b.width * b.height, 1.0) > 0.30:
+        if (inter.width * inter.height) / b_area > 0.30:
+            return True
+    return False
+
+
+def _table_overlaps_any_table(bbox_list: List[Any], table_bbox: Sequence[float]) -> bool:
+    """Bidirectional union overlap check between a candidate table and already accepted table bboxes."""
+    if _block_overlaps_any_table(bbox_list, table_bbox):
+        return True
+    if not bbox_list or rect_union_intersection_area is None:
+        return False
+    cand_rect = fitz.Rect(table_bbox)
+    cand_coords = (float(cand_rect.x0), float(cand_rect.y0), float(cand_rect.x1), float(cand_rect.y1))
+    for tr in bbox_list:
+        tr_area = max(tr.width * tr.height, 1.0)
+        tr_coords = (float(tr.x0), float(tr.y0), float(tr.x1), float(tr.y1))
+        if rect_union_intersection_area(tr_coords, [cand_coords]) / tr_area > 0.30:
             return True
     return False
 
@@ -726,7 +774,7 @@ def _detect_three_line_tables(page: Any, blocks: List[Dict[str, Any]], table_bbo
     except Exception:
         return reconstructed_tables
     for rtbl in three_line_list:
-        if not _block_overlaps_any_table(table_bboxes, rtbl.bbox):
+        if not _table_overlaps_any_table(table_bboxes, rtbl.bbox):
             reconstructed_tables.append(rtbl)
             table_bboxes.append(fitz.Rect(rtbl.bbox))
     return reconstructed_tables
@@ -751,7 +799,7 @@ def _detect_bordered_page_tables(page: Any, page_w: float, page_h: float, table_
     if not (tabs and tabs.tables):
         return page_tables
     for t in tabs.tables:
-        if _block_overlaps_any_table(table_bboxes, t.bbox):
+        if _table_overlaps_any_table(table_bboxes, t.bbox):
             continue
         if _is_valid_bordered_table(t, page_w, page_h):
             page_tables.append(t)
@@ -802,6 +850,7 @@ def _partition_page_blocks(
     strip_headers_heuristic: bool,
     table_bboxes: List[Any],
     audit_data: Dict[str, Any],
+    is_cropped: bool = False,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
     body_blocks: List[Dict[str, Any]] = []
     footnote_blocks: List[Dict[str, Any]] = []
@@ -810,8 +859,13 @@ def _partition_page_blocks(
     for b in blocks:
         block_type = b.get("type")
         if block_type == 1:
+            bbox_img = b.get("bbox", [0, 0, 0, 0])
+            if is_cropped:
+                cy_img = (float(bbox_img[1]) + float(bbox_img[3])) * 0.5
+                if cy_img < 0.0 or cy_img > page_h:
+                    continue
             is_hf = strip_headers_heuristic and (is_page_header(b, page_h, page_w) or is_page_footer(b, page_h))
-            if not is_hf and not (table_bboxes and _block_overlaps_any_table(table_bboxes, b.get("bbox", [0, 0, 0, 0]))):
+            if not is_hf and not (table_bboxes and _block_overlaps_any_table(table_bboxes, bbox_img)):
                 figure_blocks.append(b)
             continue
         if block_type != 0:
@@ -820,6 +874,11 @@ def _partition_page_blocks(
         if not block_text:
             continue
         bbox = b.get("bbox", [0, 0, 0, 0])
+        if is_cropped:
+            cy = (float(bbox[1]) + float(bbox[3])) * 0.5
+            cx = (float(bbox[0]) + float(bbox[2])) * 0.5
+            if cy < 0.0 or cy > page_h or cx < 0.0 or cx > page_w:
+                continue
         if (bbox[0] > page_w * 0.88 or bbox[2] < page_w * 0.12) and (bbox[2] - bbox[0]) < 25:
             continue
         if strip_headers_heuristic and is_page_header(b, page_h, page_w):
@@ -2191,6 +2250,236 @@ def _merge_cross_page_layout_paragraphs(
         curr_snap["records"].pop(0)
 
 
+_MARGIN_FOOTER_PAGE_RE = re.compile(
+    r"^(?:[·•\-—\s]*\d{1,4}[·•\-—\s]*|(?:第\s*)?\d{1,4}\s*[页頁]|\d+\s*/\s*\d+)$"
+)
+_CUSTOM_STYLE_ATTR_TAIL_RE = re.compile(r'\s*\{custom-style="[^"]+"\}\s*$')
+
+
+def _extract_layout_record_plain_text(rec: Dict[str, Any]) -> str:
+    rtype = rec.get("type")
+    if rtype == "heading":
+        return str(rec.get("title", "")).strip()
+    raw = str(rec.get("raw_text", "")).strip()
+    inner, _, _ = _unwrap_styled_div(raw)
+    return inner.strip()
+
+
+def _extract_para_md_plain_text(md_text: str) -> str:
+    inner, _, _ = _unwrap_styled_div((md_text or "").strip())
+    inner = inner.lstrip("#").strip()
+    return _CUSTOM_STYLE_ATTR_TAIL_RE.sub("", inner).strip()
+
+
+def _is_margin_running_footer_record(rec: Dict[str, Any], page_h: float) -> bool:
+    if rec.get("type") not in ("paragraph", "heading"):
+        return False
+    bbox = rec.get("bbox")
+    if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+        return False
+    if float(bbox[1]) < page_h * 0.87:
+        return False
+    txt = _extract_layout_record_plain_text(rec)
+    if not txt or "\n" in txt or len(txt) > 30:
+        return False
+    return bool(_MARGIN_FOOTER_PAGE_RE.match(txt))
+
+
+def _is_margin_running_header_record(
+    rec: Dict[str, Any],
+    page_h: float,
+    body_size: float,
+    has_xu_biao_after: bool,
+) -> bool:
+    if rec.get("type") not in ("paragraph", "heading"):
+        return False
+    bbox = rec.get("bbox")
+    if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
+        return False
+    if float(bbox[3]) > page_h * 0.13:
+        return False
+    txt = _extract_layout_record_plain_text(rec)
+    if not txt or "\n" in txt or len(txt) > 45:
+        return False
+    if re.match(r"^\s*表\s*\d+", txt) or re.search(r"[。！？!?…；;]$", txt):
+        return False
+    if re.match(r"^(?:\d+[.、．]|[（(]\d+[)）])", txt):
+        return False
+    fsize = float(rec.get("font_size") or body_size or 10.5)
+    return bool(has_xu_biao_after or fsize <= max(body_size, 10.5) * 1.05)
+
+
+def _merge_cross_page_layout_tables(page_snapshots: List[Dict[str, Any]]) -> None:
+    """
+    Merge split tables across consecutive page boundaries when intervening blocks
+    between the trailing table and leading table contain at most a '续表'/'續表' marker
+    (or zero body paragraphs, ignoring margin running headers/footers), column counts match,
+    and either a continuation marker is present or the continuation table's first row repeats
+    the prior header row.
+    """
+    if len(page_snapshots) < 2 or merge_gfm_tables_if_compatible is None or is_continuation_table_marker is None:
+        return
+
+    for idx in range(len(page_snapshots) - 1):
+        skipped_footer_snaps: List[Dict[str, Any]] = []
+        prev_snap: Optional[Dict[str, Any]] = None
+        probe_idx = idx
+        while probe_idx >= 0:
+            cand = page_snapshots[probe_idx]
+            if not cand["records"]:
+                probe_idx -= 1
+                continue
+            cand_h = float(cand.get("page_h", 800.0))
+            if all(_is_margin_running_footer_record(r, cand_h) for r in cand["records"]):
+                skipped_footer_snaps.append(cand)
+                probe_idx -= 1
+                continue
+            prev_snap = cand
+            break
+
+        curr_snap = page_snapshots[idx + 1]
+        if prev_snap is None or not curr_snap["records"] or not curr_snap["paragraphs"]:
+            continue
+
+        prev_records = prev_snap["records"]
+        prev_page_h = float(prev_snap.get("page_h", 800.0))
+        prev_tbl_rec_idx: Optional[int] = None
+        prev_trailing_footer_texts: List[str] = []
+        for r_i in range(len(prev_records) - 1, -1, -1):
+            rec = prev_records[r_i]
+            if rec.get("type") == "table":
+                prev_tbl_rec_idx = r_i
+                break
+            if _is_margin_running_footer_record(rec, prev_page_h):
+                prev_trailing_footer_texts.append(_extract_layout_record_plain_text(rec))
+                continue
+            break
+        if prev_tbl_rec_idx is None:
+            continue
+        prev_rec = prev_records[prev_tbl_rec_idx]
+        prev_raw_md = str(prev_rec.get("raw_md", "")).strip()
+        if not prev_raw_md:
+            continue
+
+        curr_records = curr_snap["records"]
+        curr_page_h = float(curr_snap.get("page_h", 800.0))
+        curr_body_size = float(curr_snap.get("body_size", 10.5))
+        curr_table_rec_idx: Optional[int] = None
+        xu_biao_rec_indices: List[int] = []
+        margin_hdr_rec_indices: List[int] = []
+        allowed_leading_plain_texts: List[str] = []
+        intervening_valid = True
+        for r_i, rec in enumerate(curr_records):
+            rtype = rec.get("type")
+            if rtype == "table":
+                curr_table_rec_idx = r_i
+                break
+            if rtype in ("paragraph", "heading"):
+                txt_probe = _extract_layout_record_plain_text(rec)
+                if is_continuation_table_marker(txt_probe):
+                    xu_biao_rec_indices.append(r_i)
+                    allowed_leading_plain_texts.append(txt_probe)
+                    if len(xu_biao_rec_indices) > 1:
+                        intervening_valid = False
+                        break
+                    continue
+                next_rec = curr_records[r_i + 1] if (r_i + 1) < len(curr_records) else None
+                has_xu_biao_next = bool(
+                    next_rec is not None
+                    and next_rec.get("type") in ("paragraph", "heading")
+                    and is_continuation_table_marker(_extract_layout_record_plain_text(next_rec))
+                )
+                if _is_margin_running_header_record(rec, curr_page_h, curr_body_size, has_xu_biao_next):
+                    margin_hdr_rec_indices.append(r_i)
+                    allowed_leading_plain_texts.append(txt_probe)
+                    if len(margin_hdr_rec_indices) > 1:
+                        intervening_valid = False
+                        break
+                    continue
+            intervening_valid = False
+            break
+
+        if not intervening_valid or curr_table_rec_idx is None:
+            continue
+
+        curr_rec = curr_records[curr_table_rec_idx]
+        curr_raw_md = str(curr_rec.get("raw_md", "")).strip()
+        if not curr_raw_md:
+            continue
+
+        curr_paras = curr_snap["paragraphs"]
+        curr_tbl_md_idx = next(
+            (p_i for p_i, p_txt in enumerate(curr_paras) if p_txt.strip() == curr_raw_md),
+            None,
+        )
+        if curr_tbl_md_idx is None:
+            continue
+
+        xu_biao_md_indices: List[int] = []
+        allowed_hdr_set = set(allowed_leading_plain_texts)
+        paras_before_valid = True
+        for p_i in range(curr_tbl_md_idx):
+            p_raw = str(curr_paras[p_i]).strip()
+            if not p_raw:
+                continue
+            plain_p = _extract_para_md_plain_text(p_raw)
+            if is_continuation_table_marker(plain_p):
+                xu_biao_md_indices.append(p_i)
+                if len(xu_biao_md_indices) > 1:
+                    paras_before_valid = False
+                    break
+            elif plain_p in allowed_hdr_set:
+                continue
+            else:
+                paras_before_valid = False
+                break
+        if not paras_before_valid:
+            continue
+
+        has_xu_biao = bool(xu_biao_rec_indices or xu_biao_md_indices)
+        merged_md = merge_gfm_tables_if_compatible(
+            prev_raw_md,
+            curr_raw_md,
+            has_continuation_marker=has_xu_biao,
+        )
+        if merged_md is None:
+            continue
+
+        prev_paras = prev_snap["paragraphs"]
+        prev_tbl_md_idx = next(
+            (p_i for p_i in range(len(prev_paras) - 1, -1, -1) if prev_paras[p_i].strip() == prev_raw_md),
+            None,
+        )
+        if prev_tbl_md_idx is None:
+            continue
+
+        # Verify trailing paragraphs on prev_snap match only the bridged margin footers
+        trailing_para_count = len(prev_paras) - 1 - prev_tbl_md_idx
+        trailing_rec_count = len(prev_records) - 1 - prev_tbl_rec_idx
+        if trailing_para_count != trailing_rec_count:
+            continue
+        if trailing_para_count > 0:
+            allowed_footer_set = set(prev_trailing_footer_texts)
+            if not all(_extract_para_md_plain_text(prev_paras[k]) in allowed_footer_set for k in range(prev_tbl_md_idx + 1, len(prev_paras))):
+                continue
+
+        prev_paras[prev_tbl_md_idx] = merged_md
+        prev_rec["raw_md"] = merged_md
+
+        for _ in range(trailing_rec_count):
+            prev_paras.pop()
+            prev_records.pop()
+
+        for f_snap in skipped_footer_snaps:
+            f_snap["records"].clear()
+            f_snap["paragraphs"].clear()
+
+        for p_i in range(curr_tbl_md_idx, -1, -1):
+            curr_paras.pop(p_i)
+        for r_i in range(curr_table_rec_idx, -1, -1):
+            curr_records.pop(r_i)
+
+
 def _process_single_pdf_page_layout(
     page: Any,
     page_num: int,
@@ -2217,11 +2506,21 @@ def _process_single_pdf_page_layout(
     blocks = _split_merged_heading_blocks(page.get_text("dict").get("blocks", []))
 
     table_bboxes: List[Any] = []
-    reconstructed_tables = _detect_three_line_tables(page, blocks, table_bboxes)
     page_tables = _detect_bordered_page_tables(page, page_w, page_h, table_bboxes)
+    reconstructed_tables = _detect_three_line_tables(page, blocks, table_bboxes)
+
+    try:
+        is_cropped = bool(
+            getattr(page, "cropbox", None) is not None
+            and getattr(page, "mediabox", None) is not None
+            and page.cropbox != page.mediabox
+        )
+    except Exception:
+        is_cropped = False
 
     body_blocks, footnote_blocks, figure_blocks = _partition_page_blocks(
-        blocks, page_w, page_h, body_size, enable_footnotes, strip_headers_heuristic, table_bboxes, audit_data
+        blocks, page_w, page_h, body_size, enable_footnotes, strip_headers_heuristic, table_bboxes, audit_data,
+        is_cropped=is_cropped,
     )
     body_blocks = _stitch_body_lines_into_blocks(body_blocks, body_size)
     page_footnotes = _parse_page_footnotes_from_blocks(footnote_blocks)
@@ -2278,6 +2577,7 @@ def _process_single_pdf_page_layout(
         page_snapshots.append({
             "page_num": page_num,
             "page_w": page_w,
+            "page_h": page_h,
             "base_x0": snap_base_x0,
             "max_x1": snap_max_x1,
             "body_size": body_size,
@@ -2340,6 +2640,7 @@ def _parse_pdf_layout_flow(
             para_metas_by_id=para_metas_by_id, page_snapshots=page_snapshots,
         )
 
+    _merge_cross_page_layout_tables(page_snapshots)
     _merge_cross_page_layout_paragraphs(page_snapshots, para_metas_by_id, audit_data)
     for snap in page_snapshots:
         if snap["paragraphs"]:
