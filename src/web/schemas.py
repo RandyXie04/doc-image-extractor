@@ -316,3 +316,57 @@ class TaskPluginListResponse(StrictApiSchema):
     status: Literal["success"] = "success"
     total: int = Field(..., ge=0)
     plugins: List[TaskPluginSpecItem]
+
+
+# ---------------------------------------------------------------------------
+# System Bootstrap & App Mode Contracts
+# ---------------------------------------------------------------------------
+
+class AppModeResponse(StrictApiSchema):
+    mode: Literal["editor", "dev"]
+    is_local_dev: bool
+    client_ip: str = ""
+
+
+class AppModeSetResponse(StrictApiSchema):
+    status: Literal["success"] = "success"
+    mode: Literal["editor", "dev"]
+    is_local_dev: bool
+    client_ip: str = ""
+
+
+class SystemVersionResponse(StrictApiSchema):
+    app_version: str
+    model_version: str
+
+
+class SystemConfigResponse(StrictApiSchema):
+    max_upload_size_mb: int
+    max_template_size_mb: int
+    file_retention_hours: int
+    enable_disk_logging: bool
+    app_mode: str
+    default_ai_model: str
+    ollama_host: str
+    ollama_model: str
+    ollama_text_model: str
+    ollama_available: bool
+    offline_isolated: bool = True
+
+
+class DocCatalogueItem(StrictApiSchema):
+    id: str
+    title: str
+    category: str
+    audience: str = "all"
+    icon: str = "fileText"
+    description: str = ""
+
+
+class SystemBootstrapResponse(StrictApiSchema):
+    version: SystemVersionResponse
+    config: SystemConfigResponse
+    hardware: HardwareStatusResponse
+    app_mode: AppModeResponse
+    plugins: List[TaskPluginSpecItem]
+    docs: List[DocCatalogueItem]

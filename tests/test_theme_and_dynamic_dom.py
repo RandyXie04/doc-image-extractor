@@ -129,15 +129,19 @@ class TestThemeSwitchingAndQueryParams(unittest.TestCase):
         self.assertEqual(resolve_theme("", None), ("light", False))
 
     def test_sidebar_theme_toggle_cycle_and_accessibility(self):
-        """Verify sidebar.js toggle mechanism state machine, labels, badges, and aria attributes."""
+        """Verify sidebar.js & theme_manager.js toggle state machine, labels, badges, and WCAG 2.5.3 compliance."""
         sidebar_js = (self.static_dir / "sidebar.js").read_text(encoding="utf-8")
+        theme_manager_js = (self.static_dir / "js" / "sidebar" / "theme_manager.js").read_text(encoding="utf-8")
 
-        # Verify key landmarks and actions exist in sidebar.js
+        # Verify key landmarks exist in sidebar.js and state machine lives in theme_manager.js
         self.assertIn("themeToggleBtn", sidebar_js)
         self.assertIn("themeToggleIcon", sidebar_js)
         self.assertIn("themeToggleLabel", sidebar_js)
         self.assertIn("themeToggleBadge", sidebar_js)
-        self.assertIn("updateThemeToggleUI", sidebar_js)
+        self.assertIn("updateThemeToggleUI", theme_manager_js)
+        # WCAG 2.5.3 Label-in-Name: must not override visible text with a conflicting aria-label
+        self.assertIn("removeAttribute('aria-label')", theme_manager_js)
+        self.assertNotIn("setAttribute('aria-label'", theme_manager_js)
 
         # Emulate the state machine of updateThemeToggleUI & toggle onclick
         class ThemeUIState:
@@ -440,7 +444,8 @@ class TestWcagContrastRatios(unittest.TestCase):
             ("Text on Sidebar BG", text, sidebar_bg, 7.0, "AAA"),
             ("Secondary Text on Background", text_sec, bg, 4.5, "AA"),
             ("Secondary Text on Surface", text_sec, surface, 4.5, "AA"),
-            ("Hint Text on Surface-2", text_hint, surface2, 5.0, "AA"),
+            ("Hint Text on Sidebar BG", text_hint, sidebar_bg, 7.0, "AAA"),
+            ("Hint Text on Surface-2", text_hint, surface2, 4.5, "AA"),
             ("Hint Text on Surface", text_hint, surface, 6.5, "AA"),
             ("Dracula Cyan on Surface-2", cyan, surface2, 6.0, "AA"),
             ("Button Text on Purple Accent", accent_fg, accent, 4.5, "AA"),
@@ -460,6 +465,16 @@ class TestWcagContrastRatios(unittest.TestCase):
                 target_ratio,
                 f"Contrast failure for '{desc}' ({fg_c} on {bg_c}): {ratio:.2f}:1 < {target_ratio}:1 ({standard})",
             )
+
+    def test_sidebar_css_no_muted_text_color_usage(self):
+        """Ensure sidebar.css does not apply low-contrast --text-muted to readable text rules."""
+        sidebar_css = (get_project_dir() / "src" / "web" / "static" / "sidebar.css").read_text(encoding="utf-8")
+        rules_section = sidebar_css.split("* {", 1)[1]
+        self.assertNotIn(
+            "var(--text-muted)",
+            rules_section,
+            "sidebar.css rules must use --text-hint instead of --text-muted for WCAG AA readability",
+        )
 
 
 if __name__ == "__main__":

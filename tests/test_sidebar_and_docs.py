@@ -29,20 +29,29 @@ class TestSidebarAndDocs(unittest.TestCase):
         self.sidebar_css_path = self.project_dir / "src" / "web" / "static" / "sidebar.css"
 
     def test_sidebar_static_assets(self):
-        """Verify sidebar JS and CSS assets are served with valid content and core landmarks."""
+        """Verify sidebar JS, modular sub-components, and CSS assets are served with 3-zone landmarks."""
         resp_js = self.client.get("/static/sidebar.js", headers=self.auth_headers)
         self.assertEqual(resp_js.status_code, 200)
         js_text = resp_js.text
-        self.assertIn("MAIN_NAV_ITEMS", js_text)
-        self.assertIn("AUXILIARY_NAV_ITEMS", js_text)
-        self.assertIn("iaCategorySettings", js_text)
-        self.assertIn("iaCategoryDocs", js_text)
+        for landmark in (
+            "sidebarPrimaryNav",
+            "sidebarWorkspaceTools",
+            "sidebarSystemFooter",
+            "systemStatusPopover",
+            "docViewerModal",
+            "document.createElement('main')",
+        ):
+            self.assertIn(landmark, js_text)
+
+        for mod_name in ("system_store.js", "theme_manager.js", "doc_modal.js", "dev_telemetry.js"):
+            resp_mod = self.client.get(f"/static/js/sidebar/{mod_name}", headers=self.auth_headers)
+            self.assertEqual(resp_mod.status_code, 200, f"Missing sidebar module: {mod_name}")
 
         resp_css = self.client.get("/static/sidebar.css", headers=self.auth_headers)
         self.assertEqual(resp_css.status_code, 200)
         css_text = resp_css.text
-        self.assertIn(".ia-category", css_text)
-        self.assertIn(".nav-group", css_text)
+        for selector in (".sidebar-nav-zone", ".sidebar-tools-zone", ".sidebar-system-footer", ".nav-group"):
+            self.assertIn(selector, css_text)
 
     def test_api_docs_list(self):
         """Verify GET /api/docs returns complete list of documentation metadata and supports audience filtering."""
@@ -113,7 +122,7 @@ class TestSidebarAndDocs(unittest.TestCase):
         self.assertTrue(data_dev["is_local_dev"])
 
         # 2. Non-local LAN IP must be blocked (403) when attempting to switch to dev mode
-        with patch("src.web.app.is_local_dev_request", return_value=False):
+        with patch("src.web.routers.system_router.is_local_dev_request", return_value=False):
             resp_forbidden = self.client.post("/api/set_app_mode", json={"mode": "dev"}, headers=self.auth_headers)
             self.assertEqual(resp_forbidden.status_code, 403)
 
@@ -123,8 +132,44 @@ class TestSidebarAndDocs(unittest.TestCase):
             self.assertEqual(resp_mode.json()["mode"], "editor")
             self.assertFalse(resp_mode.json()["is_local_dev"])
 
+        # 3. Invalid mode returns HTTP 400
+        resp_bad = self.client.post("/api/set_app_mode", json={"mode": "invalid"}, headers=self.auth_headers)
+        self.assertEqual(resp_bad.status_code, 400)
+
         # Restore editor mode
         self.client.post("/api/set_app_mode", json={"mode": "editor"}, headers=self.auth_headers)
+
+    def test_api_system_bootstrap_and_removed_report_issue(self):
+        """Verify unified /api/system/bootstrap contract and deletion of dead /api/report_issue."""
+        from unittest.mock import patch
+
+        resp_boot = self.client.get("/api/system/bootstrap", headers=self.auth_headers)
+        self.assertEqual(resp_boot.status_code, 200)
+        data = resp_boot.json()
+        self.assertEqual(
+            set(data.keys()),
+            {"version", "config", "hardware", "app_mode", "plugins", "docs"},
+        )
+        self.assertIn("app_version", data["version"])
+        self.assertIn("max_upload_size_mb", data["config"])
+        self.assertIn("gpu_name", data["hardware"])
+        self.assertIn(data["app_mode"]["mode"], ("editor", "dev"))
+        plugin_ids = {p["id"] for p in data["plugins"]}
+        self.assertTrue({"ocr_pipeline", "pod_studio", "founder_repair", "extract_images", "formula_extraction"}.issubset(plugin_ids))
+
+        # Non-local LAN IP gets editor mode and editor-safe docs only
+        with patch("src.web.routers.system_router.is_local_dev_request", return_value=False):
+            resp_lan = self.client.get("/api/system/bootstrap", headers=self.auth_headers)
+            self.assertEqual(resp_lan.status_code, 200)
+            lan_data = resp_lan.json()
+            self.assertEqual(lan_data["app_mode"]["mode"], "editor")
+            self.assertFalse(lan_data["app_mode"]["is_local_dev"])
+            lan_doc_ids = {d["id"] for d in lan_data["docs"]}
+            self.assertNotIn("modules", lan_doc_ids)
+
+        # Dead /api/report_issue endpoint must be removed
+        resp_dead = self.client.post("/api/report_issue", json={"description": "test"}, headers=self.auth_headers)
+        self.assertEqual(resp_dead.status_code, 404)
 
 
 if __name__ == "__main__":

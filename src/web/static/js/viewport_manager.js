@@ -87,6 +87,13 @@
         if (toggleBtn) {
             toggleBtn.setAttribute('aria-expanded', sidebarOpen ? 'true' : 'false');
         }
+
+        // Prevent keyboard focus into off-canvas drawer when collapsed on mobile/tablet
+        const sidebar = document.getElementById('sidebar');
+        if (sidebar) {
+            const isDrawerMode = currentDevice === 'mobile' || currentDevice === 'tablet';
+            sidebar.inert = isDrawerMode ? !sidebarOpen : false;
+        }
     }
 
     /**

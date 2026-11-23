@@ -10,14 +10,13 @@ Founder system encoding repairs, issue reporting, and documentation catalogs.
 from __future__ import annotations
 
 import os
-import platform
 import subprocess
 import threading
 import time
 import urllib.parse
 import uuid
 from pathlib import Path
-from typing import Optional
+from typing import List, Literal, Optional
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, UploadFile
 
@@ -29,9 +28,15 @@ from src.web.dependencies import (
     save_upload_file_safely,
 )
 from src.web.schemas import (
+    AppModeResponse,
+    AppModeSetResponse,
+    DocCatalogueItem,
     FounderRepairResponse,
     HardwareStatusResponse,
     HardwareTelemetryResponse,
+    SystemBootstrapResponse,
+    SystemConfigResponse,
+    SystemVersionResponse,
     TaskPluginListResponse,
     TaskPluginSpecItem,
 )
@@ -50,14 +55,49 @@ def _cleanup_temp_files(*file_paths: str) -> None:
                 pass
 
 
-@router.get("/api/version")
-async def get_version():
+def _build_version_response() -> SystemVersionResponse:
     from config import VERSION
 
-    return {
-        "app_version": VERSION.app_version,
-        "model_version": VERSION.model_version,
-    }
+    return SystemVersionResponse(
+        app_version=VERSION.app_version,
+        model_version=VERSION.model_version,
+    )
+
+
+def _build_system_config_response() -> SystemConfigResponse:
+    from src.utils.ollama_client import is_ollama_available
+
+    return SystemConfigResponse(
+        max_upload_size_mb=CFG.max_upload_size_mb,
+        max_template_size_mb=CFG.max_template_size_mb,
+        file_retention_hours=CFG.file_retention_hours,
+        enable_disk_logging=CFG.enable_disk_logging,
+        app_mode=CFG.app_mode,
+        default_ai_model=os.getenv("DEFAULT_AI_MODEL", "qwen3.5:4b"),
+        ollama_host=CFG.ollama_host,
+        ollama_model=CFG.ollama_model,
+        ollama_text_model=CFG.ollama_text_model,
+        ollama_available=is_ollama_available(),
+        offline_isolated=True,
+    )
+
+
+def _build_app_mode_response(request: Request) -> AppModeResponse:
+    is_local = is_local_dev_request(request)
+    client_host = (request.client.host if request.client else "").strip()
+    effective_mode: Literal["editor", "dev"] = (
+        "dev" if (is_local and CFG.app_mode == "dev") else "editor"
+    )
+    return AppModeResponse(
+        mode=effective_mode,
+        is_local_dev=is_local,
+        client_ip=client_host,
+    )
+
+
+@router.get("/api/version", response_model=SystemVersionResponse)
+async def get_version() -> SystemVersionResponse:
+    return _build_version_response()
 
 
 @router.post("/api/check_update")
@@ -117,23 +157,59 @@ async def apply_update(request: Request):
     return result
 
 
-@router.get("/api/system_config")
-async def get_system_config():
+@router.get("/api/system_config", response_model=SystemConfigResponse)
+async def get_system_config() -> SystemConfigResponse:
     """取得系統安全防護、無日誌架構與本機離線 AI 模型配置資訊"""
-    from src.utils.ollama_client import is_ollama_available
-    return {
-        "max_upload_size_mb": CFG.max_upload_size_mb,
-        "max_template_size_mb": CFG.max_template_size_mb,
-        "file_retention_hours": CFG.file_retention_hours,
-        "enable_disk_logging": CFG.enable_disk_logging,
-        "app_mode": CFG.app_mode,
-        "default_ai_model": os.getenv("DEFAULT_AI_MODEL", "qwen3.5:4b"),
-        "ollama_host": CFG.ollama_host,
-        "ollama_model": CFG.ollama_model,
-        "ollama_text_model": CFG.ollama_text_model,
-        "ollama_available": is_ollama_available(),
-        "offline_isolated": True,
-    }
+    return _build_system_config_response()
+
+
+@router.get("/api/app_mode", response_model=AppModeResponse)
+async def get_app_mode(request: Request) -> AppModeResponse:
+    return _build_app_mode_response(request)
+
+
+@router.post("/api/set_app_mode", response_model=AppModeSetResponse)
+async def set_app_mode(request: Request) -> AppModeSetResponse:
+    data = await request.json()
+    new_mode = str(data.get("mode", "editor")).lower()
+    if new_mode not in ("editor", "dev"):
+        raise HTTPException(status_code=400, detail="模式必須為 'editor' 或 'dev'")
+
+    is_local = is_local_dev_request(request)
+    client_host = (request.client.host if request.client else "unknown").strip()
+    if new_mode == "dev" and not is_local:
+        raise HTTPException(
+            status_code=403,
+            detail=f"安全限制：工程師除錯模式僅允許於開發本機 IP 位址啟動（目前連線 IP: {client_host}）",
+        )
+
+    import config.settings
+
+    object.__setattr__(config.settings.CFG, "app_mode", new_mode)
+    mode_literal: Literal["editor", "dev"] = "dev" if new_mode == "dev" else "editor"
+    return AppModeSetResponse(
+        status="success",
+        mode=mode_literal,
+        is_local_dev=is_local,
+        client_ip=client_host,
+    )
+
+
+@router.get("/api/system/bootstrap", response_model=SystemBootstrapResponse)
+async def get_system_bootstrap(request: Request) -> SystemBootstrapResponse:
+    """單一啟動契約介面：一次回傳版本、配額與 AI 配置、硬體規格、操作模式、外掛與文件目錄"""
+    app_mode = _build_app_mode_response(request)
+    specs = get_plugin_registry().list_specs(only_enabled=True)
+    plugins = [TaskPluginSpecItem(**s.to_dict()) for s in specs]
+    hardware = HardwareStatusResponse(**CFG.get_hardware_profile())
+    return SystemBootstrapResponse(
+        version=_build_version_response(),
+        config=_build_system_config_response(),
+        hardware=hardware,
+        app_mode=app_mode,
+        plugins=plugins,
+        docs=_filter_docs_catalogue(app_mode.mode),
+    )
 
 
 @router.get("/api/system/plugins", response_model=TaskPluginListResponse)
@@ -259,26 +335,6 @@ async def download_founder_repaired_file(filename: str):
     )
 
 
-@router.post("/api/report_issue")
-async def report_issue(request: Request):
-    data = await request.json()
-    description = (data.get("description") or "").strip()[:2000]
-
-    sys_info = f"OS: {platform.system()} {platform.release()}"
-    body = f"**使用者回報:**\n{description}\n\n---\n**自動收集資訊:**\n```text\n{sys_info}\n```"
-
-    repo = "RandyXie04/doc-image-extractor"
-    encoded_title = urllib.parse.quote(f"[問題回報] {description[:30]}..." if description else "[問題回報] 請簡述問題")
-    encoded_body = urllib.parse.quote(body)
-    web_url = f"https://github.com/{repo}/issues/new?title={encoded_title}&body={encoded_body}"
-
-    return {
-        "status": "success",
-        "url": web_url,
-        "msg": "已生成 GitHub 官方回報頁面網址。",
-    }
-
-
 DOCS_CATALOGUE = [
     {
         "id": "workflow",
@@ -310,9 +366,7 @@ DOCS_CATALOGUE = [
 ]
 
 
-@router.get("/api/docs")
-async def list_docs(mode: Optional[str] = Query(None)):
-    """取得技術與操作文件清單，支援 mode=editor|dev 依受眾過濾"""
+def _filter_docs_catalogue(mode: Optional[str] = None) -> List[DocCatalogueItem]:
     items = DOCS_CATALOGUE
     if mode == "editor":
         items = [d for d in items if d.get("audience") in ("editor", "all")]
@@ -320,16 +374,22 @@ async def list_docs(mode: Optional[str] = Query(None)):
         items = [d for d in items if d.get("audience") in ("dev", "all")]
 
     return [
-        {
-            "id": d["id"],
-            "title": d["title"],
-            "category": d["category"],
-            "audience": d.get("audience", "all"),
-            "icon": d.get("icon", "fileText"),
-            "description": d["description"],
-        }
+        DocCatalogueItem(
+            id=d["id"],
+            title=d["title"],
+            category=d["category"],
+            audience=d.get("audience", "all"),
+            icon=d.get("icon", "fileText"),
+            description=d["description"],
+        )
         for d in items
     ]
+
+
+@router.get("/api/docs", response_model=List[DocCatalogueItem])
+async def list_docs(mode: Optional[str] = Query(None)) -> List[DocCatalogueItem]:
+    """取得技術與操作文件清單，支援 mode=editor|dev 依受眾過濾"""
+    return _filter_docs_catalogue(mode)
 
 
 @router.get("/api/docs/{doc_id}")

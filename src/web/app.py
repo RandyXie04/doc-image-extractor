@@ -32,8 +32,6 @@ from src.scripts.cleanup_scratch import cleanup_scratch
 from src.utils.path_helper import get_static_dir
 from src.utils.task_queue import get_event_broadcaster, get_task_queue
 from src.web.dependencies import (
-    get_local_dev_ips,
-    is_local_dev_request,
     track_background_task,
 )
 from src.web.schemas import QueueTaskItem, QueueTasksResponse
@@ -256,45 +254,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
-
-
-# App Mode API
-@app.get("/api/app_mode")
-async def get_app_mode(request: Request):
-    is_local = is_local_dev_request(request)
-    client_host = (request.client.host if request.client else "").strip()
-    effective_mode = CFG.app_mode if is_local else "editor"
-    return {
-        "mode": effective_mode,
-        "is_local_dev": is_local,
-        "client_ip": client_host,
-    }
-
-
-@app.post("/api/set_app_mode")
-async def set_app_mode(request: Request):
-    data = await request.json()
-    new_mode = data.get("mode", "editor").lower()
-    if new_mode not in ["editor", "dev"]:
-        raise HTTPException(status_code=400, detail="模式必須為 'editor' 或 'dev'")
-
-    is_local = is_local_dev_request(request)
-    client_host = (request.client.host if request.client else "unknown").strip()
-    if new_mode == "dev" and not is_local:
-        raise HTTPException(
-            status_code=403,
-            detail=f"安全限制：工程師除錯模式僅允許於開發本機 IP 位址啟動（目前連線 IP: {client_host}）",
-        )
-
-    import config.settings
-
-    object.__setattr__(config.settings.CFG, "app_mode", new_mode)
-    return {
-        "status": "success",
-        "mode": new_mode,
-        "is_local_dev": is_local,
-        "client_ip": client_host,
-    }
 
 
 # Universal SSE Event Stream
