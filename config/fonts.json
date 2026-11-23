@@ -860,7 +860,7 @@
   },
   "SimSun (10.0pt)": {
     "role": "忽略",
-    "docx_style": null,
+    "docx_style": "footer",
     "mapped_by": "user"
   },
   "FZSSJW--GB1-0 (9.0pt)": {
@@ -1200,6 +1200,31 @@
   "FZSSK--GBK1-0 (7.5pt)": {
     "role": "正文",
     "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "SimSun (20.0pt)": {
+    "role": "H1",
+    "docx_style": "heading 1",
+    "mapped_by": "user"
+  },
+  "SimSun (12.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 2",
+    "mapped_by": "user"
+  },
+  "SimSun (11.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 3",
+    "mapped_by": "user"
+  },
+  "SimSun (9.5pt)": {
+    "role": "忽略",
+    "docx_style": "footer",
+    "mapped_by": "user"
+  },
+  "SimSun (6.0pt)": {
+    "role": "正文",
+    "docx_style": "上標",
     "mapped_by": "user"
   }
 }
