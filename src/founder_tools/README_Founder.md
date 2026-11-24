@@ -32,9 +32,15 @@ founder_tools/
 │   ├── template_resolver.py    # 範本解析
 │   ├── document_model.py       # 文件模型
 │   ├── annotation_profile.py   # 註釋設定
-│   ├── ai_heading_classifier.py    # AI 標題分類
 │   └── ai_kaiti_classifier.py      # AI 楷體分類
 └── parsers/
     ├── docx_parser.py      # DOCX 解析
     └── pdf_parser.py       # PDF 解析
 ```
+
+## 模型依賴說明 (Model Dependencies)
+
+- **零本機權重（確定性模組）**：`fix_founder_fonts.py`、`auto_footnote.py`、`heading_detector.py`、`toc_parser.py`、`run_slicer.py`、`openxml_builder.py`、`preflight_auditor.py` 與 `postflight_validator.py` 皆為純確定性規則與 CMap 映射演算法，**不依賴 `models/` 目錄下任何檔案**。
+- **選用多模態字型分類器（`ai_kaiti_classifier.py`）**：
+  - 僅在啟用 AI 楷體辨識時觸發。
+  - 若 `AI_KAITI_MODEL` 包含 `gemini` 且 `.env` 已設定 `GEMINI_API_KEY`，呼叫 **Gemini Vision API**；否則自動轉由本機 **Ollama** 服務推論（不依賴任何本機 `.pt` / `.onnx` / `.safetensors` 檔）。

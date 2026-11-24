@@ -22,3 +22,4 @@ ultralytics>=8.0.0
 huggingface_hub>=0.20.0
 torch>=2.0.0
 surya-ocr>=0.7.0
+latex2mathml>=3.77.0

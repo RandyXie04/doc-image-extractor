@@ -10,8 +10,14 @@ from pathlib import Path
 from config import PATHS
 
 GITHUB_REPO = 'RandyXie04/doc-image-extractor'
-DEFAULT_MODEL_NAME = "yolo_v8_ft.onnx"
+DEFAULT_MODEL_NAME = "pdf_extract_mfd.onnx"
+LEGACY_MODEL_NAME = "yolo_v8_ft.onnx"
 DEFAULT_PT_NAME = "yolo_v8_ft.pt"
+SURYA_MODELS = {
+    "surya_det3": "vikp/surya_det3",
+    "surya_rec2": "vikp/surya_rec2",
+    "surya_layout0": "datalab-to/surya_layout0",
+}
 _model_lock = threading.Lock()
 
 def _get_exact_model_path(model_name: str) -> Path | None:
@@ -27,7 +33,7 @@ def _get_exact_model_path(model_name: str) -> Path | None:
             return p
     return None
 
-def download_file_with_progress(url: str, dest_path: Path, max_retries: int = 5):
+def download_file_with_progress(url: str, dest_path: Path, max_retries: int = 5, verify_hash: bool = True):
     import hashlib
     import time
     
@@ -85,7 +91,7 @@ def download_file_with_progress(url: str, dest_path: Path, max_retries: int = 5)
                 
                 # Hash check if available in version.json
                 from config import VERSION
-                if VERSION.model_hash and VERSION.model_hash != "sha256:default":
+                if verify_hash and VERSION.model_hash and VERSION.model_hash != "sha256:default":
                     print("[ModelManager] 正在校驗檔案完整性 (SHA256)...")
                     sha256 = hashlib.sha256()
                     with open(dest_path, 'rb') as f:
@@ -123,15 +129,19 @@ def download_file_with_progress(url: str, dest_path: Path, max_retries: int = 5)
 
 
 def convert_pt_to_onnx(pt_path: Path) -> Path | None:
-    print(f"[ModelManager] 嘗試將 {pt_path.name} 轉換為 ONNX 格式...")
+    print(f"[ModelManager] 嘗試將 {pt_path.name} 轉換為 ONNX 格式 ({DEFAULT_MODEL_NAME}, imgsz=1280)...")
     try:
-        from ultralytics import YOLO
-        model = YOLO(str(pt_path))
-        onnx_file = model.export(format='onnx')
-        if onnx_file:
-            return Path(onnx_file)
+        from src.scripts.export_mfd_onnx import export_mfd_to_onnx
+        return export_mfd_to_onnx(
+            weights_path=pt_path,
+            output_path=PATHS.models_dir / DEFAULT_MODEL_NAME,
+            imgsz=1280,
+            verify=True,
+            force=True,
+            download_if_missing=False,
+        )
     except ImportError:
-        print("[ModelManager] 缺少 ultralytics 套件，無法自動轉換為 ONNX，將保持 PyTorch 模式。")
+        print("[ModelManager] 缺少 ultralytics 或 export_mfd_onnx 依賴，無法自動轉換為 ONNX，將保持 PyTorch 模式。")
     except Exception as e:
         print(f"[ModelManager] ONNX 轉換失敗: {e}")
     return None
@@ -147,27 +157,29 @@ def try_download_model_from_github(dest_dir: Path) -> Path | None:
             assets = data.get('assets', [])
             
             target_asset = None
-            for asset in assets:
-                if asset.get('name') == DEFAULT_MODEL_NAME:
-                    target_asset = asset
-                    break
-            if not target_asset:
+            for candidate_name in (DEFAULT_MODEL_NAME, LEGACY_MODEL_NAME, DEFAULT_PT_NAME):
                 for asset in assets:
-                    if asset.get('name') == DEFAULT_PT_NAME:
+                    if asset.get('name') == candidate_name:
                         target_asset = asset
                         break
+                if target_asset:
+                    break
                         
             if target_asset:
                 download_url = target_asset.get('browser_download_url')
                 file_name = target_asset.get('name')
                 dest_path = dest_dir / file_name
                 temp_path = dest_dir / f"{file_name}.downloading"
-                download_file_with_progress(download_url, temp_path)
+                download_file_with_progress(
+                    download_url,
+                    temp_path,
+                    verify_hash=(file_name == DEFAULT_MODEL_NAME),
+                )
                 if temp_path.exists():
                     temp_path.replace(dest_path)
                 return dest_path
             else:
-                print(f"[ModelManager] 在最新的 Release 中找不到模型檔案 ({DEFAULT_MODEL_NAME} 或 {DEFAULT_PT_NAME})")
+                print(f"[ModelManager] 在最新的 Release 中找不到模型檔案 ({DEFAULT_MODEL_NAME} / {LEGACY_MODEL_NAME} / {DEFAULT_PT_NAME})")
                 return None
     except urllib.error.HTTPError as e:
         if e.code == 404:
@@ -180,20 +192,15 @@ def try_download_model_from_github(dest_dir: Path) -> Path | None:
 
 def try_download_surya_from_huggingface(dest_dir: Path) -> Path | None:
     print("[ModelManager] 嘗試從 HuggingFace 官方拉取 Surya 模型...")
-    base_dir = dest_dir / "surya_pt"
-    base_dir.mkdir(parents=True, exist_ok=True)
-    
-    models_to_download = {
-        "det": "vikp/surya_det3",
-        "rec": "vikp/surya_rec2",
-        "layout": "datalab-to/surya_layout0",
-        "order": "vikp/surya_order"
-    }
+    dest_dir.mkdir(parents=True, exist_ok=True)
     
     try:
         from huggingface_hub import snapshot_download
-        for folder_name, repo_id in models_to_download.items():
-            dest_path = base_dir / folder_name
+        for folder_name, repo_id in SURYA_MODELS.items():
+            dest_path = dest_dir / folder_name
+            if (dest_path / "model.safetensors").exists():
+                print(f"[ModelManager] 已存在本地權重，略過下載: {dest_path}")
+                continue
             print(f"[ModelManager] 正在處理 {repo_id} -> {dest_path} ...")
             snapshot_download(  # nosec B615 - official Surya HuggingFace repos
                 repo_id=repo_id,
@@ -204,7 +211,7 @@ def try_download_surya_from_huggingface(dest_dir: Path) -> Path | None:
             print(f"[ModelManager] {repo_id} 完成！")
             
         print("[ModelManager] Surya 模型從 HuggingFace 下載完成！")
-        return base_dir
+        return dest_dir
     except Exception as e:
         print(f"[ModelManager] 下載 Surya 模型發生異常: {e}")
         return None
@@ -221,15 +228,18 @@ def ensure_model_ready() -> dict:
     with _model_lock:
         PATHS.models_dir.mkdir(parents=True, exist_ok=True)
     
-    # 檢查 SuryaOCR 本地模型是否存在
-    surya_pt_dir = PATHS.models_dir / "surya_pt"
-    if not (surya_pt_dir / "rec").exists():
-        print("[Model Check] 本機無 SuryaOCR 本地權重檔，開始自動從 HuggingFace 下載...")
+    # 檢查 SuryaOCR 扁平本地模型是否存在
+    missing_surya = [
+        name for name in SURYA_MODELS
+        if not (PATHS.models_dir / name / "model.safetensors").exists()
+    ]
+    if missing_surya:
+        print(f"[Model Check] 缺少 SuryaOCR 本地權重 {missing_surya}，開始自動從 HuggingFace 下載...")
         try_download_surya_from_huggingface(PATHS.models_dir)
     else:
-        print(f"[Model Check] 找到 SuryaOCR 本地模型: {surya_pt_dir}")
+        print(f"[Model Check] 找到完整 SuryaOCR 本地模型: {PATHS.models_dir}")
         
-    onnx_path = _get_exact_model_path(DEFAULT_MODEL_NAME)
+    onnx_path = _get_exact_model_path(DEFAULT_MODEL_NAME) or _get_exact_model_path(LEGACY_MODEL_NAME)
     if onnx_path:
         print(f"[Model Check] 找到 ONNX 模型: {onnx_path}")
         return {"status": "ready", "path": onnx_path, "engine": "onnx"}
@@ -243,7 +253,7 @@ def ensure_model_ready() -> dict:
         print("[Model Check] 將以 PyTorch (.pt) 模式 Fallback 執行。")
         return {"status": "fallback", "path": pt_path, "engine": "pt"}
             
-    # Model is completely missing. Try to download.
+    # Model is completely missing. Try GitHub Release first, then HuggingFace MFD export fallback.
     print("[Model Check] 本機無任何公式檢測模型，開始自動從 GitHub 下載...")
     downloaded_path = try_download_model_from_github(PATHS.models_dir)
         
@@ -255,10 +265,25 @@ def ensure_model_ready() -> dict:
             return {"status": "fallback", "path": downloaded_path, "engine": "pt"}
         elif downloaded_path.suffix == ".onnx":
             return {"status": "ready", "path": downloaded_path, "engine": "onnx"}
+
+    print("[Model Check] GitHub Release 無可用模型，嘗試從 HuggingFace opendatalab/PDF-Extract-Kit-1.0 自動下載並轉檔...")
+    try:
+        from src.scripts.export_mfd_onnx import export_mfd_to_onnx
+        exported_path = export_mfd_to_onnx(
+            weights_path=PATHS.models_dir / DEFAULT_PT_NAME,
+            output_path=PATHS.models_dir / DEFAULT_MODEL_NAME,
+            imgsz=1280,
+            verify=True,
+            download_if_missing=True,
+        )
+        if exported_path and Path(exported_path).exists():
+            return {"status": "ready", "path": Path(exported_path), "engine": "onnx"}
+    except Exception as e:
+        print(f"[Model Check] HuggingFace 自動下載或 ONNX 轉檔失敗: {e}")
             
     print("=========================================")
     print("[ERROR] 模型載入失敗！")
-    print(f"無法從 GitHub 自動下載模型，請手動將 {DEFAULT_MODEL_NAME} 或 {DEFAULT_PT_NAME}")
+    print(f"無法自動取得模型，請手動將 {DEFAULT_MODEL_NAME} 或 {DEFAULT_PT_NAME}")
     print(f"放置於目錄: {PATHS.models_dir}")
     print("=========================================")
     return {"status": "missing", "path": None, "engine": "none"}
