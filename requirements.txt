@@ -1,5 +1,5 @@
 PyMuPDF==1.26.4
-opencv-python==5.0.0.93
+opencv-python>=4.10.0
 numpy==2.3.2
 onnxruntime>=1.17.0
 tqdm==4.68.3

@@ -7,10 +7,11 @@
   "scripts": {
     "codegen": "python ../src/scripts/generate_ts_contracts.py",
     "codegen:check": "python ../src/scripts/generate_ts_contracts.py --check",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build": "tsc --noEmit --pretty false",
+    "check": "npm run codegen:check && npm run typecheck"
   },
   "devDependencies": {
     "typescript": "^5.6.3"
   }
 }
-

@@ -1,5 +1,9 @@
 ﻿# 專案發布與未來更新 SOP
 
+> [!WARNING]
+> **歷史架構備註**：本文件原為舊版 PyInstaller 桌面執行檔（`release.yml` + `master` 分支）之發布流程。`.github/workflows/release.yml` 已於架構轉型為 FastAPI Web 應用時移除（commit `d06b7822`），且 `origin/master` 已停止維護。
+> **現行開發、分支、本地 CI 驗證與 PR 合併規範請以 [`docs/CI_AND_GIT_WORKFLOW.md`](./CI_AND_GIT_WORKFLOW.md) 與 `.agents/rules/git-ci-workflow.md` 為準，並一律以 `main` 作為主幹分支。**
+
 本專案採用**雙軌更新機制**（主程式與 AI 模型分離），以確保終端用戶能以最少的時間完成更新（通常小於 50MB）。
 
 ---
