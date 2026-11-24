@@ -66,14 +66,14 @@ class _Paths:
 
     # // Models
     models_dir:     Path = _PROJECT_ROOT / "models"
-    surya_pt_dir:   Path = _PROJECT_ROOT / "models" / "surya_pt"
+    surya_pt_dir:   Path = _PROJECT_ROOT / "models"
 
     @property
     def surya_model_path(self) -> Path:
         env_custom = os.getenv("SURYA_PT_PATH")
         return Path(env_custom) if env_custom else self.surya_pt_dir
 
-    def get_model_path(self, model_name: str = "yolo_v8_ft.pt") -> Path | None:
+    def get_model_path(self, model_name: str = "pdf_extract_mfd.onnx") -> Path | None:
         """
         Priority:
         1. sys._MEIPASS / models / model_name
@@ -104,7 +104,7 @@ class _Paths:
         dirs = [
             self.input_dir, self.formula_dir, self.formula_dir_v2,
             self.cleaned_dir, self.preview_dir, self.backup_dir,
-            self.models_dir, self.surya_pt_dir
+            self.models_dir
         ]
         for d in dirs:
             d.mkdir(parents=True, exist_ok=True)

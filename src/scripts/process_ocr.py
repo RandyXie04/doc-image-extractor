@@ -1745,16 +1745,25 @@ def _release_vram_cache() -> None:
 
 
 def _configure_local_surya_checkpoints() -> None:
-    """Configure local PyTorch Surya checkpoint paths before importing surya.settings."""
+    """Configure flat local PyTorch Surya checkpoint paths before importing surya.settings."""
     if getattr(sys, "frozen", False):
         project_root = Path(sys.executable).parent.resolve()
     else:
         project_root = Path(__file__).parent.parent.parent.resolve()
 
-    surya_pt_dir = project_root / "models" / "surya_pt"
-    det_dir = surya_pt_dir / "det"
-    if (surya_pt_dir / "rec").exists():
-        layout_cfg = surya_pt_dir / "layout" / "config.json"
+    models_dir = Path(os.environ["SURYA_PT_PATH"]) if os.environ.get("SURYA_PT_PATH") else (project_root / "models")
+
+    rec_dir = models_dir / "surya_rec2"
+    if (rec_dir / "model.safetensors").exists() and not os.environ.get("RECOGNITION_MODEL_CHECKPOINT"):
+        os.environ["RECOGNITION_MODEL_CHECKPOINT"] = str(rec_dir)
+
+    det_dir = models_dir / "surya_det3"
+    if (det_dir / "model.safetensors").exists() and not os.environ.get("DETECTOR_MODEL_CHECKPOINT"):
+        os.environ["DETECTOR_MODEL_CHECKPOINT"] = str(det_dir)
+
+    layout_dir = models_dir / "surya_layout0"
+    if (layout_dir / "model.safetensors").exists() and not os.environ.get("LAYOUT_MODEL_CHECKPOINT"):
+        layout_cfg = layout_dir / "config.json"
         is_legacy = False
         if layout_cfg.exists():
             try:
@@ -1765,16 +1774,7 @@ def _configure_local_surya_checkpoints() -> None:
             except Exception:
                 is_legacy = True
         if not is_legacy:
-            if not os.environ.get("RECOGNITION_MODEL_CHECKPOINT"):
-                os.environ["RECOGNITION_MODEL_CHECKPOINT"] = str(surya_pt_dir / "rec")
-            if not os.environ.get("LAYOUT_MODEL_CHECKPOINT"):
-                os.environ["LAYOUT_MODEL_CHECKPOINT"] = str(surya_pt_dir / "layout")
-            if det_dir.exists() and not os.environ.get("DETECTOR_MODEL_CHECKPOINT"):
-                os.environ["DETECTOR_MODEL_CHECKPOINT"] = str(det_dir)
-            if not os.environ.get("ORDER_MODEL_CHECKPOINT"):
-                os.environ["ORDER_MODEL_CHECKPOINT"] = str(surya_pt_dir / "order")
-    elif det_dir.exists() and not os.environ.get("DETECTOR_MODEL_CHECKPOINT"):
-        os.environ["DETECTOR_MODEL_CHECKPOINT"] = str(det_dir)
+            os.environ["LAYOUT_MODEL_CHECKPOINT"] = str(layout_dir)
 
 
 def _sync_surya_settings() -> None:
