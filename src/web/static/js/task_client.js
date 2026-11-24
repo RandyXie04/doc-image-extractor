@@ -6,18 +6,48 @@
  * live task cancellation, and standardized result delivery.
  */
 
+/**
+ * @typedef {Object} TaskProgressRaw
+ * @property {string} [status]
+ * @property {number | string} [progress]
+ * @property {string} [message]
+ * @property {string} [error]
+ *
+ * @typedef {Object} TaskProgressEvent
+ * @property {string} status
+ * @property {number} progress
+ * @property {string} message
+ * @property {TaskProgressRaw} raw
+ *
+ * @typedef {Object} TaskCallbacks
+ * @property {(event: TaskProgressEvent) => void} [onProgress]
+ * @property {(raw: TaskProgressRaw) => void} [onComplete]
+ * @property {(error: Error) => void} [onError]
+ * @property {(raw: TaskProgressRaw) => void} [onCancel]
+ *
+ * @typedef {Object} StandardTaskClientOptions
+ * @property {number} [pollIntervalMs]
+ * @property {number} [sseTimeoutMs]
+ */
+
 (function (window) {
     'use strict';
 
     class StandardTaskClient {
+        /**
+         * @param {StandardTaskClientOptions} [options]
+         */
         constructor(options = {}) {
             this.options = Object.assign({
                 pollIntervalMs: 1200,
                 sseTimeoutMs: 15000,
             }, options);
 
+            /** @type {string | null} */
             this.activeTaskId = null;
+            /** @type {EventSource | null} */
             this.evtSource = null;
+            /** @type {ReturnType<typeof setInterval> | null} */
             this.pollTimer = null;
             this.isFinished = false;
         }
@@ -26,7 +56,7 @@
          * 提交任務表單
          * @param {string} endpoint - API 端點 (例如 '/api/upload_and_run_ocr' 或 '/api/process_pdf')
          * @param {FormData} formData
-         * @returns {Promise<Object>}
+         * @returns {Promise<Record<string, any>>}
          */
         async submitTask(endpoint, formData) {
             this.cleanup();
@@ -53,7 +83,7 @@
         /**
          * 啟動雙模即時進度監聽 (SSE 優先，中斷或不支援時自動降級為輪詢)
          * @param {string} taskId
-         * @param {Object} callbacks - { onProgress, onComplete, onError, onCancel }
+         * @param {TaskCallbacks} [callbacks]
          */
         listen(taskId, callbacks = {}) {
             this.activeTaskId = taskId;
@@ -61,11 +91,12 @@
 
             const { onProgress, onComplete, onError, onCancel } = callbacks;
 
+            /** @param {TaskProgressRaw | null | undefined} prog */
             const handleUpdate = (prog) => {
                 if (this.isFinished || !prog) return;
 
                 const status = (prog.status || '').toLowerCase();
-                const progressVal = typeof prog.progress === 'number' ? prog.progress : parseFloat(prog.progress || 0);
+                const progressVal = typeof prog.progress === 'number' ? prog.progress : parseFloat(String(prog.progress || 0));
                 const message = prog.message || '';
 
                 if (onProgress) {
@@ -137,7 +168,7 @@
 
         /**
          * 即時取消目前任務
-         * @param {string} [taskId]
+         * @param {string | null} [taskId]
          * @returns {Promise<boolean>}
          */
         async cancel(taskId = null) {
@@ -175,6 +206,7 @@
         }
     }
 
-    window.StandardTaskClient = StandardTaskClient;
+    const win = /** @type {Window & typeof globalThis & { StandardTaskClient?: typeof StandardTaskClient }} */ (window);
+    win.StandardTaskClient = StandardTaskClient;
 
 })(window);

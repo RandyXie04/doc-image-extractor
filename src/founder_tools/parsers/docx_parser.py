@@ -1,6 +1,7 @@
 import zipfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from src.utils.safe_xml import fromstring as safe_xml_fromstring
 try:
     from src.founder_tools.core.document_model import UnifiedDocument, SectionNode, ParagraphNode, RunNode, FootnoteRecord
 except ImportError:
@@ -26,7 +27,7 @@ class DocxParser:
             if 'word/document.xml' not in z.namelist():
                 raise ValueError(f"{filepath} 並非標準 DOCX (缺少 word/document.xml)")
                 
-            document_tree = ET.fromstring(z.read('word/document.xml'))
+            document_tree = safe_xml_fromstring(z.read('word/document.xml'))
             body = document_tree.find(f"{ns}body")
             
             if body is None:
@@ -59,7 +60,7 @@ class DocxParser:
                 
             # 若輸入文檔已經包含腳註 (非純手寫標記)，可在此處提取
             if 'word/footnotes.xml' in z.namelist():
-                footnotes_tree = ET.fromstring(z.read('word/footnotes.xml'))
+                footnotes_tree = safe_xml_fromstring(z.read('word/footnotes.xml'))
                 for fn_elem in footnotes_tree.findall(f"{ns}footnote"):
                     fn_id = fn_elem.get(f"{ns}id")
                     if int(fn_id) <= 0:

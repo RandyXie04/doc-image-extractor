@@ -14,7 +14,10 @@ import unittest
 from pathlib import Path
 from typing import Any, Dict
 
-import webview
+import pytest
+
+webview = pytest.importorskip("webview")
+pytestmark = pytest.mark.heavy
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 STATIC_DIR = REPO_ROOT / "src" / "web" / "static"

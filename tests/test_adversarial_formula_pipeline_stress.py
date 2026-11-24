@@ -230,6 +230,7 @@ class TestDegenerateAndAdversarialInputsStress:
         assert len(manifest_data) == 3
         assert [item["page_idx"] for item in manifest_data] == [0, 0, 2]
 
+    @pytest.mark.heavy
     def test_solid_color_and_random_noise_canvases(self, tmp_path: Path) -> None:
         """Verifies processing pure black, white, red, and noise canvases without exceptions."""
         pipe = FormulaExtractionPipeline()  # Uses real or default detector

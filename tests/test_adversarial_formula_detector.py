@@ -25,6 +25,8 @@ from config import PATHS
 from src.extraction.contracts import FormulaDetectionContract
 from src.extraction.formula_detector import FormulaDetector
 
+pytestmark = pytest.mark.heavy
+
 
 # ── Shared Fixtures ──────────────────────────────────────────────────────────
 

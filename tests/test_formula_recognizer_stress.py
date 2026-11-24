@@ -96,7 +96,7 @@ class TestRecognitionPredictorBlankAndDegenerate:
         predictor = RecognitionPredictor(lazy_load=True)
         blanks = [Image.new("RGB", (80, 30), (255, 255, 255)) for _ in range(8)]
 
-        with patch("surya.recognition.batch_recognition") as mock_batch_rec:
+        with patch("surya.recognition.batch_recognition", create=True) as mock_batch_rec:
             results = predictor.predict_crops(blanks)
             assert results == [("", 0.0)] * 8
             mock_batch_rec.assert_not_called()
@@ -121,7 +121,7 @@ class TestRecognitionPredictorBlankAndDegenerate:
 
         mixed_crops = [blank_1, valid_1, blank_2, valid_2]
 
-        with patch("surya.recognition.batch_recognition", return_value=(["a + b", "c + d"], [0.95, 0.92])) as mock_batch_rec:
+        with patch("surya.recognition.batch_recognition", return_value=(["a + b", "c + d"], [0.95, 0.92]), create=True) as mock_batch_rec:
             results = predictor.predict_crops(mixed_crops)
 
             assert len(results) == 4
@@ -209,7 +209,7 @@ class TestRecognitionPredictorBatchScaling:
         valid = Image.new("RGB", (100, 30), (255, 255, 255))
         ImageDraw.Draw(valid).text((5, 5), "x = 1", fill=(0, 0, 0))
 
-        with patch("surya.recognition.batch_recognition", return_value=(["x = 1"], [0.98])) as mock_rec:
+        with patch("surya.recognition.batch_recognition", return_value=(["x = 1"], [0.98]), create=True) as mock_rec:
             predictor.predict_crops([valid])
             mock_rec.assert_called_once()
             assert mock_rec.call_args[1]["batch_size"] == 42
@@ -250,15 +250,16 @@ class TestRecognitionPredictorOOMRecovery:
                 assert kwargs.get("batch_size") == 16
                 return (["f(x)"] * len(kwargs["images"]), [0.90] * len(kwargs["images"]))
 
-        with patch("surya.recognition.batch_recognition", side_effect=flaky_batch_rec):
-            with patch("torch.cuda.empty_cache") as mock_empty_cache:
-                results = predictor.predict_crops(valid_crops)
+        with patch("surya.recognition.batch_recognition", side_effect=flaky_batch_rec, create=True):
+            with patch("torch.cuda.is_available", return_value=True):
+                with patch("torch.cuda.empty_cache") as mock_empty_cache:
+                    results = predictor.predict_crops(valid_crops)
 
-                assert len(results) == 4
-                assert call_count == 2
-                mock_empty_cache.assert_called_once()
-                # Original batch size must be restored
-                assert predictor.batch_size == 32
+                    assert len(results) == 4
+                    assert call_count == 2
+                    mock_empty_cache.assert_called_once()
+                    # Original batch size must be restored
+                    assert predictor.batch_size == 32
 
     def test_oom_fatal_when_batch_size_is_already_1(self):
         """When batch_size is already 1, OOM must raise rather than loop infinitely."""
@@ -268,7 +269,7 @@ class TestRecognitionPredictorOOMRecovery:
         valid = Image.new("RGB", (100, 30), (255, 255, 255))
         ImageDraw.Draw(valid).text((5, 5), "f(x)", fill=(0, 0, 0))
 
-        with patch("surya.recognition.batch_recognition", side_effect=torch.cuda.OutOfMemoryError("Fatal OOM")):
+        with patch("surya.recognition.batch_recognition", side_effect=torch.cuda.OutOfMemoryError("Fatal OOM"), create=True):
             with pytest.raises(torch.cuda.OutOfMemoryError):
                 predictor.predict_crops([valid])
 
@@ -301,15 +302,16 @@ class TestRecognitionPredictorOOMRecovery:
                 raise RuntimeError("CUDA error: an illegal memory access was encountered")
             return (["f(x)"] * len(kwargs["images"]), [0.95] * len(kwargs["images"]))
 
-        with patch("surya.recognition.batch_recognition", side_effect=failing_cuda_batch_rec):
-            with patch("torch.cuda.empty_cache") as mock_empty_cache:
-                results = predictor.predict_crops([valid])
-                assert predictor.device == "cpu"
-                assert predictor.dtype == torch.float32
-                assert len(results) == 1
-                assert results[0] == ("f(x)", 0.95)
-                assert call_count == 2
-                mock_empty_cache.assert_called()
+        with patch("surya.recognition.batch_recognition", side_effect=failing_cuda_batch_rec, create=True):
+            with patch("torch.cuda.is_available", return_value=True):
+                with patch("torch.cuda.empty_cache") as mock_empty_cache:
+                    results = predictor.predict_crops([valid])
+                    assert predictor.device == "cpu"
+                    assert predictor.dtype == torch.float32
+                    assert len(results) == 1
+                    assert results[0] == ("f(x)", 0.95)
+                    assert call_count == 2
+                    mock_empty_cache.assert_called()
 
 
 # =============================================================================
@@ -332,7 +334,7 @@ class TestRecognitionPredictorLanguagesNormalization:
         valid = Image.new("RGB", (100, 30), (255, 255, 255))
         ImageDraw.Draw(valid).text((5, 5), "x", fill=(0, 0, 0))
 
-        with patch("surya.recognition.batch_recognition", return_value=(["x", "x"], [0.9, 0.9])) as mock_rec:
+        with patch("surya.recognition.batch_recognition", return_value=(["x", "x"], [0.9, 0.9]), create=True) as mock_rec:
             predictor.predict_crops([valid, valid], languages=None)
             langs = mock_rec.call_args[1]["languages"]
             assert langs == [["_math", "zh"], ["_math", "zh"]]
@@ -345,7 +347,7 @@ class TestRecognitionPredictorLanguagesNormalization:
         valid = Image.new("RGB", (100, 30), (255, 255, 255))
         ImageDraw.Draw(valid).text((5, 5), "x", fill=(0, 0, 0))
 
-        with patch("surya.recognition.batch_recognition", return_value=(["x", "x"], [0.9, 0.9])) as mock_rec:
+        with patch("surya.recognition.batch_recognition", return_value=(["x", "x"], [0.9, 0.9]), create=True) as mock_rec:
             predictor.predict_crops([valid, valid], languages=["_math", "en"])
             langs = mock_rec.call_args[1]["languages"]
             assert langs == [["_math", "en"], ["_math", "en"]]
@@ -358,7 +360,7 @@ class TestRecognitionPredictorLanguagesNormalization:
         valid = Image.new("RGB", (100, 30), (255, 255, 255))
         ImageDraw.Draw(valid).text((5, 5), "x", fill=(0, 0, 0))
 
-        with patch("surya.recognition.batch_recognition", return_value=(["x", "y"], [0.9, 0.9])) as mock_rec:
+        with patch("surya.recognition.batch_recognition", return_value=(["x", "y"], [0.9, 0.9]), create=True) as mock_rec:
             custom_langs = [["_math", "zh"], ["_math", "ja"]]
             predictor.predict_crops([valid, valid], languages=custom_langs)
             langs = mock_rec.call_args[1]["languages"]
@@ -372,6 +374,7 @@ class TestRecognitionPredictorLanguagesNormalization:
 class TestRecognitionPredictorLiveVRAM:
     """Empirical verification of peak VRAM usage under CUDA GPU execution."""
 
+    @pytest.mark.heavy
     def test_peak_vram_under_2500mb_at_batch_size_32(self):
         """
         Loads RecognitionPredictor on CUDA, creates 32 formula crops, measures

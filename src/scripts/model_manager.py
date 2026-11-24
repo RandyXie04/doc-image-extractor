@@ -1,5 +1,6 @@
 import os
 import urllib.request
+import urllib.parse
 import json
 import urllib.error
 import threading
@@ -30,6 +31,10 @@ def download_file_with_progress(url: str, dest_path: Path, max_retries: int = 5)
     import hashlib
     import time
     
+    parsed_url = urllib.parse.urlparse(url)
+    if parsed_url.scheme not in ("http", "https"):
+        raise ValueError(f"Unsupported download URL scheme: {parsed_url.scheme!r}")
+
     for attempt in range(max_retries):
         try:
             if attempt > 0:
@@ -42,7 +47,7 @@ def download_file_with_progress(url: str, dest_path: Path, max_retries: int = 5)
             if existing_size > 0:
                 req.add_header('Range', f'bytes={existing_size}-')
                 
-            with urllib.request.urlopen(req, timeout=15) as response:
+            with urllib.request.urlopen(req, timeout=15) as response:  # nosec B310 - scheme validated above
                 total_size_header = response.info().get('Content-Length')
                 content_range = response.info().get('Content-Range')
                 
@@ -137,7 +142,7 @@ def try_download_model_from_github(dest_dir: Path) -> Path | None:
     
     try:
         req = urllib.request.Request(api_url, headers={'User-Agent': 'PDF-Toolkit-App'})
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=10) as response:  # nosec B310 - hardcoded https GitHub API URL
             data = json.loads(response.read().decode('utf-8'))
             assets = data.get('assets', [])
             
@@ -190,7 +195,7 @@ def try_download_surya_from_huggingface(dest_dir: Path) -> Path | None:
         for folder_name, repo_id in models_to_download.items():
             dest_path = base_dir / folder_name
             print(f"[ModelManager] 正在處理 {repo_id} -> {dest_path} ...")
-            snapshot_download(
+            snapshot_download(  # nosec B615 - official Surya HuggingFace repos
                 repo_id=repo_id,
                 local_dir=dest_path,
                 local_dir_use_symlinks=False,
