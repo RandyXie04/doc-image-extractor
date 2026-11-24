@@ -687,5 +687,51 @@ No new design decision is required.
   - `python -m pyright src/scripts/book_layout_extractor.py`：`0 errors, 0 warnings, 0 informations`。
   - `pytest tests/test_paragraph_reflow_regression.py tests/test_vector_ast.py tests/test_heading_and_anti_sticking.py tests/test_bibliography_footnote_preservation.py tests/test_wave2_architecture_fixes.py` 與全套非 `heavy` 回歸測試全數通過。
 
+---
+
+## BUG-017 — 上標切分段落於緊湊行距與多行區塊發生文字移至句首或誤併上一行句尾
+
+### Bug Description
+
+在向量 PDF 自動整稿（`src/scripts/book_layout_extractor.py` 與 `src/scripts/paragraph_reconstruction.py`）中，雖先前於 `f4ae776` 加入物理行縫合處理上標斷行，但在含化學/醫學計數上標（如 `×10⁹/L`、`×10⁶ U`）的段落中仍出現兩類語序錯位：
+
+1. **上標後半段被移至句首**：
+   - 正確：`患者外周血白细胞计数大多增高，一般为（10 ～ 20）×109/L，少数可高达（60 ～ 80） ×109/L，以中性粒细胞为主。`（`9` 為上標）
+   - 實際輸出：`9/L，少数可高达（60 ～ 80） ×109/L，患者外周血白细胞计数大多增高，一般为（10 ～ 20）×10以中性粒细胞为主。`
+2. **末行上標後半段黏接至上一行句尾並使本行前半段斷段**：
+   - 正確：`...极严重者可加用干扰素（IFN），每日（1～3）×106 U肌内注射。`（`6` 為上標）
+   - 實際輸出：`...极严重者可加用干扰6 U肌内注射。` 後換段接 `素（IFN），每日（1～3）×10`。
+
+### Status
+
+CLOSED
+
+### Root Cause
+
+1. **`stitch_physical_lines()` 單遍原始 `bbox` 中心點聚類被上標拉高誤導**：含上標開頭的行片段因上標 Span 向上突出，使整行 union `bbox` 的 `y_center` 小於同行左側正文，於左側正文尚未建行前即先進入聚類；在緊湊行距下其上探區與上一物理行重疊達 `>= 0.45 * min_h` 而被歸入上一行。
+2. **水平縫合缺乏水平重疊下界保護**：`stitch_physical_lines()` 僅檢查 `gap <= gap_limit`，未拒絕大負值水平重疊（如 `-240pt`），導致被誤吸入上一行的下行片段直接無空格黏接至上一行句尾（Case 2），或在上一行為短行時因 `gap > gap_limit` 排至本行左側正文之前（Case 1）。
+3. **純上標獨立片段與行內亂序 Span 處理不足**：高上移純上標片段易低於 `0.45 * min_h` 而另立新行於正文之上；`_stitch_body_lines_into_blocks()` 未對 PDF 內容流逆序輸出的水平 LTR 行內 Span 依 `x0` 正規化，且重打包 `_lines_share_physical_row()` 使用原始 `bbox` 而易受上標干擾。
+4. **`_sort_blocks_by_row_and_x()` 採整塊垂直中點排序**：多行區塊的 `(y0 + y1) / 2.0` 顯著大於同行右側單行上標區塊，造成單行區塊被排至多行區塊之前。
+
+### Decision Gate
+
+ADR-016（物理行縫合採核心基線垂直包絡、兩階段聚類、水平重疊防護與首行頂部錨點排序）。
+
+### Resolution
+
+- `src/scripts/paragraph_reconstruction.py`：
+  - 新增 `_line_core_y_bounds()`（以 `size >= max_size * 0.90` 濾除小字級上下標，並採字數加權中位數且平手偏向較低正常基線濾除同字級離群 Span）、`_is_pure_script_or_thin_fragment()`（僅將緊湊小字上下標、緊湊同字級非漢字元符號與極薄字形納入 Phase 2，避免長小字註釋/圖說被誤吸）、`_has_significant_x_overlap()`（支援斜體/側距邊緣微重疊容忍與近完全包覆判定）、`_is_vertically_disjoint_script_pair()`、`_can_merge_stacked_script()`、`_row_directional_x_gaps()`、`_is_in_script_vertical_band()` 與 `_y_bounds_share_row()`。
+  - 重構 `stitch_physical_lines()` 為兩階段聚類：Phase 1 以核心基線 `core_y` 與水平非重疊不變量聚類主字級與長小字正文行；Phase 2 分為 2a（先掛載基線齊平短詞元）與 2b（依雙側夾抱 > 緊鄰水平間距 > 左側宿主基元 > 垂直重疊優先序掛載偏移上下標）；同列合併強制 `not _has_significant_x_overlap()`（或垂直分離堆疊上下標 `SO₄²⁻`）且 `gap <= gap_limit`。
+  - `compute_standard_pitch()` 與 `calculate_boundary_evidence()` 改用 `_line_core_y_bounds()` 計算行距與垂直間隙，防止含上標行因 `bbox[1]` 被拉高而觸發 `gap_ratio >= 1.45` 誤斷段。
+- `src/scripts/book_layout_extractor.py`：
+  - `_stitch_body_lines_into_blocks()` 新增水平 LTR 行內明顯逆序 Span（`x0[i] < x0[i-1] - 1.0pt`）的穩定左至右重排，並於重打包判定改用 `_line_record_core_bbox()` 搭配對齊之水平重疊拒絕規則。
+  - 新增 `_pymupdf_line_core_y_bounds()`、`_block_first_line_core_y0()` 與 `_block_last_line_core_y1()`，用於 `_sort_blocks_by_row_and_x()` 首行主基線頂部排序及 `_should_flush_before_block()` / `_update_state_coords()` 區塊邊界段距計算。
+- `tests/test_paragraph_reconstruction.py` 與 `tests/test_line_stitching.py`：
+  - 補齊 BUG-017 兩組實務案例（`109/L` 移至句首與 `106 U肌内注射。` 誤併上一行）之單元、合成頁版面與實渲染記憶體 PyMuPDF PDF 測試；另涵蓋前短行/次縮排行不奪取獨立上下標、8pt 長小字註釋不誤併、同字級獨立上標、單字單位 `U`、斜體/側距微重疊、化學堆疊上下標 `SO₄²⁻`、段落重構上標行不誤斷段、純小字腳注列、多行區塊排序及行內亂序 LTR Span。
+- 靜態檢查與回歸測試驗證：
+  - `python -m pyright src/scripts/paragraph_reconstruction.py src/scripts/book_layout_extractor.py`：`0 errors, 0 warnings, 0 informations`。
+  - 定向與關聯版面回歸測試（`tests/test_line_stitching.py`、`tests/test_paragraph_reconstruction.py`、`tests/test_paragraph_reflow_regression.py`、`tests/test_vector_ast.py`、`tests/test_heading_and_anti_sticking.py`、`tests/test_bibliography_footnote_preservation.py`、`tests/test_wave2_architecture_fixes.py`）：`103 passed, 11 skipped, 0 failed`。
+  - 全套非 `heavy` 且不依賴本機公式 ONNX/Surya 權重之回歸測試：`537 passed, 15 skipped, 0 failed`。
+
 
 

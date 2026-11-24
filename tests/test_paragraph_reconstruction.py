@@ -472,6 +472,215 @@ class TestParagraphReconstruction(unittest.TestCase):
         self.assertEqual(stitched[0].text, "HLA-B27 positive-group")
         self.assertEqual([s.text for s in stitched[0].spans], ["HLA-B27", " ", "positive", "-", "group"])
 
+    def test_stitch_tight_leading_superscript_not_stolen_by_previous_short_line(self):
+        """BUG-017 Case 1: Superscript '9/L，...' must not jump ahead of '患者外周血...×10'."""
+        prev_short = self._make_line("p0", "临床实验室检查：", 60.0, 86.0, 160.0, 99.0, block_id="b0")
+        l1_left = self._make_line(
+            "l1_l",
+            "患者外周血白细胞计数大多增高，一般为（10 ～ 20）×10",
+            60.0, 100.0, 325.0, 113.0,
+            block_id="b1", line_order=0,
+        )
+        l1_right = LineRecord(
+            line_id="l1_r",
+            page_num=1,
+            text="9/L，少数可高达（60 ～ 80） ×109/L，",
+            bbox=(325.2, 93.0, 480.0, 113.0),
+            spans=[
+                SpanRecord("9", (325.2, 93.0, 329.0, 100.0), "SimSun", 6.12),
+                SpanRecord("/L，少数可高达（60 ～ 80） ×10", (329.0, 100.0, 455.0, 113.0), "SimSun", 10.5),
+                SpanRecord("9", (455.2, 93.0, 459.0, 100.0), "SimSun", 6.12),
+                SpanRecord("/L，", (459.0, 100.0, 480.0, 113.0), "SimSun", 10.5),
+            ],
+            block_id="b2",
+            line_order=0,
+        )
+        l2 = self._make_line("l2", "以中性粒细胞为主。", 60.0, 114.0, 165.0, 127.0, block_id="b1", line_order=1)
+
+        stitched = stitch_physical_lines([l1_right, prev_short, l2, l1_left], body_size=10.5)
+        self.assertEqual(
+            [ln.text for ln in stitched],
+            [
+                "临床实验室检查：",
+                "患者外周血白细胞计数大多增高，一般为（10 ～ 20）×109/L，少数可高达（60 ～ 80） ×109/L，",
+                "以中性粒细胞为主。",
+            ],
+        )
+
+    def test_stitch_tight_leading_superscript_not_merged_into_previous_full_line(self):
+        """BUG-017 Case 2: Raised '6 U肌内注射。' must attach to '素（IFN），每日（1～3）×10', not previous line."""
+        l1 = self._make_line(
+            "l1",
+            "用于免疫缺陷或全身播散者，可用阿昔洛韦5～7.5\u202fmg/kg，每8小时1次，连续5～7\u2002天。",
+            60.0, 100.0, 440.0, 113.2, block_id="b1", line_order=0,
+        )
+        l2 = self._make_line(
+            "l2",
+            "也可每日静脉滴注或肌内注射单磷酸阿糖腺苷（Ara-AMP）5～10\u202fmg/kg，极严重者可加用干扰",
+            60.0, 113.5, 440.0, 126.7, block_id="b1", line_order=1,
+        )
+        l3_left = self._make_line(
+            "l3_l",
+            "素（IFN），每日（1～3）×10",
+            60.0, 127.0, 200.0, 140.2, block_id="b1", line_order=2,
+        )
+        l3_right = LineRecord(
+            line_id="l3_r",
+            page_num=1,
+            text="6\u202fU肌内注射。",
+            bbox=(200.5, 120.0, 265.0, 140.2),
+            spans=[
+                SpanRecord("6", (200.5, 120.0, 204.5, 127.0), "SimSun", 6.12),
+                SpanRecord("\u202fU肌内注射。", (204.5, 127.0, 265.0, 140.2), "SimSun", 10.5),
+            ],
+            block_id="b2",
+            line_order=0,
+        )
+
+        stitched = stitch_physical_lines([l3_right, l1, l2, l3_left], body_size=10.5)
+        self.assertEqual(len(stitched), 3)
+        self.assertEqual(
+            stitched[1].text,
+            "也可每日静脉滴注或肌内注射单磷酸阿糖腺苷（Ara-AMP）5～10\u202fmg/kg，极严重者可加用干扰",
+        )
+        self.assertEqual(stitched[2].text, "素（IFN），每日（1～3）×106\u202fU肌内注射。")
+
+    def test_stitch_standalone_high_superscript_and_same_size_displaced_script(self):
+        """Standalone raised superscript and same-size raised span must stay on their host line."""
+        above = self._make_line("above", "上一行满宽正文内容不应吞并下一行上标字符", 60.0, 86.0, 440.0, 99.0)
+        left = self._make_line("left", "（10 ～ 20）×10", 60.0, 100.0, 150.0, 113.0)
+        sup_only = self._make_line("sup", "9", 150.2, 93.0, 154.0, 99.5, size=6.12)
+        right = self._make_line("right", "/L，见于急性感染。", 154.2, 100.0, 260.0, 113.0)
+
+        stitched = stitch_physical_lines([sup_only, above, right, left], body_size=10.5)
+        self.assertEqual(len(stitched), 2)
+        self.assertEqual(stitched[0].text, "上一行满宽正文内容不应吞并下一行上标字符")
+        self.assertEqual(stitched[1].text, "（10 ～ 20）×109/L，见于急性感染。")
+
+        # Same-size raised superscript inside a multi-span fragment
+        same_sz_right = LineRecord(
+            line_id="ss_r",
+            page_num=1,
+            text="6\u202fU肌内注射。",
+            bbox=(200.5, 120.0, 265.0, 140.2),
+            spans=[
+                SpanRecord("6", (200.5, 120.0, 205.0, 130.5), "SimSun", 10.5),
+                SpanRecord("\u202fU肌内注射。", (205.0, 127.0, 265.0, 140.2), "SimSun", 10.5),
+            ],
+        )
+        prev_short = self._make_line("ps", "上一行短句。", 60.0, 113.5, 130.0, 126.7)
+        host_left = self._make_line("hl", "素（IFN），每日（1～3）×10", 60.0, 127.0, 200.0, 140.2)
+        stitched_ss = stitch_physical_lines([same_sz_right, prev_short, host_left], body_size=10.5)
+        self.assertEqual(
+            [ln.text for ln in stitched_ss],
+            ["上一行短句。", "素（IFN），每日（1～3）×106\u202fU肌内注射。"],
+        )
+
+    def test_stitch_all_small_font_footnote_rows_stay_separated(self):
+        """Pages/sections containing only small-font lines (< 0.85*body_size) keep distinct rows."""
+        fn1_a = self._make_line("fn1a", "①", 60.0, 700.0, 68.0, 708.0, size=7.5)
+        fn1_b = self._make_line("fn1b", "第一条脚注说明。", 70.0, 700.0, 180.0, 708.0, size=7.5)
+        fn2 = self._make_line("fn2", "② 第二条脚注说明。", 60.0, 710.0, 190.0, 718.0, size=7.5)
+        stitched = stitch_physical_lines([fn2, fn1_b, fn1_a], body_size=10.5)
+        self.assertEqual([ln.text for ln in stitched], ["①第一条脚注说明。", "② 第二条脚注说明。"])
+
+    def test_stitch_standalone_superscript_and_subscript_not_stolen_by_adjacent_short_or_indented_rows(self):
+        """Bracketed/left-adjacent standalone superscripts & subscripts must attach to their host row."""
+        # Superscript '9' below short preceding line ending at same or nearby x
+        prev_short_same_x = self._make_line("r0", "患者实验室检查：", 60.0, 86.0, 150.0, 99.0)
+        prev_short_far_x = self._make_line("r0b", "实验室检查：", 60.0, 86.0, 140.0, 99.0)
+        r1_left = self._make_line("r1l", "一般为（10 ～ 20）×10", 60.0, 100.0, 150.0, 113.0)
+        sup9 = self._make_line("sup", "9", 150.2, 93.0, 154.0, 99.5, size=6.12)
+        r1_right = self._make_line("r1r", "/L，见于急性感染。", 154.2, 100.0, 260.0, 113.0)
+
+        out_same_x = stitch_physical_lines([sup9, prev_short_same_x, r1_right, r1_left], body_size=10.5)
+        self.assertEqual([ln.text for ln in out_same_x], ["患者实验室检查：", "一般为（10 ～ 20）×109/L，见于急性感染。"])
+
+        out_far_x = stitch_physical_lines([sup9, prev_short_far_x, r1_right, r1_left], body_size=10.5)
+        self.assertEqual([ln.text for ln in out_far_x], ["实验室检查：", "一般为（10 ～ 20）×109/L，见于急性感染。"])
+
+        out_eol = stitch_physical_lines([sup9, prev_short_far_x, r1_left], body_size=10.5)
+        self.assertEqual([ln.text for ln in out_eol], ["实验室检查：", "一般为（10 ～ 20）×109"])
+
+        # Subscript '2' above indented next line (both bracketed and end-of-line)
+        h_left = self._make_line("hl", "常用H", 60.0, 100.0, 78.0, 113.0)
+        sub2 = self._make_line("sub", "2", 78.2, 110.5, 82.0, 117.0, size=6.12)
+        h_right = self._make_line("hr", "O清洗创面。", 82.2, 100.0, 160.0, 113.0)
+        next_ind = self._make_line("ni", "患者术后应密切观察。", 84.0, 114.0, 240.0, 127.0)
+
+        out_sub = stitch_physical_lines([sub2, h_left, h_right, next_ind], body_size=10.5)
+        self.assertEqual([ln.text for ln in out_sub], ["常用H2O清洗创面。", "患者术后应密切观察。"])
+
+        out_sub_eol = stitch_physical_lines([sub2, h_left, next_ind], body_size=10.5)
+        self.assertEqual([ln.text for ln in out_sub_eol], ["常用H2", "患者术后应密切观察。"])
+
+    def test_stitch_long_small_font_note_not_sucked_into_adjacent_body_line(self):
+        """Full-sentence 8pt notes/captions must stay in Phase 1 and never merge via script band."""
+        note8 = self._make_line("n8", "注：本表数据来源于临床统计。", 150.0, 102.5, 310.0, 110.5, size=8.0)
+        body_short = self._make_line("bs", "临床实验室检查：", 60.0, 110.0, 145.0, 123.0, size=10.5)
+        stitched = stitch_physical_lines([note8, body_short], body_size=10.5)
+        self.assertEqual([ln.text for ln in stitched], ["注：本表数据来源于临床统计。", "临床实验室检查："])
+
+    def test_stitch_same_size_standalone_superscript_and_single_char_unit(self):
+        """Same-size standalone superscripts attach inline without detaching above the sentence."""
+        prev_short = self._make_line("r0c", "实验室检查：", 60.0, 86.0, 140.0, 99.0, size=10.5)
+        r1_left = self._make_line("r1l", "一般为（10 ～ 20）×10", 60.0, 100.0, 150.0, 113.0, size=10.5)
+        sup9_same = self._make_line("sup_s", "9", 150.2, 93.0, 155.0, 103.5, size=10.5)
+        r1_right = self._make_line("r1r", "/L，见于急性感染。", 155.2, 100.0, 260.0, 113.0, size=10.5)
+
+        out_with_prev = stitch_physical_lines([sup9_same, prev_short, r1_right, r1_left], body_size=10.5)
+        self.assertEqual([ln.text for ln in out_with_prev], ["实验室检查：", "一般为（10 ～ 20）×109/L，见于急性感染。"])
+
+        out_no_prev = stitch_physical_lines([sup9_same, r1_right, r1_left], body_size=10.5)
+        self.assertEqual([ln.text for ln in out_no_prev], ["一般为（10 ～ 20）×109/L，见于急性感染。"])
+
+        # Single-char body-sized unit 'U' after raised '6' below a short preceding line
+        prev_s = self._make_line("ps", "干扰素说明：", 60.0, 113.0, 200.0, 126.0, size=10.5)
+        l3_left = self._make_line("l3l", "素（IFN），每日（1～3）×10", 60.0, 127.0, 200.0, 140.0, size=10.5)
+        sup6 = self._make_line("s6", "6", 200.2, 120.0, 204.2, 126.5, size=6.12)
+        unit_u = self._make_line("u", "U", 204.5, 127.0, 211.0, 140.0, size=10.5)
+        out_u = stitch_physical_lines([sup6, prev_s, unit_u, l3_left], body_size=10.5)
+        self.assertEqual([ln.text for ln in out_u], ["干扰素说明：", "素（IFN），每日（1～3）×106U"])
+
+    def test_stitch_italic_overhang_narrow_superscript_and_stacked_sub_sup(self):
+        """Edge kerning overhang on narrow superscripts and stacked sub+sup (SO4^2-) must stay inline."""
+        left = self._make_line("l", "一般为（10 ～ 20）×10", 60.0, 100.0, 200.0, 113.0)
+        sup_overhang = self._make_line("s", "9", 198.2, 93.0, 201.4, 99.5, size=6.12)
+        right = self._make_line("r", "/L，以中性粒细胞为主。", 201.6, 100.0, 320.0, 113.0)
+        out_oh = stitch_physical_lines([sup_overhang, right, left], body_size=10.5)
+        self.assertEqual([ln.text for ln in out_oh], ["一般为（10 ～ 20）×109/L，以中性粒细胞为主。"])
+
+        base = self._make_line("b", "溶液中含SO", 60.0, 100.0, 120.0, 113.0)
+        sub4 = self._make_line("sub", "4", 120.2, 108.0, 123.5, 114.5, size=6.12)
+        sup2m = self._make_line("sup", "2-", 120.2, 94.0, 126.5, 100.5, size=6.12)
+        tail = self._make_line("t", "浓度升高。", 127.0, 100.0, 180.0, 113.0)
+        out_chem = stitch_physical_lines([sup2m, sub4, tail, base], body_size=10.5)
+        self.assertEqual([ln.text for ln in out_chem], ["溶液中含SO42-浓度升高。"])
+
+    def test_reconstruct_paragraphs_no_false_break_after_superscript_line(self):
+        """Raised superscripts must not inflate line pitch and falsely split an unindented paragraph."""
+        geo = PageGeometry(width=595.0, height=842.0, base_x0=60.0, max_x1=440.0)
+        l0 = self._make_line("l0", "急性白血病患者外周血象常有明显改变，主要表现为白细胞异常。", 81.0, 86.0, 440.0, 99.0)
+        l1a = self._make_line("l1a", "患者外周血白细胞计数大多增高，一般为（10 ～ 20）×10", 60.0, 100.0, 325.0, 113.0)
+        l1b = LineRecord(
+            line_id="l1b",
+            page_num=1,
+            text="9/L，少数可高达（60 ～ 80）×109/L，",
+            bbox=(325.2, 93.0, 440.0, 113.0),
+            spans=[
+                SpanRecord("9", (325.2, 93.0, 329.0, 100.0), "SimSun", 6.12),
+                SpanRecord("/L，少数可高达（60 ～ 80）×10", (329.0, 100.0, 415.0, 113.0), "SimSun", 10.5),
+                SpanRecord("9", (415.2, 93.0, 419.0, 100.0), "SimSun", 6.12),
+                SpanRecord("/L，", (419.0, 100.0, 440.0, 113.0), "SimSun", 10.5),
+            ],
+        )
+        l2 = self._make_line("l2", "以中性粒细胞为主，部分患者可见核左移及中毒颗粒，", 60.0, 114.0, 440.0, 127.0)
+        l3 = self._make_line("l3", "血小板计数在疾病早期可正常或轻度减少，晚期明显降低，", 60.0, 128.0, 440.0, 141.0)
+        l4 = self._make_line("l4", "临床应结合骨髓象及其他实验室指标进行综合判断。", 60.0, 142.0, 320.0, 155.0)
+        paras = reconstruct_page_paragraphs([l0, l1a, l1b, l2, l3, l4], geo)
+        self.assertEqual(len(paras), 1)
+        self.assertIn("一般为（10 ～ 20）×109/L，少数可高达（60 ～ 80）×109/L，以中性粒细胞为主", paras[0].text)
+
 
 if __name__ == "__main__":
     unittest.main()

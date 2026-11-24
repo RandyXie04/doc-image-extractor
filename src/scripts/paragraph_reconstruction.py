@@ -277,13 +277,15 @@ def compute_standard_pitch(
 ) -> float:
     """
     Derives standard line pitch using median of positive vertical shifts
-    between consecutive lines in identical or adjacent blocks.
+    between consecutive lines' core baseline top bounds.
     """
+    if len(lines) < 2:
+        return fallback_pitch
+    _, dom_size, _ = compute_character_weighted_typography(lines)
     shifts: List[float] = []
+    core_y0s = [_line_core_y_bounds(ln, dom_size)[0] for ln in lines]
     for i in range(len(lines) - 1):
-        curr_y0 = lines[i].bbox[1]
-        next_y0 = lines[i + 1].bbox[1]
-        diff = next_y0 - curr_y0
+        diff = core_y0s[i + 1] - core_y0s[i]
         if 8.0 <= diff <= 45.0:
             shifts.append(diff)
     if not shifts:
@@ -313,9 +315,18 @@ def calculate_boundary_evidence(
     """
     reasons: List[str] = []
 
-    # 1. Geometric measurements
-    y_gap = curr_line.bbox[1] - prev_line.bbox[3]
-    pitch = curr_line.bbox[1] - prev_line.bbox[1]
+    # 1. Typography variations (needed early for core baseline geometry)
+    prev_font, prev_size, _ = compute_character_weighted_typography([prev_line])
+    curr_font, curr_size, _ = compute_character_weighted_typography([curr_line])
+    font_diff = (prev_font != curr_font)
+    size_diff = abs(prev_size - curr_size) >= 1.5
+
+    # 2. Geometric measurements (core baseline bounds prevent superscript/subscript pitch distortion)
+    ref_size = max(prev_size, curr_size, 10.5)
+    prev_cy0, prev_cy1 = _line_core_y_bounds(prev_line, ref_size)
+    curr_cy0, _ = _line_core_y_bounds(curr_line, ref_size)
+    y_gap = curr_cy0 - prev_cy1
+    pitch = curr_cy0 - prev_cy0
     gap_ratio = round(pitch / max(standard_pitch, 1.0), 3)
 
     indent_delta = round(curr_line.bbox[0] - prev_line.bbox[0], 2)
@@ -324,16 +335,10 @@ def calculate_boundary_evidence(
     # Check if lines are horizontally adjacent on the same line (|y diff| < 4pt)
     is_same_horizontal_line = abs(pitch) < 4.0 and curr_line.bbox[0] >= prev_line.bbox[0]
 
-    # 2. Linguistic features
+    # 3. Linguistic features
     has_term_punct = has_terminal_punctuation(prev_line.text)
     has_clause_punct = has_clause_continuing_punctuation(prev_line.text)
     has_unclosed = len(unclosed_stack) > 0
-
-    # 3. Typography variations
-    prev_font, prev_size, _ = compute_character_weighted_typography([prev_line])
-    curr_font, curr_size, _ = compute_character_weighted_typography([curr_line])
-    font_diff = (prev_font != curr_font)
-    size_diff = abs(prev_size - curr_size) >= 1.5
 
     # 4. Line length & Margin features
     prev_is_short = (prev_line.bbox[2] < page_geo.max_x1 - max(20.0, prev_size * 2.0))
@@ -432,12 +437,223 @@ def calculate_boundary_evidence(
 
 # ── Physical Line Stitching ───────────────────────────────────────────────────
 
+_SAME_SIZE_SCRIPT_TOKEN_RE = re.compile(
+    r"^[0-9+\-\u2212\u2013\u00d7\u00b7*\u2020\u2021\u00a7\u2032\u2033\u00b0%a-zA-Z()\[\]\u2460-\u2473\u2070-\u2079\u207a\u207b\u2080-\u2089]+$"
+)
+
+
 def _line_y_center(bbox: Tuple[float, float, float, float]) -> float:
     return (bbox[1] + bbox[3]) * 0.5
 
 
 def _line_height(bbox: Tuple[float, float, float, float]) -> float:
     return max(0.0, bbox[3] - bbox[1])
+
+
+def _weighted_median(values_and_weights: Sequence[Tuple[float, int]]) -> float:
+    """Computes character-weighted median, breaking exact ties toward the lower baseline."""
+    ordered = sorted(values_and_weights, key=lambda item: item[0])
+    total_w = sum(w for _, w in ordered)
+    half = total_w * 0.5
+    acc = 0.0
+    for val, w in ordered:
+        acc += w
+        if acc > half:
+            return val
+    return ordered[-1][0]
+
+
+def _line_core_y_bounds(
+    ln: LineRecord,
+    body_size: float,
+) -> Tuple[float, float]:
+    """
+    Returns vertical (y0, y1) bounds of the line's main-baseline spans, ignoring
+    smaller superscript/subscript spans and vertically displaced outlier spans
+    so raised/lowered scripts do not pull a line into an adjacent physical row.
+    """
+    non_empty = [s for s in ln.spans if s.text and s.text.strip()]
+    if not non_empty:
+        return (float(ln.bbox[1]), float(ln.bbox[3]))
+
+    max_sz = max(float(s.font_size) for s in non_empty)
+    main_spans = [s for s in non_empty if float(s.font_size) >= max_sz * 0.90]
+    if not main_spans:
+        main_spans = non_empty
+
+    if len(main_spans) == 1:
+        sp = main_spans[0]
+        return (float(sp.bbox[1]), float(sp.bbox[3]))
+
+    y0s = [float(s.bbox[1]) for s in main_spans]
+    y1s = [float(s.bbox[3]) for s in main_spans]
+    tol = max(2.0, body_size * 0.25)
+    if (max(y0s) - min(y0s)) <= tol and (max(y1s) - min(y1s)) <= tol:
+        return (min(y0s), max(y1s))
+
+    y0_weighted = [(float(s.bbox[1]), max(1, len(s.text.strip()))) for s in main_spans]
+    y1_weighted = [(float(s.bbox[3]), max(1, len(s.text.strip()))) for s in main_spans]
+    med_y0 = _weighted_median(y0_weighted)
+    med_y1 = _weighted_median(y1_weighted)
+    inliers = [
+        s for s in main_spans
+        if abs(float(s.bbox[1]) - med_y0) <= tol and abs(float(s.bbox[3]) - med_y1) <= tol
+    ]
+    if inliers:
+        return (min(float(s.bbox[1]) for s in inliers), max(float(s.bbox[3]) for s in inliers))
+    return (med_y0, med_y1)
+
+
+def _is_pure_script_or_thin_fragment(ln: LineRecord, body_size: float) -> bool:
+    """
+    Returns True if a LineRecord is a compact superscript/subscript token or a
+    near-zero-height glyph that should attach after primary rows are formed.
+    Long small-font prose lines (e.g., footnotes, captions, table notes) return False.
+    """
+    if _line_height(ln.bbox) <= max(1.0, body_size * 0.25):
+        return True
+    stripped = (ln.text or "").strip()
+    if not stripped:
+        return False
+    width = max(0.0, float(ln.bbox[2]) - float(ln.bbox[0]))
+    non_empty = [s for s in ln.spans if s.text and s.text.strip()]
+    max_sz = max((float(s.font_size) for s in non_empty), default=body_size)
+    if max_sz < body_size * 0.85:
+        return len(stripped) <= 8 and width <= max(body_size * 4.5, 48.0)
+    return (
+        len(stripped) <= 3
+        and width <= body_size * 1.6
+        and bool(_SAME_SIZE_SCRIPT_TOKEN_RE.match(stripped))
+    )
+
+
+def _has_significant_x_overlap(
+    a_bbox: Tuple[float, float, float, float],
+    b_bbox: Tuple[float, float, float, float],
+    body_size: float,
+) -> bool:
+    """
+    Returns True when two fragments overlap horizontally beyond normal kerning/italic
+    edge overhang, indicating vertically stacked rows rather than inline neighbors.
+    """
+    ax0, ax1 = float(a_bbox[0]), float(a_bbox[2])
+    bx0, bx1 = float(b_bbox[0]), float(b_bbox[2])
+    x_ov = min(ax1, bx1) - max(ax0, bx0)
+    if x_ov <= 0.0:
+        return False
+    min_w = min(max(0.0, ax1 - ax0), max(0.0, bx1 - bx0))
+    if min_w <= 0.0:
+        return False
+    if x_ov > max(3.5, body_size * 0.50):
+        return True
+    if x_ov >= min_w * 0.85:
+        return True
+    edge_tol = max(2.5, body_size * 0.25)
+    return x_ov > edge_tol and x_ov > min_w * 0.50
+
+
+def _is_vertically_disjoint_script_pair(
+    a: LineRecord,
+    b: LineRecord,
+    body_size: float,
+) -> bool:
+    """Returns True for stacked sub+sup pairs sharing X but disjoint in Y (e.g., SO_4^2-)."""
+    if not (
+        _is_pure_script_or_thin_fragment(a, body_size)
+        and _is_pure_script_or_thin_fragment(b, body_size)
+    ):
+        return False
+    y_ov = min(float(a.bbox[3]), float(b.bbox[3])) - max(float(a.bbox[1]), float(b.bbox[1]))
+    return y_ov <= max(1.5, body_size * 0.15)
+
+
+def _row_has_x_overlap(
+    row_items: Sequence[LineRecord],
+    cand: LineRecord,
+    body_size: float,
+) -> bool:
+    for item in row_items:
+        if _is_vertically_disjoint_script_pair(item, cand, body_size):
+            continue
+        if _has_significant_x_overlap(item.bbox, cand.bbox, body_size):
+            return True
+    return False
+
+
+def _can_merge_stacked_script(
+    prev: LineRecord,
+    curr: LineRecord,
+    body_size: float,
+) -> bool:
+    """Returns True when curr is a compact script overlapping only a vertically-disjoint script span in prev."""
+    if not _is_pure_script_or_thin_fragment(curr, body_size) or not prev.spans:
+        return False
+    found_overlap = False
+    for sp in prev.spans:
+        if not (sp.text and sp.text.strip()):
+            continue
+        if not _has_significant_x_overlap(sp.bbox, curr.bbox, body_size):
+            continue
+        found_overlap = True
+        sp_w = max(0.0, float(sp.bbox[2]) - float(sp.bbox[0]))
+        sp_is_script = float(sp.font_size) < body_size * 0.85 or sp_w <= body_size * 1.6
+        y_ov = min(float(sp.bbox[3]), float(curr.bbox[3])) - max(float(sp.bbox[1]), float(curr.bbox[1]))
+        if not (sp_is_script and y_ov <= max(1.5, body_size * 0.15)):
+            return False
+    return found_overlap
+
+
+def _row_directional_x_gaps(
+    row_items: Sequence[LineRecord],
+    cand_bbox: Tuple[float, float, float, float],
+) -> Tuple[float, float]:
+    """Returns (left_gap, right_gap) from candidate bbox to neighboring fragments in row_items."""
+    left_gap = float("inf")
+    right_gap = float("inf")
+    cx0, cx1 = float(cand_bbox[0]), float(cand_bbox[2])
+    for item in row_items:
+        ix0, ix1 = float(item.bbox[0]), float(item.bbox[2])
+        if ix0 < cx0 and ix1 <= cx1:
+            g = max(0.0, cx0 - ix1)
+            if g < left_gap:
+                left_gap = g
+        elif ix1 > cx1 and ix0 >= cx0:
+            g = max(0.0, ix0 - cx1)
+            if g < right_gap:
+                right_gap = g
+    return left_gap, right_gap
+
+
+def _is_in_script_vertical_band(
+    row_y: Tuple[float, float],
+    script_y: Tuple[float, float],
+    body_size: float,
+) -> bool:
+    """Returns True when a compact script fragment falls within a host row's sup/sub envelope."""
+    ry0, ry1 = row_y
+    sy0, sy1 = script_y
+    return (
+        sy0 >= ry0 - body_size * 0.75
+        and sy1 <= ry1 + body_size * 0.45
+        and sy1 >= ry0 - body_size * 0.25
+        and sy0 <= ry1 + body_size * 0.25
+    )
+
+
+def _y_bounds_share_row(
+    a_y: Tuple[float, float],
+    b_y: Tuple[float, float],
+    body_size: float,
+    y_overlap_ratio: float,
+) -> bool:
+    """Returns True if two vertical intervals (y0, y1) occupy the same physical horizontal row."""
+    ay0, ay1 = a_y
+    by0, by1 = b_y
+    min_h = min(max(0.0, ay1 - ay0), max(0.0, by1 - by0))
+    if min_h <= max(1.0, body_size * 0.2):
+        return abs((ay0 + ay1) * 0.5 - (by0 + by1) * 0.5) <= body_size * 0.55
+    overlap = min(ay1, by1) - max(ay0, by0)
+    return overlap >= min_h * y_overlap_ratio
 
 
 def _lines_share_row(
@@ -447,13 +663,12 @@ def _lines_share_row(
     y_overlap_ratio: float,
 ) -> bool:
     """Returns True if two line bboxes belong to the same physical horizontal row."""
-    ay0, ay1 = a_bbox[1], a_bbox[3]
-    by0, by1 = b_bbox[1], b_bbox[3]
-    min_h = min(max(0.0, ay1 - ay0), max(0.0, by1 - by0))
-    if min_h <= max(1.0, body_size * 0.2):
-        return abs(_line_y_center(a_bbox) - _line_y_center(b_bbox)) <= body_size * 0.55
-    overlap = min(ay1, by1) - max(ay0, by0)
-    return overlap >= min_h * y_overlap_ratio
+    return _y_bounds_share_row(
+        (float(a_bbox[1]), float(a_bbox[3])),
+        (float(b_bbox[1]), float(b_bbox[3])),
+        body_size,
+        y_overlap_ratio,
+    )
 
 
 def _should_insert_inline_space(
@@ -535,52 +750,148 @@ def stitch_physical_lines(
     Clusters LineRecord fragments belonging to the same physical horizontal line,
     sorts rows top-to-bottom and fragments left-to-right, and merges adjacent
     fragments within gap_limit while keeping wide-gap columns/TOC items separate.
+
+    Uses two-phase clustering over core main-baseline y-bounds with horizontal
+    non-overlap enforcement so raised/lowered superscripts never pull trailing
+    fragments into an adjacent physical row.
     """
     if not lines:
         return []
 
     safe_body_size = body_size if body_size > 0 else 10.5
     gap_limit = max_inline_gap if max_inline_gap is not None else max(12.0, safe_body_size * 1.2)
-    ordered_input = sorted(lines, key=lambda ln: (_line_y_center(ln.bbox), ln.bbox[1], ln.bbox[0]))
+    tight_gap_limit = min(gap_limit, max(4.0, safe_body_size * 0.45))
+    baseline_tol = max(2.0, safe_body_size * 0.25)
 
-    rows: List[Tuple[Tuple[float, float, float, float], List[LineRecord]]] = []
-    for ln in ordered_input:
-        ln_yc = _line_y_center(ln.bbox)
+    core_y_map: Dict[int, Tuple[float, float]] = {
+        id(ln): _line_core_y_bounds(ln, safe_body_size) for ln in lines
+    }
+
+    primary_lines: List[LineRecord] = []
+    secondary_lines: List[LineRecord] = []
+    for ln in lines:
+        if _is_pure_script_or_thin_fragment(ln, safe_body_size):
+            secondary_lines.append(ln)
+        else:
+            primary_lines.append(ln)
+
+    def _sort_key(ln: LineRecord) -> Tuple[float, float, float]:
+        cy0, cy1 = core_y_map[id(ln)]
+        return ((cy0 + cy1) * 0.5, cy0, float(ln.bbox[0]))
+
+    # Each row: (anchor_core_y, items)
+    rows: List[Tuple[Tuple[float, float], List[LineRecord]]] = []
+
+    # Phase 1: Cluster primary lines using core baseline y-bounds
+    for ln in sorted(primary_lines, key=_sort_key):
+        ln_y = core_y_map[id(ln)]
+        ln_yc = (ln_y[0] + ln_y[1]) * 0.5
         best_idx = -1
         best_dist = float("inf")
-        for idx, (anchor_bbox, _) in enumerate(rows):
-            if _lines_share_row(anchor_bbox, ln.bbox, safe_body_size, y_overlap_ratio):
-                dist = abs(_line_y_center(anchor_bbox) - ln_yc)
+        for idx, (anchor_y, row_items) in enumerate(rows):
+            if _row_has_x_overlap(row_items, ln, safe_body_size):
+                continue
+            if _y_bounds_share_row(anchor_y, ln_y, safe_body_size, y_overlap_ratio):
+                dist = abs((anchor_y[0] + anchor_y[1]) * 0.5 - ln_yc)
                 if dist < best_dist:
                     best_dist = dist
                     best_idx = idx
 
         if best_idx >= 0:
-            anchor_bbox, row_items = rows[best_idx]
+            anchor_y, row_items = rows[best_idx]
+            prev_max_w = max(max(0.0, float(it.bbox[2]) - float(it.bbox[0])) for it in row_items)
+            ln_w = max(0.0, float(ln.bbox[2]) - float(ln.bbox[0]))
             row_items.append(ln)
-            anchor_h = _line_height(anchor_bbox)
-            ln_h = _line_height(ln.bbox)
-            if anchor_h < safe_body_size * 0.8 <= ln_h <= safe_body_size * 2.0:
-                rows[best_idx] = (ln.bbox, row_items)
+            if prev_max_w < safe_body_size * 2.0 <= ln_w:
+                rows[best_idx] = (ln_y, row_items)
         else:
-            rows.append((ln.bbox, [ln]))
+            rows.append((ln_y, [ln]))
+
+    # Phase 2a: Attach non-displaced secondary tokens sitting squarely on a primary row baseline
+    # (e.g., short body-sized unit 'U' after '10^6') before resolving vertically shifted scripts.
+    remaining_secondary: List[LineRecord] = []
+    for ln in sorted(secondary_lines, key=_sort_key):
+        ln_y = core_y_map[id(ln)]
+        best_idx = -1
+        best_gap = float("inf")
+        for idx, (anchor_y, row_items) in enumerate(rows):
+            if _row_has_x_overlap(row_items, ln, safe_body_size):
+                continue
+            if (
+                abs(ln_y[0] - anchor_y[0]) <= baseline_tol
+                and abs(ln_y[1] - anchor_y[1]) <= baseline_tol
+            ):
+                l_gap, r_gap = _row_directional_x_gaps(row_items, ln.bbox)
+                x_gap = min(l_gap, r_gap)
+                if x_gap < best_gap:
+                    best_gap = x_gap
+                    best_idx = idx
+        if best_idx >= 0:
+            rows[best_idx][1].append(ln)
+        else:
+            remaining_secondary.append(ln)
+
+    # Phase 2b: Attach vertically displaced superscript/subscript and thin-glyph fragments,
+    # preferring horizontally bracketed rows, tight horizontal adjacency, and left-base attachment.
+    for ln in remaining_secondary:
+        ln_y = core_y_map[id(ln)]
+        ln_yc = (ln_y[0] + ln_y[1]) * 0.5
+        best_idx = -1
+        best_score: Optional[Tuple[int, int, int, float, float, float]] = None
+        for idx, (anchor_y, row_items) in enumerate(rows):
+            if _row_has_x_overlap(row_items, ln, safe_body_size):
+                continue
+            shares_std = _y_bounds_share_row(anchor_y, ln_y, safe_body_size, y_overlap_ratio)
+            left_gap, right_gap = _row_directional_x_gaps(row_items, ln.bbox)
+            x_gap = min(left_gap, right_gap)
+            is_adj = x_gap <= gap_limit
+            is_tight_adj = x_gap <= tight_gap_limit
+            is_bracketed = left_gap <= gap_limit and right_gap <= gap_limit
+            in_script_band = is_adj and _is_in_script_vertical_band(anchor_y, ln_y, safe_body_size)
+            if not (shares_std or in_script_band):
+                continue
+            overlap = min(anchor_y[1], ln_y[1]) - max(anchor_y[0], ln_y[0])
+            yc_dist = abs((anchor_y[0] + anchor_y[1]) * 0.5 - ln_yc)
+            adj_tier = 0 if is_tight_adj else (1 if is_adj else 2)
+            left_tier = 0 if left_gap <= tight_gap_limit else 1
+            score = (
+                0 if is_bracketed else 1,
+                adj_tier,
+                left_tier,
+                -overlap,
+                yc_dist,
+                x_gap,
+            )
+            if best_score is None or score < best_score:
+                best_score = score
+                best_idx = idx
+
+        if best_idx >= 0:
+            _, row_items = rows[best_idx]
+            row_items.append(ln)
+        else:
+            rows.append((ln_y, [ln]))
 
     rows.sort(
         key=lambda row: (
-            row[0][1],
-            _line_y_center(row[0]),
-            min(item.bbox[0] for item in row[1]),
+            row[0][0],
+            (row[0][0] + row[0][1]) * 0.5,
+            min(float(item.bbox[0]) for item in row[1]),
         )
     )
 
     stitched: List[LineRecord] = []
     for _, row_items in rows:
-        row_items.sort(key=lambda ln: (ln.bbox[0], ln.bbox[1]))
+        row_items.sort(key=lambda ln: (round(float(ln.bbox[0]), 1), -float(ln.bbox[1])))
         merged_row: List[LineRecord] = [row_items[0]]
         for curr in row_items[1:]:
             prev = merged_row[-1]
-            gap = curr.bbox[0] - prev.bbox[2]
-            if gap <= gap_limit:
+            gap = float(curr.bbox[0]) - float(prev.bbox[2])
+            can_merge = (
+                not _has_significant_x_overlap(prev.bbox, curr.bbox, safe_body_size)
+                or _can_merge_stacked_script(prev, curr, safe_body_size)
+            )
+            if can_merge and gap <= gap_limit:
                 merged_row[-1] = _merge_horizontal_fragments(prev, curr, gap, safe_body_size)
             else:
                 merged_row.append(curr)

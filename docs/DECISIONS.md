@@ -326,3 +326,47 @@ Accepted
 
 BUG-015
 
+---
+
+## ADR-016 — 物理行縫合採核心基線垂直包絡、兩階段聚類、水平重疊防護與首行頂部錨點排序
+
+### Status
+
+Accepted
+
+### Context
+
+先前於 `f4ae776` 導入的 `stitch_physical_lines()` 與 `_sort_blocks_by_row_and_x()` 假設「單遍依原始 `line.bbox` 垂直中心點聚類」與「依整塊區塊垂直中心點排序」足以處理上標切分區塊。實務整稿中於緊湊行距或多行區塊上暴露出以下結構性假設失效：
+
+1. **上標拉高 `line.bbox[1]` 導致單遍貪婪聚類誤將行尾片段吸納進上一物理行**：含上標開頭的片段（如 `9/L，少数可高达（60 ～ 80） ×109/L，`、`6 U肌内注射。`）因小字級上標向上突出，其合併外框的 `y_center` 小於同行左側正文，導致於左側正文尚未建行前即先被處理，並與緊鄰上一物理行底部重疊超過 `0.45 * min_h` 而被歸入上一行。
+2. **水平縫合缺乏重疊下界保護**：`gap <= gap_limit` 未拒絕大負值水平重疊（如 `-240pt`），導致被誤吸入上一行的下行片段直接無空格黏接於上一行句尾（如 `...加用干扰6 U肌内注射。`），或在上一行為短行時因 `gap > gap_limit` 未合併卻排於本行左側正文之前（如 `9/L，...` 移至句首）。
+3. **純上標孤立片段與行內亂序 Span**：僅含小字級上標且上移幅度較大的獨立片段可能低於 `0.45 * min_h` 門檻而另立新行於正文之上；PDF 內容流逆序繪製之同一 LTR 水平行 Span 未按 `x0` 正規化。
+4. **整塊垂直中點排序反轉多行區塊與同行單行區塊順序**：`_sort_blocks_by_row_and_x()` 採 `(y0 + y1) / 2.0`，使自同一首行開始的多行區塊中點遠大於同行右側單行區塊，導致後者被排至前者之前；`_stitch_body_lines_into_blocks()` 亦以原始 `bbox` 判定 `_lines_share_physical_row()`，使跨行上標誤拆段落區塊。
+
+### Decision
+
+1. **核心基線垂直包絡（`_line_core_y_bounds`）與基線間距判定**：
+   - 於 `src/scripts/paragraph_reconstruction.py` 計算每行主字級 Span（`size >= max_size * 0.90`）的字數加權中位基線垂直區間 `(core_y0, core_y1)`（等權平手時偏向較低正常基線，避免同字級上標勝出），濾除較小上下標及同字級垂直偏移離群 Span。
+   - `compute_standard_pitch()` 與 `calculate_boundary_evidence()` 一併改用核心基線 `(core_y0, core_y1)` 計算行距與垂直間隙，避免上標拉高 `bbox[1]` 放大 `gap_ratio` 導致段落於上標行後誤斷段。
+2. **兩階段物理行聚類、緊湊上下標門檻與水平非重疊不變量（`stitch_physical_lines`）**：
+   - **Phase 1**：先聚類所有主字級行與長小字正文行（如 8pt 腳注、圖說、表注等寬幅/多字小字行，不納入 Phase 2 以防被鄰行上下標包絡誤吸），並強制 `_row_has_x_overlap()` 拒絕水平重疊大於 `max(3.5pt, 0.5 * body_size)`、近完全包覆（`>= 85%` 較窄寬度）或超出斜體/側距微重疊容忍（`> max(2.5pt, 0.25 * body_size)` 且 `> 50%` 較窄寬度）的候選行；同時允許垂直分離的同 X 堆疊上下標（如 `SO₄²⁻`）共存並內聯縫合。
+   - **Phase 2（2a 基線齊平子階段 + 2b 偏移上下標子階段）**：僅針對緊湊小字上下標（`size < 0.85 * body_size` 且字數/寬度受限）、緊湊同字級符號上標（`len <= 3`、`width <= 1.6 * body_size` 非漢字符號）與極薄字形，先掛載基線齊平短詞元（如單字單位 `U`），再依「左右雙側夾抱 > 緊鄰水平間距 > 左側宿主基元鄰接 > 垂直重疊 > 垂直中心距離」優先序掛載偏移上下標至宿主行，防止前一行短句或次行縮排奪取獨立上下標。
+   - **合併防護**：同列相鄰片段僅於 `not _has_significant_x_overlap()`（或為垂直分離堆疊上下標）且 `gap <= gap_limit` 時合併。
+3. **行內 LTR Span 正規化、核心重打包、基線段距與首行頂部錨點排序（`src/scripts/book_layout_extractor.py`）**：
+   - `_stitch_body_lines_into_blocks()` 對水平 LTR 行偵測到明顯逆序 Span（`x0[i] < x0[i-1] - 1.0pt`）時依 `x0` 穩定重排，並以 `_line_record_core_bbox()` 搭配水平重疊拒絕判定 `_lines_share_physical_row()`。
+   - `_sort_blocks_by_row_and_x()` 與 `_should_flush_before_block()` 改採 `_block_first_line_core_y0()` / `_block_last_line_core_y1()`（主基線頂底錨點），確保多行區塊、上標區塊、上下標邊界段距與腳注條目均維持正確閱讀順序與段落完整性。
+
+### Alternatives
+
+- **替代方案 A：僅調高 `y_overlap_ratio`（例如由 0.45 提高至 0.70）**。無法阻止大負值水平重疊合併，且會使合法高上標片段與宿主行斷裂而被單獨排至句首。
+- **替代方案 B：改用 `page.get_text("dict", sort=True)` 依賴 PyMuPDF 內建排序**。實測證實當 PDF 內容流先繪製同行右側上標片段再繪製左側正文時，`sort=True` 仍會將右側上標行置於左側正文之前。
+
+### Consequences
+
+- 根除緊湊行距與上標切分段落發生「上標後文字移至句首」或「黏接至上一行句尾並導致原行斷段」之排版錯位。
+- 完整保留多欄/目錄寬間距分離、Latin 詞距與既有跨頁續接契約，且不影響 Golden SHA-256 基準與既有腳注/表格交錯排序。
+
+### Related Bug
+
+BUG-017
+

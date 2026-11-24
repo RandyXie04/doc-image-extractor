@@ -97,6 +97,7 @@ try:
     from src.scripts.paragraph_reconstruction import (
         LineRecord,
         SpanRecord,
+        _line_core_y_bounds,
         stitch_physical_lines,
     )
 except ImportError:
@@ -104,11 +105,13 @@ except ImportError:
         from paragraph_reconstruction import (
             LineRecord,
             SpanRecord,
+            _line_core_y_bounds,
             stitch_physical_lines,
         )
     except ImportError:
         LineRecord = None
         SpanRecord = None
+        _line_core_y_bounds = None
         stitch_physical_lines = None
 
 _fonts_json: Optional[str] = os.path.normpath(
@@ -521,27 +524,107 @@ def is_page_footer(block, page_h):
 _CJK_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
 
 
+def _pymupdf_line_core_y_bounds(line: Dict[str, Any], fallback_bbox: Sequence[float]) -> Tuple[float, float]:
+    """Return main-baseline (y0, y1) for a PyMuPDF line dict, excluding scripts and displaced outliers."""
+    fb_y0 = float(fallback_bbox[1]) if len(fallback_bbox) >= 4 else 0.0
+    fb_y1 = float(fallback_bbox[3]) if len(fallback_bbox) >= 4 else fb_y0
+    lb = line.get("bbox")
+    ln_y0 = float(lb[1]) if (lb and len(lb) >= 4) else fb_y0
+    ln_y1 = float(lb[3]) if (lb and len(lb) >= 4) else fb_y1
+
+    spans = [
+        s for s in line.get("spans", [])
+        if (s.get("text") or "").strip() and s.get("bbox") and len(s["bbox"]) >= 4
+    ]
+    if not spans:
+        return (ln_y0, ln_y1)
+
+    max_sz = max(float(s.get("size") or 0.0) for s in spans)
+    if max_sz > 0.0:
+        main_spans = [s for s in spans if float(s.get("size") or 0.0) >= max_sz * 0.90]
+        if main_spans:
+            spans = main_spans
+
+    if len(spans) == 1:
+        sb = spans[0]["bbox"]
+        return (float(sb[1]), float(sb[3]))
+
+    y0s = [float(s["bbox"][1]) for s in spans]
+    y1s = [float(s["bbox"][3]) for s in spans]
+    tol = max(2.0, max_sz * 0.25)
+    if (max(y0s) - min(y0s)) <= tol and (max(y1s) - min(y1s)) <= tol:
+        return (min(y0s), max(y1s))
+
+    def _wmed(pairs: List[Tuple[float, int]]) -> float:
+        ordered = sorted(pairs, key=lambda item: item[0])
+        half = sum(w for _, w in ordered) * 0.5
+        acc = 0.0
+        for val, w in ordered:
+            acc += w
+            if acc > half:
+                return val
+        return ordered[-1][0]
+
+    med_y0 = _wmed([(float(s["bbox"][1]), max(1, len((s.get("text") or "").strip()))) for s in spans])
+    med_y1 = _wmed([(float(s["bbox"][3]), max(1, len((s.get("text") or "").strip()))) for s in spans])
+    inliers = [
+        s for s in spans
+        if abs(float(s["bbox"][1]) - med_y0) <= tol and abs(float(s["bbox"][3]) - med_y1) <= tol
+    ]
+    if inliers:
+        return (min(float(s["bbox"][1]) for s in inliers), max(float(s["bbox"][3]) for s in inliers))
+    return (med_y0, med_y1)
+
+
+def _block_first_line_core_y0(block: Dict[str, Any]) -> float:
+    """
+    Return the top reading-order Y anchor for a block or interleaved flow item.
+    For text blocks, uses the first line's main-baseline span y0 so multi-line
+    block height and raised superscripts do not invert reading order.
+    """
+    bbox = block.get("bbox", [0, 0, 0, 0])
+    fallback_y0 = float(bbox[1]) if len(bbox) >= 4 else 0.0
+    lines = block.get("lines")
+    if lines is None and isinstance(block.get("data"), dict):
+        lines = block["data"].get("lines")
+    if not lines:
+        return fallback_y0
+    return _pymupdf_line_core_y_bounds(lines[0], bbox)[0]
+
+
+def _block_last_line_core_y1(block: Dict[str, Any]) -> float:
+    """Return the last line's main-baseline span y1 so lowered subscripts do not distort gap checks."""
+    bbox = block.get("bbox", [0, 0, 0, 0])
+    fallback_y1 = float(bbox[3]) if len(bbox) >= 4 else 0.0
+    lines = block.get("lines")
+    if lines is None and isinstance(block.get("data"), dict):
+        lines = block["data"].get("lines")
+    if not lines:
+        return fallback_y1
+    return _pymupdf_line_core_y_bounds(lines[-1], bbox)[1]
+
+
 def _sort_blocks_by_row_and_x(blocks: List[Dict[str, Any]], y_tol: float = 5.0) -> List[Dict[str, Any]]:
-    """Cluster blocks into horizontal bands within y_tol and sort each band left-to-right."""
+    """Cluster blocks into horizontal bands within y_tol (by top baseline anchor) and sort left-to-right."""
     if len(blocks) <= 1:
         return list(blocks)
+    y_keys = {id(b): _block_first_line_core_y0(b) for b in blocks}
     by_y = sorted(
         blocks,
         key=lambda b: (
-            (b.get("bbox", [0, 0, 0, 0])[1] + b.get("bbox", [0, 0, 0, 0])[3]) / 2.0,
+            y_keys[id(b)],
             b.get("bbox", [0, 0, 0, 0])[0],
         ),
     )
     rows: List[List[Dict[str, Any]]] = []
     row_anchors: List[float] = []
     for b in by_y:
-        bbox = b.get("bbox", [0, 0, 0, 0])
-        yc = (bbox[1] + bbox[3]) / 2.0
-        if rows and abs(yc - row_anchors[-1]) <= y_tol:
+        yk = y_keys[id(b)]
+        if rows and abs(yk - row_anchors[-1]) <= y_tol:
             rows[-1].append(b)
         else:
             rows.append([b])
-            row_anchors.append(yc)
+            row_anchors.append(yk)
     ordered: List[Dict[str, Any]] = []
     for r in rows:
         r.sort(key=lambda b: b.get("bbox", [0, 0, 0, 0])[0])
@@ -974,7 +1057,17 @@ def _lines_share_physical_row(
     body_size: float,
     y_overlap_ratio: float = 0.45,
 ) -> bool:
-    """Return True if two line bboxes occupy the same physical horizontal row."""
+    """Return True if two non-overlapping horizontal line bboxes occupy the same physical row."""
+    x_ov = min(float(bbox_a[2]), float(bbox_b[2])) - max(float(bbox_a[0]), float(bbox_b[0]))
+    min_w = min(max(0.0, float(bbox_a[2]) - float(bbox_a[0])), max(0.0, float(bbox_b[2]) - float(bbox_b[0])))
+    if x_ov > 0.0 and min_w > 0.0:
+        edge_tol = max(2.5, body_size * 0.25)
+        if (
+            x_ov > max(3.5, body_size * 0.50)
+            or x_ov >= min_w * 0.85
+            or (x_ov > edge_tol and x_ov > min_w * 0.50)
+        ):
+            return False
     h_a = max(0.0, float(bbox_a[3]) - float(bbox_a[1]))
     h_b = max(0.0, float(bbox_b[3]) - float(bbox_b[1]))
     min_h = min(h_a, h_b)
@@ -985,6 +1078,15 @@ def _lines_share_physical_row(
     yc_a = (float(bbox_a[1]) + float(bbox_a[3])) / 2.0
     yc_b = (float(bbox_b[1]) + float(bbox_b[3])) / 2.0
     return abs(yc_a - yc_b) <= body_size * 0.55
+
+
+def _line_record_core_bbox(lr: Any, body_size: float) -> Tuple[float, float, float, float]:
+    """Return (x0, core_y0, x1, core_y1) for a LineRecord so scripts do not distort row checks."""
+    bx = lr.bbox
+    if _line_core_y_bounds is not None:
+        cy0, cy1 = _line_core_y_bounds(lr, body_size)
+        return (float(bx[0]), cy0, float(bx[2]), cy1)
+    return (float(bx[0]), float(bx[1]), float(bx[2]), float(bx[3]))
 
 
 def _line_record_to_pymupdf_line(
@@ -1099,6 +1201,22 @@ def _stitch_body_lines_into_blocks(
                 orig_span_by_sig[(sr.text, tuple(round(v, 2) for v in sr.bbox), sr.font_family)] = sp
             if not span_records:
                 continue
+            dir_vec = line.get("dir", [1.0, 0.0])
+            is_ltr_horizontal = (
+                int(line.get("wmode", 0) or 0) == 0
+                and (not isinstance(dir_vec, (list, tuple)) or len(dir_vec) < 1 or float(dir_vec[0]) >= 0.0)
+            )
+            if is_ltr_horizontal and len(span_records) > 1:
+                if any(
+                    span_records[i].bbox[0] < span_records[i - 1].bbox[0] - 1.0
+                    for i in range(1, len(span_records))
+                ):
+                    span_records = [
+                        sr for _, sr in sorted(
+                            enumerate(span_records),
+                            key=lambda pair: (round(pair[1].bbox[0], 1), pair[0]),
+                        )
+                    ]
             ln_bbox = line.get("bbox") or _union_bboxes([sr.bbox for sr in span_records]) or blk_bbox
             ln_id = f"{block_id}_l{l_idx}"
             orig_line_meta[ln_id] = {
@@ -1145,7 +1263,11 @@ def _stitch_body_lines_into_blocks(
             cur_lrs
             and lr.block_id
             and lr.block_id == cur_block_id
-            and not _lines_share_physical_row(cur_lrs[-1].bbox, lr.bbox, body_size)
+            and not _lines_share_physical_row(
+                _line_record_core_bbox(cur_lrs[-1], body_size),
+                _line_record_core_bbox(lr, body_size),
+                body_size,
+            )
         )
         if same_block:
             cur_lrs.append(lr)
@@ -1736,6 +1858,7 @@ def _should_flush_before_block(
     audit_data: Dict[str, Any],
     first_line_x0: Optional[float] = None,
     raw_first_line: Optional[str] = None,
+    first_line_y0: Optional[float] = None,
 ) -> bool:
     if not state["lines"]:
         return False
@@ -1747,11 +1870,12 @@ def _should_flush_before_block(
         return True
 
     effective_x0 = first_line_x0 if first_line_x0 is not None else bbox[0]
+    effective_y0 = first_line_y0 if first_line_y0 is not None else bbox[1]
     space_probe = raw_first_line if raw_first_line is not None else bb_text
     is_indented = (effective_x0 - base_x0) >= max(10.0, avg_size * 1.4)
     curr_has_space_indent = bool(re.match(r'^(?:[\u3000\u2003]| {2,4})', space_probe))
     indent_jump = bool((effective_x0 - state["last_x0"]) >= 5.0)
-    vertical_gap = (bbox[1] - state["last_y1"]) if state["last_y1"] > 0 else 0.0
+    vertical_gap = (effective_y0 - state["last_y1"]) if state["last_y1"] > 0 else 0.0
     prev_ref_x1 = state["last_line_x1"] if state["last_line_x1"] > 0 else state["last_x1"]
     prev_short = bool(prev_ref_x1 > 0 and prev_ref_x1 < max_x1 - max(avg_size * 2.0, 20.0))
 
@@ -1790,11 +1914,15 @@ def _should_flush_before_block(
 
 
 def _update_state_coords(
-    state: Dict[str, Any], bbox: Sequence[float], last_line_x1: float = 0.0, reset_heading: bool = True
+    state: Dict[str, Any],
+    bbox: Sequence[float],
+    last_line_x1: float = 0.0,
+    reset_heading: bool = True,
+    last_line_y1: Optional[float] = None,
 ) -> None:
     state["last_x0"] = bbox[0]
     state["last_x1"] = bbox[2]
-    state["last_y1"] = bbox[3]
+    state["last_y1"] = last_line_y1 if last_line_y1 is not None else bbox[3]
     state["last_line_x1"] = last_line_x1
     if reset_heading:
         state["last_heading_text"] = ""
@@ -1999,10 +2127,13 @@ def _process_text_flow_item(
     block_custom_style = block_docx_style if (has_font_mapping and not is_ignored_font) else None
     ai_boundary_key = item.get("ai_boundary_key")
     ai_boundary_override = ai_boundary_by_item.get(ai_boundary_key) if isinstance(ai_boundary_key, str) else None
+    block_core_y0 = _block_first_line_core_y0(bb)
+    block_core_y1 = _block_last_line_core_y1(bb)
     if _should_flush_before_block(
         state, bb_text, bbox, avg_size, base_x0, max_x1, is_block_kaiti, block_custom_style,
         ai_boundary_override, page_num, audit_data,
         first_line_x0=first_line_bbox[0], raw_first_line=raw_first_line,
+        first_line_y0=block_core_y0,
     ):
         _flush_accumulated_paragraph(state, page_num, body_font, body_size, style_mapping, page_paragraphs, layout_records, audit_data)
 
@@ -2011,7 +2142,7 @@ def _process_text_flow_item(
         state["first_raw_line"] = raw_first_line
 
     _append_block_lines_to_state(bb, lines, state, is_block_kaiti, block_custom_style, page_footnotes, page_num)
-    _update_state_coords(state, bbox, cur_last_line_x1, reset_heading=False)
+    _update_state_coords(state, bbox, cur_last_line_x1, reset_heading=False, last_line_y1=block_core_y1)
 
 
 def _finalize_page_footnotes(

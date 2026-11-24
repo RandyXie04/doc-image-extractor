@@ -187,6 +187,36 @@ class TestInterleavedFlowSorting:
         items = _build_interleaved_flow_items([b_bot, b_top, b_mid], [fig], [tbl], [])
         assert [it["type"] for it in items] == ["text", "figure", "text", "table", "text"]
 
+    def test_multiline_block_stays_before_same_row_single_line_superscript_block(self):
+        """Multi-line block starting at y0=100 must sort before a right-side single-line block at y0=100."""
+        b_left_multi = _make_block([
+            _make_line([_make_span("患者外周血白细胞计数大多增高，一般为（10 ～ 20）×10", [60.0, 100.0, 310.0, 113.0])]),
+            _make_line([_make_span("以中性粒细胞为主。", [60.0, 116.0, 165.0, 129.0])]),
+        ])
+        b_right_single = _make_block([
+            _make_line([
+                _make_span("9", [325.0, 93.0, 329.0, 100.0], size=6.12),
+                _make_span("/L，少数可高达（60 ～ 80） ×109/L，", [329.0, 100.0, 480.0, 113.0], size=10.5),
+            ])
+        ])
+
+        items = _build_interleaved_flow_items([b_right_single, b_left_multi], [], [], [])
+        assert [item["bbox"][0] for item in items] == [60.0, 325.0]
+
+    def test_intraline_out_of_order_ltr_spans_reordered_in_stitch_adapter(self):
+        """Out-of-order PDF stream spans within one LTR horizontal line must reorder left-to-right."""
+        _require_stitch_physical_lines()
+        out_of_order_block = _make_block([
+            _make_line([
+                _make_span("9", [325.2, 95.0, 329.0, 101.0], size=6.12),
+                _make_span("/L，少数可高达（60 ～ 80） ×109/L，", [329.0, 100.0, 480.0, 113.0], size=10.5),
+                _make_span("患者外周血白细胞计数大多增高，一般为（10 ～ 20）×10", [60.0, 100.0, 325.0, 113.0], size=10.5),
+            ])
+        ])
+        stitched = _stitch_body_lines_into_blocks([out_of_order_block], body_size=10.5)
+        assert len(stitched) == 1
+        assert _block_text(stitched[0]) == "患者外周血白细胞计数大多增高，一般为（10 ～ 20）×109/L，少数可高达（60 ～ 80） ×109/L，"
+
 
 class TestSyntheticPageLayoutIntegration:
     """End-to-end synthetic PyMuPDF dict flow through _process_single_pdf_page_layout."""
@@ -276,6 +306,176 @@ class TestSyntheticPageLayoutIntegration:
         assert "20kg/m2患者，需严密监测。" in joined
         assert "^" not in joined
         assert "<sup>" not in joined
+
+    def test_bug017_both_superscript_reordering_cases_end_to_end(self):
+        """End-to-end page layout integration for BUG-017 cases (10^9/L and 10^6 U)."""
+        _require_stitch_physical_lines()
+
+        class _Rect:
+            width = 595.0
+            height = 842.0
+
+        class _MockPage:
+            rect = _Rect()
+
+            def __init__(self, blocks: List[Dict[str, Any]]):
+                self._blocks = blocks
+
+            def get_text(self, mode: str = "dict") -> Dict[str, Any]:
+                return {"blocks": self._blocks}
+
+            def find_tables(self):
+                return None
+
+        raw_blocks = [
+            # Case 1: Short preceding line + superscript-split Line 1 ('9/L，...109/L，')
+            _make_block([
+                _make_line([_make_span("临床实验室检查：", [60.0, 86.0, 160.0, 99.0], size=10.5)]),
+            ]),
+            _make_block([
+                _make_line([
+                    _make_span("9", [325.2, 93.0, 329.0, 100.0], size=6.12),
+                    _make_span("/L，少数可高达（60 ～ 80） ×10", [329.0, 100.0, 455.0, 113.0], size=10.5),
+                    _make_span("9", [455.2, 93.0, 459.0, 100.0], size=6.12),
+                    _make_span("/L，", [459.0, 100.0, 480.0, 113.0], size=10.5),
+                ]),
+            ]),
+            _make_block([
+                _make_line([
+                    _make_span("　　患者外周血白细胞计数大多增高，一般为（10 ～ 20）×10", [60.0, 100.0, 325.0, 113.0], size=10.5),
+                ]),
+                _make_line([
+                    _make_span("以中性粒细胞为主。", [60.0, 114.0, 165.0, 127.0], size=10.5),
+                ]),
+            ]),
+            # Case 2: Tight 3-line paragraph with superscript '6 U肌内注射。' on final line
+            _make_block([
+                _make_line([
+                    _make_span("　　用于免疫缺陷或全身播散者，可用阿昔洛韦5～7.5\u202fmg/kg，每8小时1次，连续5～7\u2002天。", [60.0, 160.0, 440.0, 173.2], size=10.5),
+                ]),
+                _make_line([
+                    _make_span("也可每日静脉滴注或肌内注射单磷酸阿糖腺苷（Ara-AMP）5～10\u202fmg/kg，极严重者可加用干扰", [60.0, 173.5, 440.0, 186.7], size=10.5),
+                ]),
+                _make_line([
+                    _make_span("素（IFN），每日（1～3）×10", [60.0, 187.0, 200.0, 200.2], size=10.5),
+                ]),
+            ]),
+            _make_block([
+                _make_line([
+                    _make_span("6", [200.5, 180.0, 204.5, 187.0], size=6.12),
+                    _make_span("\u202fU肌内注射。", [204.5, 187.0, 265.0, 200.2], size=10.5),
+                ]),
+            ]),
+        ]
+
+        final_md_pages: List[str] = []
+        all_images: List[Dict[str, Any]] = []
+        layout_records: List[Dict[str, Any]] = []
+        audit_data: Dict[str, Any] = {
+            "headers_removed": 0,
+            "footers_removed": 0,
+            "headings_detected": [],
+            "footnotes_matched": 0,
+            "footnotes_fallback": 0,
+            "footnotes_detail": [],
+            "paragraphs_reflowed": 0,
+            "ai_layout": {"decisions": []},
+        }
+
+        _process_single_pdf_page_layout(
+            page=_MockPage(raw_blocks),
+            page_num=42,
+            body_size=10.5,
+            body_font="simsun",
+            toc_index={},
+            toc_page_offset=[None],
+            style_mapping={},
+            font_role_map={},
+            enable_footnotes=False,
+            strip_headers_heuristic=False,
+            ai_kaiti_classifier=None,
+            ai_font_decision_cache={},
+            retained_font_suggestions={},
+            final_md_pages=final_md_pages,
+            all_image_blocks=all_images,
+            layout_records=layout_records,
+            audit_data=audit_data,
+        )
+
+        joined = "\n\n".join(final_md_pages)
+        expected_p1 = "患者外周血白细胞计数大多增高，一般为（10 ～ 20）×109/L，少数可高达（60 ～ 80） ×109/L，以中性粒细胞为主。"
+        expected_p2 = (
+            "用于免疫缺陷或全身播散者，可用阿昔洛韦5～7.5\u202fmg/kg，每8小时1次，连续5～7\u2002天。"
+            "也可每日静脉滴注或肌内注射单磷酸阿糖腺苷（Ara-AMP）5～10\u202fmg/kg，"
+            "极严重者可加用干扰素（IFN），每日（1～3）×106\u202fU肌内注射。"
+        )
+        assert expected_p1 in joined
+        assert expected_p2 in joined
+        assert "干扰6\u202fU肌内注射。" not in joined
+        assert "9/L，少数可高达（60 ～ 80） ×109/L，患者外周血" not in joined
+
+    def test_bug017_real_pymupdf_superscript_pdf_sweep(self):
+        """Real in-memory fitz PDF rendering with raised superscripts across pitches stays ordered."""
+        _require_stitch_physical_lines()
+        import fitz
+        from src.scripts.book_layout_extractor import _parse_pdf_layout_flow
+
+        font = "china-s"
+        for raise_pt in (4.5, 6.5, 7.5):
+            for pitch in (13.0, 14.5):
+                doc: Any = fitz.open()
+                try:
+                    page = doc.new_page(width=700, height=842)
+                    # Case 1
+                    y0 = 100.0
+                    t1a = "患者外周血白细胞计数大多增高，一般为（10～20）×10"
+                    w1a = fitz.get_text_length(t1a, fontname=font, fontsize=10.5)
+                    page.insert_text((81, y0), t1a, fontname=font, fontsize=10.5)
+                    page.insert_text((81 + w1a, y0 - raise_pt), "9", fontname=font, fontsize=6.5)
+                    w9 = fitz.get_text_length("9", fontname=font, fontsize=6.5)
+                    t1b = "/L，少数可高达（60～80）×10"
+                    page.insert_text((81 + w1a + w9, y0), t1b, fontname=font, fontsize=10.5)
+                    w1b = fitz.get_text_length(t1b, fontname=font, fontsize=10.5)
+                    page.insert_text((81 + w1a + w9 + w1b, y0 - raise_pt), "9", fontname=font, fontsize=6.5)
+                    page.insert_text((81 + w1a + w9 + w1b + w9, y0), "/L，", fontname=font, fontsize=10.5)
+                    page.insert_text((60, y0 + pitch), "以中性粒细胞为主。", fontname=font, fontsize=10.5)
+
+                    # Case 2
+                    y1 = 180.0
+                    page.insert_text(
+                        (81, y1),
+                        "用于免疫缺陷或全身播散者，可用阿昔洛韦5～7.5 mg/kg，每8小时1次，连续5～7 天。",
+                        fontname=font,
+                        fontsize=10.5,
+                    )
+                    page.insert_text(
+                        (60, y1 + pitch),
+                        "也可每日静脉滴注或肌内注射单磷酸阿糖腺苷（Ara-AMP）5～10 mg/kg，极严重者可加用干扰",
+                        fontname=font,
+                        fontsize=10.5,
+                    )
+                    t2a = "素（IFN），每日（1～3）×10"
+                    w2a = fitz.get_text_length(t2a, fontname=font, fontsize=10.5)
+                    page.insert_text((60, y1 + 2 * pitch), t2a, fontname=font, fontsize=10.5)
+                    page.insert_text((60 + w2a, y1 + 2 * pitch - raise_pt), "6", fontname=font, fontsize=6.5)
+                    w6 = fitz.get_text_length("6", fontname=font, fontsize=6.5)
+                    page.insert_text((60 + w2a + w6, y1 + 2 * pitch), " U肌内注射。", fontname=font, fontsize=10.5)
+
+                    md_pages, _, _, _ = _parse_pdf_layout_flow(doc, enable_footnotes=False)
+                finally:
+                    doc.close()
+
+                md = "\n\n".join(md_pages)
+                assert (
+                    "患者外周血白细胞计数大多增高，一般为（10～20）×109/L，少数可高达（60～80）×109/L，以中性粒细胞为主。"
+                    in md
+                ), f"Case 1 failed at raise={raise_pt}, pitch={pitch}: {md!r}"
+                assert (
+                    "极严重者可加用干扰素（IFN），每日（1～3）×106U肌内注射。" in md
+                    or "极严重者可加用干扰素（IFN），每日（1～3）×106 U肌内注射。" in md
+                ), f"Case 2 failed at raise={raise_pt}, pitch={pitch}: {md!r}"
+                assert "干扰6" not in md
+                assert "9/L，少数可高达（60～80）×109/L，患者外周血" not in md
 
 
 @pytest.mark.skipif(
