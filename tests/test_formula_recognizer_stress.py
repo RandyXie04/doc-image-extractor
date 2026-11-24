@@ -251,14 +251,15 @@ class TestRecognitionPredictorOOMRecovery:
                 return (["f(x)"] * len(kwargs["images"]), [0.90] * len(kwargs["images"]))
 
         with patch("surya.recognition.batch_recognition", side_effect=flaky_batch_rec, create=True):
-            with patch("torch.cuda.empty_cache") as mock_empty_cache:
-                results = predictor.predict_crops(valid_crops)
+            with patch("torch.cuda.is_available", return_value=True):
+                with patch("torch.cuda.empty_cache") as mock_empty_cache:
+                    results = predictor.predict_crops(valid_crops)
 
-                assert len(results) == 4
-                assert call_count == 2
-                mock_empty_cache.assert_called_once()
-                # Original batch size must be restored
-                assert predictor.batch_size == 32
+                    assert len(results) == 4
+                    assert call_count == 2
+                    mock_empty_cache.assert_called_once()
+                    # Original batch size must be restored
+                    assert predictor.batch_size == 32
 
     def test_oom_fatal_when_batch_size_is_already_1(self):
         """When batch_size is already 1, OOM must raise rather than loop infinitely."""
@@ -302,14 +303,15 @@ class TestRecognitionPredictorOOMRecovery:
             return (["f(x)"] * len(kwargs["images"]), [0.95] * len(kwargs["images"]))
 
         with patch("surya.recognition.batch_recognition", side_effect=failing_cuda_batch_rec, create=True):
-            with patch("torch.cuda.empty_cache") as mock_empty_cache:
-                results = predictor.predict_crops([valid])
-                assert predictor.device == "cpu"
-                assert predictor.dtype == torch.float32
-                assert len(results) == 1
-                assert results[0] == ("f(x)", 0.95)
-                assert call_count == 2
-                mock_empty_cache.assert_called()
+            with patch("torch.cuda.is_available", return_value=True):
+                with patch("torch.cuda.empty_cache") as mock_empty_cache:
+                    results = predictor.predict_crops([valid])
+                    assert predictor.device == "cpu"
+                    assert predictor.dtype == torch.float32
+                    assert len(results) == 1
+                    assert results[0] == ("f(x)", 0.95)
+                    assert call_count == 2
+                    mock_empty_cache.assert_called()
 
 
 # =============================================================================
