@@ -143,7 +143,6 @@ jobs:
     timeout-minutes: 25
     env:
       HF_HUB_OFFLINE: "1"
-      YOLO_CONFIG_DIR: ${{ runner.temp }}\ultralytics
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -164,6 +163,8 @@ jobs:
 
       - name: Run non-heavy unit & regression tests
         shell: pwsh
+        env:
+          YOLO_CONFIG_DIR: ${{ runner.temp }}\ultralytics
         run: |
           python -m pytest --ignore=tests/e2e --ignore=tests/test_formula_recognizer_stress.py -m "not heavy" -k "not test_recognition_predictor_blank_crop_short_circuit_with_index_preservation" --cov=src --cov-report=xml --cov-report=term
 
