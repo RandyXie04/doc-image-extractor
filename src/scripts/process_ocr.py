@@ -881,7 +881,7 @@ def _is_ocr_table_item(item: dict[str, Any]) -> bool:
     if str(blk.get("original_label", "")).lower() == "table":
         return True
     md_str = str(item.get("md", "")).strip()
-    return md_str.startswith("|") and "\n|" in md_str
+    return (md_str.startswith("|") and "\n|" in md_str) or md_str.lower().startswith("<table")
 
 
 def _ocr_item_plain_text(item: dict[str, Any]) -> str:
