@@ -13,6 +13,7 @@ Provides:
 from __future__ import annotations
 
 import json
+import os
 import socket
 import urllib.error
 import urllib.parse
@@ -26,12 +27,27 @@ import fitz
 import pytest
 
 # ── Windows Hermetic Event Loop & Self-Pipe Patch (Sandbox Compatible) ──────
-if sys.platform == "win32":
+def _needs_win32_self_pipe_patch() -> bool:
+    if sys.platform != "win32":
+        return False
+    if os.environ.get("GITHUB_ACTIONS", "").lower() == "true" or os.environ.get("CI", "").lower() == "true":
+        return False
+    return True
+
+
+if _needs_win32_self_pipe_patch():
     import ctypes
     from asyncio.windows_events import IocpProactor
     from asyncio.proactor_events import BaseProactorEventLoop
 
     kernel32 = ctypes.windll.kernel32
+    kernel32.PostQueuedCompletionStatus.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.c_size_t,
+        ctypes.c_void_p,
+    ]
+    kernel32.PostQueuedCompletionStatus.restype = ctypes.c_int
 
     def _hermetic_make_self_pipe(self: Any) -> None:
         self._ssock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -179,13 +195,25 @@ def block_external_network_and_mock_ollama(monkeypatch: pytest.MonkeyPatch) -> A
                     ]
                 }
             else:
+                req_content = "# Mock Title\nMock response text for offline testing."
+                raw_data = getattr(url_or_req, "data", None)
+                if raw_data:
+                    try:
+                        req_payload = json.loads(raw_data.decode("utf-8"))
+                        fmt = req_payload.get("format")
+                        if fmt == "json":
+                            req_content = "{}"
+                        elif isinstance(fmt, dict):
+                            req_content = "[]" if fmt.get("type") == "array" else "{}"
+                    except Exception:
+                        pass
                 body = {
                     "models": [{"name": "mock_test_model"}],
                     "message": {
                         "role": "assistant",
-                        "content": "# Mock Title\nMock response text for offline testing.",
+                        "content": req_content,
                     },
-                    "response": "# Mock Title\nMock response text for offline testing.",
+                    "response": req_content,
                 }
             mock_resp.read.return_value = json.dumps(body).encode("utf-8")
             mock_resp.__enter__.return_value = mock_resp
