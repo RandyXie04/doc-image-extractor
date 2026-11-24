@@ -79,8 +79,10 @@ class AIKaitiClassifier:
         if cache_dir:
             self._cache_dir = Path(cache_dir)
         else:
+            import tempfile
+
             self._cache_dir = (
-                Path(os.getenv("TEMP", "/tmp"))
+                Path(tempfile.gettempdir())
                 / "doc-image-extractor-temp"
                 / "ai_kaiti_cache"
             )

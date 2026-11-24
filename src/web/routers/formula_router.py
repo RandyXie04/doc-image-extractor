@@ -16,8 +16,8 @@ import os
 import shutil
 import time
 import uuid
-import xml.etree.ElementTree as ET
 import zipfile
+from src.utils.safe_xml import fromstring as safe_xml_fromstring
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -391,7 +391,7 @@ async def get_template_styles():
     try:
         with zipfile.ZipFile(template_path, "r") as z:
             if "word/styles.xml" in z.namelist():
-                tree = ET.fromstring(z.read("word/styles.xml"))
+                tree = safe_xml_fromstring(z.read("word/styles.xml"))
                 for s in tree.findall(f"{w_ns}style"):
                     if s.get(f"{w_ns}type") == "paragraph":
                         name_el = s.find(f"{w_ns}name")

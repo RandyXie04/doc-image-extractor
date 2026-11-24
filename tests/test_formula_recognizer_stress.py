@@ -372,6 +372,7 @@ class TestRecognitionPredictorLanguagesNormalization:
 class TestRecognitionPredictorLiveVRAM:
     """Empirical verification of peak VRAM usage under CUDA GPU execution."""
 
+    @pytest.mark.heavy
     def test_peak_vram_under_2500mb_at_batch_size_32(self):
         """
         Loads RecognitionPredictor on CUDA, creates 32 formula crops, measures

@@ -1,6 +1,6 @@
 import zipfile
-import xml.etree.ElementTree as ET
 import logging
+from src.utils.safe_xml import fromstring as safe_xml_fromstring
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ class PostflightValidator:
                     return False
                     
                 # 2. 驗證 document.xml 中的標記數量與樣式
-                doc_tree = ET.fromstring(z.read('word/document.xml'))
+                doc_tree = safe_xml_fromstring(z.read('word/document.xml'))
                 ref_nodes = doc_tree.findall(f".//{ns}footnoteReference")
                 
                 if len(ref_nodes) != expected_footnote_count:
@@ -61,7 +61,7 @@ class PostflightValidator:
                     
                 # 3. 驗證 footnotes.xml 中的內容
                 if expected_footnote_count > 0:
-                    fn_tree = ET.fromstring(z.read('word/footnotes.xml'))
+                    fn_tree = safe_xml_fromstring(z.read('word/footnotes.xml'))
                     # 扣除 id <= 0 的 separator
                     actual_fn = [f for f in fn_tree.findall(f"{ns}footnote") if int(f.get(f"{ns}id", "0")) > 0]
                     if len(actual_fn) != expected_footnote_count:

@@ -5,7 +5,7 @@ from __future__ import annotations
 import zipfile
 from pathlib import Path
 from typing import Any, Dict, List, Union
-from xml.etree import ElementTree as ET
+from src.utils.safe_xml import fromstring as safe_xml_fromstring
 
 
 W_NS = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -21,7 +21,7 @@ def read_docx_style_profiles(path: Union[str, Path]) -> List[Dict[str, Any]]:
     with zipfile.ZipFile(path, "r") as archive:
         if "word/styles.xml" not in archive.namelist():
             return profiles
-        root = ET.fromstring(archive.read("word/styles.xml"))
+        root = safe_xml_fromstring(archive.read("word/styles.xml"))
     for style in root.findall(f"{W_NS}style"):
         if _word_value(style, "type") != "paragraph":
             continue

@@ -15,8 +15,8 @@ import re
 import sys
 import zipfile
 import argparse
-import xml.etree.ElementTree as ET
 from pathlib import Path
+from src.utils.safe_xml import fromstring as safe_xml_fromstring
 from dataclasses import dataclass, field, asdict
 from typing import List, Dict, Set, Optional, Any
 
@@ -123,7 +123,7 @@ class PodValidator:
         try:
             with zipfile.ZipFile(str(docx_path), "r") as z:
                 if "word/styles.xml" in z.namelist():
-                    tree = ET.fromstring(z.read("word/styles.xml"))
+                    tree = safe_xml_fromstring(z.read("word/styles.xml"))
                     for style_elem in tree.findall("w:style", ns):
                         style_id = style_elem.get(f"{{{ns['w']}}}styleId")
                         if style_id:

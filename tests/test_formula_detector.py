@@ -19,7 +19,6 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
-import onnx
 import onnxruntime as ort
 from pydantic import ValidationError
 from PIL import Image, ImageDraw, ImageFont
@@ -28,6 +27,8 @@ import pytest
 from config import PATHS
 from src.extraction.contracts import FormulaDetectionContract
 from src.extraction.formula_detector import FormulaDetector
+
+pytestmark = pytest.mark.heavy
 
 
 # ── Shared Session Fixtures ──────────────────────────────────────────────────
@@ -110,6 +111,7 @@ class TestFormulaDetectorModelLoading:
     """Validates ONNX file integrity, session creation, and provider fallback."""
 
     def test_onnx_model_file_validity(self, formula_onnx_path: Path) -> None:
+        onnx = pytest.importorskip("onnx")
         assert formula_onnx_path.exists()
         assert formula_onnx_path.stat().st_size > 150_000_000
 

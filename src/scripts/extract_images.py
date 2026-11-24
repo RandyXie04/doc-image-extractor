@@ -10,8 +10,8 @@ import os
 import posixpath
 import struct
 import urllib.parse
-import xml.etree.ElementTree as ET
 import zipfile
+from src.utils.safe_xml import Element as XmlElement, fromstring as safe_xml_fromstring
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -113,7 +113,7 @@ def _resolve_docx_rel_target(
     return None
 
 
-def _subtree_has_rel(elem: ET.Element, rel_map: Dict[str, str]) -> bool:
+def _subtree_has_rel(elem: XmlElement, rel_map: Dict[str, str]) -> bool:
     for node in elem.iter():
         for attr_val in node.attrib.values():
             if attr_val in rel_map:
@@ -222,7 +222,7 @@ def get_active_docx_media_entries(z: zipfile.ZipFile, duplicate_policy: str = "e
             continue
 
         try:
-            rels_root = ET.fromstring(z.read(rels_zip_name))
+            rels_root = safe_xml_fromstring(z.read(rels_zip_name))
         except Exception:
             continue
 
@@ -245,7 +245,7 @@ def get_active_docx_media_entries(z: zipfile.ZipFile, duplicate_policy: str = "e
             continue
 
         try:
-            part_root = ET.fromstring(z.read(part_name))
+            part_root = safe_xml_fromstring(z.read(part_name))
         except Exception:
             continue
 

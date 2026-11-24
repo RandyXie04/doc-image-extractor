@@ -8,13 +8,13 @@
 
 /**
  * @typedef {'mobile' | 'tablet' | 'desktop' | 'ultrawide'} DeviceType
- * @typedef {'portrait' | 'landscape'} OrientationType
+ * @typedef {'portrait' | 'landscape'} ViewportOrientation
  *
  * @typedef {Object} ViewportState
  * @property {number} width - Current viewport width in pixels
  * @property {number} height - Current viewport height in pixels
  * @property {DeviceType} device - Active breakpoint category
- * @property {OrientationType} orientation - Screen orientation
+ * @property {ViewportOrientation} orientation - Screen orientation
  * @property {boolean} isTouch - Whether coarse touch pointer is active
  * @property {boolean} isSidebarOpen - Whether sidebar drawer is open on mobile/tablet
  *
@@ -33,7 +33,7 @@
 (function () {
     /** @type {DeviceType} */
     let currentDevice = 'desktop';
-    /** @type {OrientationType} */
+    /** @type {ViewportOrientation} */
     let currentOrientation = 'landscape';
     let isTouchDevice = false;
     let sidebarOpen = false;
@@ -54,7 +54,7 @@
      * Compute current viewport orientation.
      * @param {number} width
      * @param {number} height
-     * @returns {OrientationType}
+     * @returns {ViewportOrientation}
      */
     function computeOrientation(width, height) {
         return width >= height ? 'landscape' : 'portrait';

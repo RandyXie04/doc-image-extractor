@@ -628,6 +628,7 @@ class TestFormulaRecognizer:
         finally:
             surya.recognition.batch_recognition = original_batch_rec
 
+    @pytest.mark.heavy
     def test_recognition_predictor_live_cuda_inference(self):
         """Runs genuine live SuryaOCR inference on CUDA if available."""
         if not torch.cuda.is_available():
@@ -819,6 +820,7 @@ class TestFormulaExporter:
 class TestEndToEndM2PipelineIntegration:
     """Ties together Stage 2 Cropping, Stage 3 Recognition, and Multi-Format Export."""
 
+    @pytest.mark.heavy
     def test_full_m2_pipeline_dense_text_document(self):
         # 1. Create dense document page
         page_w, page_h = 1000, 1400

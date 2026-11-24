@@ -157,7 +157,7 @@ def _ensure_surya_loaded() -> bool:
 def check_internet():
     try:
         import urllib.request
-        urllib.request.urlopen('https://huggingface.co', timeout=3)
+        urllib.request.urlopen('https://huggingface.co', timeout=3)  # nosec B310 - hardcoded https connectivity probe
         return True
     except Exception:
         return False

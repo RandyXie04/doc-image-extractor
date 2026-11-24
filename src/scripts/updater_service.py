@@ -26,7 +26,7 @@ def check_latest_release() -> Dict[str, Any]:
                 'Accept': 'application/vnd.github.v3+json'
             }
         )
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=10) as response:  # nosec B310 - hardcoded https GitHub API URL
             data = json.loads(response.read().decode('utf-8'))
             version = data.get('tag_name', '').lstrip('v')
             assets = data.get('assets', [])
@@ -100,7 +100,7 @@ def perform_update(download_url: str) -> Dict[str, Any]:
             download_url,
             headers={'User-Agent': 'PDF-Toolkit-App'}
         )
-        with urllib.request.urlopen(req, timeout=60) as response:
+        with urllib.request.urlopen(req, timeout=60) as response:  # nosec B310 - https + GitHub host validated above
             with open(new_exe, 'wb') as f:
                 while chunk := response.read(65536):
                     f.write(chunk)

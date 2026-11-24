@@ -22,10 +22,11 @@ import onnxruntime as ort
 from PIL import Image, ImageDraw, ImageFont
 import pytest
 import torch
-from ultralytics import YOLO
 
 from config import PATHS
 from src.extraction.formula_detector import FormulaDetector
+
+pytestmark = pytest.mark.heavy
 
 
 @pytest.fixture(scope="session")
@@ -84,6 +85,7 @@ class TestNumericalParity:
         onnx_out = sess.run(None, {"images": dummy})[0]
 
         # PyTorch forward pass
+        from ultralytics import YOLO
         pt = YOLO(str(pytorch_model_path))
         net = pt.model.eval()
         with torch.no_grad():
@@ -111,6 +113,7 @@ class TestNumericalParity:
         onnx_preds = detector.session.run([detector.output_name], {detector.input_name: tensor})[0]
 
         # PyTorch forward pass
+        from ultralytics import YOLO
         pt = YOLO(str(pytorch_model_path))
         net = pt.model.eval()
         with torch.no_grad():

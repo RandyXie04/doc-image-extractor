@@ -65,9 +65,12 @@ def _create_sample_pdf(path: Path, num_pages: int = 1) -> Path:
 
 
 @pytest.fixture(autouse=True)
-def clean_tasks_state():
+def clean_tasks_state(monkeypatch):
     """Ensures each test has clean task queues and a fresh Semaphore bound to the active loop."""
+    import dataclasses
+    import src.web.app
     import src.web.dependencies
+    monkeypatch.setattr(src.web.app, "CFG", dataclasses.replace(CFG, auth_enabled=False))
     formula_tasks.clear()
     src.web.dependencies._GPU_SEMAPHORE = asyncio.Semaphore(1)
     src.web.dependencies._OCR_SEMAPHORE = src.web.dependencies._GPU_SEMAPHORE

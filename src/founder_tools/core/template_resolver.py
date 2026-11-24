@@ -1,7 +1,7 @@
 import zipfile
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from typing import Optional
+from src.utils.safe_xml import fromstring as safe_xml_fromstring
 
 @dataclass(frozen=True)
 class TemplateStyles:
@@ -28,7 +28,7 @@ class TemplateResolver:
             if 'word/styles.xml' not in z.namelist():
                 raise FileNotFoundError(f"{self.template_path} 缺少 word/styles.xml，請確認是否為標準 DOCX")
                 
-            tree = ET.fromstring(z.read('word/styles.xml'))
+            tree = safe_xml_fromstring(z.read('word/styles.xml'))
             for s in tree.findall(f"{self.W_NS}style"):
                 s_id = s.get(f"{self.W_NS}styleId")
                 name_el = s.find(f"{self.W_NS}name")
