@@ -10,6 +10,7 @@ Enforces the Zero Raw-Dict Policy via frozen dataclasses:
 """
 
 from __future__ import annotations
+import html as _html_mod
 import re
 from dataclasses import dataclass
 from typing import List, Tuple, Sequence, Optional, Any
@@ -57,12 +58,70 @@ class ReconstructedTable:
     caption_text: str = ""
 
 
+@dataclass(frozen=True)
+class TableCellSpan:
+    """Immutable table cell with explicit rowspan/colspan metadata."""
+    text: str
+    rowspan: int = 1
+    colspan: int = 1
+    is_header: bool = False
+
+
 _TABLE_CAPTION_RE = re.compile(r"^\s*表\s*\d+")
+_CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 _CJK_SPURIOUS_SPACE_RE = re.compile(
     r"(?<=[\u4e00-\u9fff\u3400-\u4dbf\u3001-\u303f\uff01-\uffef\u2018-\u201f\u2014\u2026\u00b7])[ \t]+(?=[\u4e00-\u9fff\u3400-\u4dbf\u3001-\u303f\uff01-\uffef\u2018-\u201f\u2014\u2026\u00b7])"
 )
-_CJK_EDGE_CHAR_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\u3001-\u303f\uff01-\uffef\u2018-\u201f\u2014\u2026\u00b7]")
-_XU_BIAO_RE = re.compile(r"^[（(]?\s*(?:续\s*表|續\s*表)\s*[）)]?[：:.]?\s*$")
+_CJK_OPEN_PUNCT_SPACE_RE = re.compile(r"(?<=[（【「『《〈、])[ \t]+")
+_CJK_CLOSE_PUNCT_SPACE_RE = re.compile(r"[ \t]+(?=[）】」』》〉，。、；：！？])")
+_OP_AFTER_SPACE_RE = re.compile(
+    r"(?<=[＞＜≥≤﹥﹤～±])[ \t]+(?=[\d\u4e00-\u9fff\u3400-\u4dbf\u2160-\u217f+\-（(])"
+)
+_OP_BEFORE_SPACE_RE = re.compile(
+    r"(?<=[\d\u4e00-\u9fff\u3400-\u4dbf\u2160-\u217f）)])[ \t]+(?=[＞＜≥≤﹥﹤～±])"
+)
+_CJK_SLASH_SPACE_RE = re.compile(
+    r"(?<=[\u4e00-\u9fff\u3400-\u4dbf])[ \t]*/[ \t]*(?=[\u4e00-\u9fff\u3400-\u4dbf])"
+)
+_ROMAN_CJK_SPACE_RE = re.compile(
+    r"(?<=[\u2160-\u217f])[ \t]+(?=[\u4e00-\u9fff\u3400-\u4dbf])|(?<=[\u4e00-\u9fff\u3400-\u4dbf])[ \t]+(?=[\u2160-\u217f])"
+)
+_DIGIT_CJK_UNIT_SPACE_RE = re.compile(
+    r"(?<=\d)[ \t]+(?=[个例年月日周天次岁级条项种层倍分秒])"
+)
+_PRE_SCRIPT_TAG_SPACE_RE = re.compile(r"[ \t]+(?=<(?:sup|sub)>)")
+_CJK_EDGE_CHAR_RE = re.compile(
+    r"[\u4e00-\u9fff\u3400-\u4dbf\u3001-\u303f\uff01-\uffef\u2018-\u201f\u2014\u2026\u00b7\u2160-\u217f\u2460-\u2473＞＜≥≤﹥﹤＝±×÷～°%‰／]"
+)
+_XU_BIAO_BARE_RE = re.compile(
+    r"^[（(]?\s*(?:续\s*前?\s*表|續\s*前?\s*表)\s*[）)]?[：:.]?\s*$"
+)
+_XU_BIAO_PREFIXED_RE = re.compile(
+    r"^[（(]?\s*(?:续\s*表|續\s*表)\s*\d*(?:[-—–.．]\d+)*(?:[\s\u3000:：].{0,60})?\s*[）)]?$"
+)
+_TABLE_CAPTION_CONT_RE = re.compile(
+    r"^表\s*\d+(?:[-—–.．]\d+)*[^\n]{0,65}(?:[（(]\s*(?:续\s*表?|續\s*表?|续\s*\d+|續\s*\d+)\s*[）)]|[\s\u3000]+(?:续\s*表?|續\s*表?))\s*$"
+)
+_TABLE_EN_CONT_RE = re.compile(
+    r"^Table\s+\d+(?:[.-]\d+)*[^\n]{0,65}\(\s*cont(?:inued)?\.?\s*\)\s*$",
+    re.I,
+)
+_STANDALONE_PAGE_NUM_RE = re.compile(
+    r"^\s*(?:(?:[-—–·•]\s*)?\d{1,4}(?:\s*/\s*\d{1,4})?(?:\s*[-—–·•])?|第\s*\d{1,4}\s*[页頁])\s*$"
+)
+_TABLE_NOTE_PREFIX_RE = re.compile(
+    r"^\s*(?:(?:表\s*[注註]|[注註]\s*\d*|说\s*明|說\s*明|附\s*[注註]|Notes?)\s*[：:.]|[※＊\*]\s*(?:[注註]|表示|指|为|為))",
+    re.I,
+)
+_TABLE_NOTE_NEW_ITEM_RE = re.compile(
+    r"^\s*(?:(?:表\s*[注註]|[注註]\s*\d*|说\s*明|說\s*明|附\s*[注註]|Notes?)\s*[：:.]|[·•●▪◆※＊\*]|[\u2460-\u2473]|\d+\s*[.、）)]|[a-zA-Z]\s*[.）)])",
+    re.I,
+)
+_PLACEHOLDER_HEADER_CELL_RE = re.compile(
+    r"^(?:欄|栏|列|col(?:umn)?|field|unnamed)\s*[:：_-]?\s*\d+$",
+    re.I,
+)
+_CIRCLED_FN_ONLY_RE = re.compile(r"^[\u2460-\u2473\s]+$")
 _TOC_DOT_LEADER_RE = re.compile(r"[\.…·\u0107\x08\-_]{2,}\s*\d+\s*$")
 _TOC_CHAPTER_PAGE_RE = re.compile(
     r"^\s*(?:"
@@ -78,28 +137,275 @@ _TOC_HEADING_RE = re.compile(r"^\s*(?:目[\s\u3000]*录|目[\s\u3000]*錄|TABLE\
 _GFM_SEP_CELL_RE = re.compile(r"^:?-{2,}:?$")
 
 
+def _normalize_table_line_spacing(raw_line: str) -> str:
+    s = _CONTROL_CHAR_RE.sub("", raw_line).strip()
+    if not s:
+        return ""
+    s = _CJK_SPURIOUS_SPACE_RE.sub("", s)
+    s = _CJK_OPEN_PUNCT_SPACE_RE.sub("", s)
+    s = _CJK_CLOSE_PUNCT_SPACE_RE.sub("", s)
+    s = _OP_AFTER_SPACE_RE.sub("", s)
+    s = _OP_BEFORE_SPACE_RE.sub("", s)
+    s = _CJK_SLASH_SPACE_RE.sub("/", s)
+    s = _ROMAN_CJK_SPACE_RE.sub("", s)
+    s = _DIGIT_CJK_UNIT_SPACE_RE.sub("", s)
+    s = _PRE_SCRIPT_TAG_SPACE_RE.sub("", s)
+    return s
+
+
 def clean_table_cell_text(cell: Optional[str]) -> str:
     """
-    Normalizes PDF table cell text by stripping spurious justification spaces between
-    CJK characters/punctuation and joining wrapped CJK lines without inserting extra spaces,
-    while preserving ASCII word/list spacing (e.g. '1. 八珍粥 2. 桂圆红枣粥').
+    Normalizes PDF table cell text by stripping control characters and spurious
+    justification spaces between CJK/Roman/operator tokens and joining wrapped CJK
+    lines without inserting extra spaces, while preserving ASCII word/list spacing
+    (e.g. '1. 八珍粥 2. 桂圆红枣粥') and inline <sup>/<sub> tags.
     """
     if not cell:
         return ""
     cleaned_lines: List[str] = []
     for raw_line in str(cell).splitlines():
-        s = _CJK_SPURIOUS_SPACE_RE.sub("", raw_line.strip())
+        s = _normalize_table_line_spacing(raw_line)
         if s:
             cleaned_lines.append(s)
     if not cleaned_lines:
         return ""
     joined = cleaned_lines[0]
     for nxt in cleaned_lines[1:]:
-        if _CJK_EDGE_CHAR_RE.match(joined[-1]) and _CJK_EDGE_CHAR_RE.match(nxt[0]):
+        prev_is_edge = bool(_CJK_EDGE_CHAR_RE.match(joined[-1])) or joined.endswith(("</sup>", "</sub>"))
+        nxt_is_edge = bool(_CJK_EDGE_CHAR_RE.match(nxt[0])) or nxt.startswith(("<sup>", "<sub>"))
+        if prev_is_edge and nxt_is_edge:
             joined += nxt
         else:
             joined += " " + nxt
-    return re.sub(r"\s{2,}", " ", joined).strip()
+    joined = _normalize_table_line_spacing(joined)
+    return re.sub(r"[ \t]{2,}", " ", joined).strip()
+
+
+def extract_cell_text_with_scripts(
+    page: Any,
+    cell_bbox: Sequence[float],
+    fallback_text: str = "",
+) -> str:
+    """
+    Extract table cell text from a PyMuPDF page clipped to cell_bbox, preserving
+    genuine raised superscripts (<sup>...</sup>) and lowered subscripts (<sub>...</sub>)
+    while leaving circled footnote markers untouched for downstream footnote replacement.
+    """
+    if page is None or not cell_bbox or len(cell_bbox) < 4:
+        return clean_table_cell_text(fallback_text)
+    try:
+        import fitz
+
+        clip_rect = fitz.Rect(
+            float(cell_bbox[0]),
+            float(cell_bbox[1]),
+            float(cell_bbox[2]),
+            float(cell_bbox[3]),
+        )
+        if clip_rect.width <= 0.5 or clip_rect.height <= 0.5:
+            return clean_table_cell_text(fallback_text)
+        raw_dict = page.get_text("dict", clip=clip_rect)
+    except Exception:
+        return clean_table_cell_text(fallback_text)
+
+    raw_spans: List[Tuple[float, float, float, float, float, int, str]] = []
+    for blk in raw_dict.get("blocks", []):
+        if blk.get("type") != 0:
+            continue
+        for ln in blk.get("lines", []):
+            for sp in ln.get("spans", []):
+                txt = _CONTROL_CHAR_RE.sub("", str(sp.get("text", "")))
+                if not txt:
+                    continue
+                sb = sp.get("bbox", [0, 0, 0, 0])
+                if len(sb) < 4:
+                    continue
+                x0, y0, x1, y1 = float(sb[0]), float(sb[1]), float(sb[2]), float(sb[3])
+                # Skip spans whose centers lie outside the cell bbox
+                cx = (x0 + x1) * 0.5
+                cy = (y0 + y1) * 0.5
+                if not (
+                    clip_rect.x0 - 1.5 <= cx <= clip_rect.x1 + 1.5
+                    and clip_rect.y0 - 1.5 <= cy <= clip_rect.y1 + 1.5
+                ):
+                    continue
+                size = float(sp.get("size", 0.0))
+                flags = int(sp.get("flags", 0))
+                raw_spans.append((x0, y0, x1, y1, size, flags, txt))
+
+    if not raw_spans:
+        return clean_table_cell_text(fallback_text)
+
+    # Group spans into visual lines using vertical overlap/proximity
+    raw_spans.sort(key=lambda it: ((it[1] + it[3]) * 0.5, it[0]))
+    visual_lines: List[List[Tuple[float, float, float, float, float, int, str]]] = []
+    for sp in raw_spans:
+        x0, y0, x1, y1, size, flags, txt = sp
+        placed = False
+        for vline in visual_lines:
+            # Compare against non-tiny anchor spans in line if available
+            max_sz = max(s[4] for s in vline)
+            anchors = [s for s in vline if s[4] >= max_sz * 0.8] or vline
+            l_y0 = min(s[1] for s in anchors)
+            l_y1 = max(s[3] for s in anchors)
+            l_h = max(l_y1 - l_y0, max_sz, 4.0)
+            overlap = min(y1, l_y1) - max(y0, l_y0)
+            if overlap >= -l_h * 0.15 and abs(((y0 + y1) * 0.5) - ((l_y0 + l_y1) * 0.5)) <= l_h * 0.65:
+                vline.append(sp)
+                placed = True
+                break
+        if not placed:
+            visual_lines.append([sp])
+
+    # Sort visual lines top-to-bottom
+    visual_lines.sort(key=lambda vl: min(s[1] for s in vl))
+
+    rendered_lines: List[str] = []
+    has_script = False
+    for vline in visual_lines:
+        vline.sort(key=lambda s: s[0])
+        non_ws = [s for s in vline if s[6].strip()]
+        if not non_ws:
+            continue
+        base_size = max(s[4] for s in non_ws)
+        base_spans = [s for s in non_ws if s[4] >= base_size * 0.85]
+        if not base_spans or base_size <= 0.0:
+            rendered_lines.append("".join(s[6] for s in vline))
+            continue
+        base_y0 = sum(s[1] for s in base_spans) / len(base_spans)
+        base_y1 = sum(s[3] for s in base_spans) / len(base_spans)
+        base_cy = (base_y0 + base_y1) * 0.5
+
+        parts: List[str] = []
+        prev_x1: Optional[float] = None
+        for x0, y0, x1, y1, size, flags, txt in vline:
+            stripped_txt = txt.strip()
+            if not stripped_txt:
+                parts.append(txt)
+                prev_x1 = x1
+                continue
+            if (
+                prev_x1 is not None
+                and x0 - prev_x1 > base_size * 0.35
+                and parts
+                and not parts[-1].endswith(" ")
+                and not txt.startswith(" ")
+            ):
+                parts.append(" ")
+            cy = (y0 + y1) * 0.5
+            is_smaller = size <= base_size * 0.78
+            is_sup_flag = bool(flags & 1) and size <= base_size * 0.88
+            if (is_smaller or is_sup_flag) and not _CIRCLED_FN_ONLY_RE.match(stripped_txt):
+                if y1 < base_y1 - base_size * 0.16 and cy < base_cy - base_size * 0.08:
+                    parts.append(f"<sup>{stripped_txt}</sup>")
+                    if txt[-1].isspace():
+                        parts.append(" ")
+                    has_script = True
+                    prev_x1 = x1
+                    continue
+                if y0 > base_y0 + base_size * 0.16 and cy > base_cy + base_size * 0.08:
+                    parts.append(f"<sub>{stripped_txt}</sub>")
+                    if txt[-1].isspace():
+                        parts.append(" ")
+                    has_script = True
+                    prev_x1 = x1
+                    continue
+            # Strip PyMuPDF-synthesized leading space immediately after <sup>/<sub> before tight chemical/unit continuation (e.g. H<sub>2</sub>O, 10<sup>9</sup>/L)
+            if (
+                parts
+                and parts[-1].endswith(("</sup>", "</sub>"))
+                and prev_x1 is not None
+                and x0 - prev_x1 <= base_size * 0.25
+                and txt.startswith(" ")
+                and re.match(r"^[A-Z0-9/%°]", stripped_txt)
+            ):
+                parts.append(txt.lstrip(" "))
+            else:
+                parts.append(txt)
+            prev_x1 = x1
+        line_str = "".join(parts)
+        line_str = line_str.replace("</sup><sup>", "").replace("</sub><sub>", "")
+        rendered_lines.append(line_str)
+
+    if not has_script and fallback_text:
+        return clean_table_cell_text(fallback_text)
+    return clean_table_cell_text("\n".join(rendered_lines))
+
+
+def split_trailing_table_notes(
+    rows: Sequence[Sequence[str]],
+    table_obj: Any = None,
+) -> Tuple[List[List[str]], List[str]]:
+    """
+    Detach trailing completely-empty rows and trailing single-cell table note blocks
+    (e.g., '注：...', '表注：...', '说明：...', 'Note: ...' and wrapped continuation rows)
+    that PyMuPDF erroneously absorbs into the bottom of a bordered table.
+    Returns (body_rows, note_paragraphs).
+    """
+    if not rows:
+        return [], []
+    row_list: List[List[str]] = [list(r) for r in rows]
+
+    # Trim trailing completely empty rows first
+    while len(row_list) > 1 and all(not c.strip() for c in row_list[-1]):
+        row_list.pop()
+
+    ncols = max((len(r) for r in row_list), default=0)
+    if len(row_list) < 2 or ncols < 2:
+        return row_list, []
+
+    # Walk backwards over trailing suffix of rows containing <= 1 non-empty cell
+    suffix_start = len(row_list)
+    for r_idx in range(len(row_list) - 1, 0, -1):
+        non_empty = [c.strip() for c in row_list[r_idx] if c.strip()]
+        if len(non_empty) <= 1:
+            suffix_start = r_idx
+        else:
+            break
+
+    if suffix_start >= len(row_list):
+        return row_list, []
+
+    # Find the earliest row in [suffix_start .. end) starting with an explicit table-note prefix
+    note_start: Optional[int] = None
+    for r_idx in range(suffix_start, len(row_list)):
+        non_empty = [c.strip() for c in row_list[r_idx] if c.strip()]
+        if len(non_empty) == 1 and _TABLE_NOTE_PREFIX_RE.match(non_empty[0]):
+            note_start = r_idx
+            break
+
+    if note_start is None or note_start < 1:
+        return row_list, []
+
+    raw_note_lines: List[str] = []
+    for r_idx in range(note_start, len(row_list)):
+        non_empty = [c.strip() for c in row_list[r_idx] if c.strip()]
+        if non_empty:
+            raw_note_lines.append(non_empty[0])
+
+    # Merge wrapped continuation note rows while keeping distinct bullet/note items separate
+    note_paragraphs: List[str] = []
+    for line in raw_note_lines:
+        if not note_paragraphs:
+            note_paragraphs.append(line)
+            continue
+        prev = note_paragraphs[-1]
+        starts_new = bool(_TABLE_NOTE_NEW_ITEM_RE.match(line))
+        prev_complete = bool(re.search(r"[。！？.!?；;]$", prev))
+        if starts_new or prev_complete:
+            note_paragraphs.append(line)
+        else:
+            if _CJK_EDGE_CHAR_RE.match(prev[-1]) and _CJK_EDGE_CHAR_RE.match(line[0]):
+                note_paragraphs[-1] = prev + line
+            else:
+                note_paragraphs[-1] = prev + " " + line
+
+    body_rows = row_list[:note_start]
+    # Also strip any empty spacer rows that sat immediately above the note block
+    while len(body_rows) > 1 and all(not c.strip() for c in body_rows[-1]):
+        body_rows.pop()
+
+    return body_rows, note_paragraphs
 
 
 def normalize_pymupdf_table_rows(
@@ -107,9 +413,10 @@ def normalize_pymupdf_table_rows(
     table_obj: Any = None,
 ) -> List[List[str]]:
     """
-    Cleans cell text via clean_table_cell_text() and collapses phantom narrow sliver columns
-    (e.g., <12pt inset border artifacts where one column has an empty header and cells across
-    every row are mutually exclusive with the adjacent column).
+    Cleans cell text via clean_table_cell_text(), trims trailing completely empty rows,
+    and collapses phantom narrow sliver columns (e.g., <12pt inset border artifacts where
+    one column has an empty header and cells across every row are mutually exclusive with
+    the adjacent column).
     """
     if not rows:
         return []
@@ -121,6 +428,9 @@ def normalize_pymupdf_table_rows(
     for r in rows:
         row_cells = [clean_table_cell_text(r[c] if c < len(r) else "") for c in range(ncols)]
         cleaned.append(row_cells)
+
+    while len(cleaned) > 1 and all(not c for c in cleaned[-1]):
+        cleaned.pop()
 
     if ncols < 2 or len(cleaned) < 2:
         return cleaned
@@ -182,11 +492,325 @@ def normalize_pymupdf_table_rows(
 
 
 def is_continuation_table_marker(text: str) -> bool:
-    """Return True when text represents a standalone continuation-table marker ('续表' / '續表')."""
+    """
+    Return True when text represents a continuation-table marker, including:
+    - Bare '续表' / '續表' / '(续表)' / '（续前表）'
+    - Numbered continuation markers such as '续表13-1', '表13-1（续）', '表13-1 标题（续）', 'Table 1 (continued)'
+    """
     if not text:
         return False
     stripped = text.strip().lstrip("#").strip()
-    return bool(_XU_BIAO_RE.match(stripped))
+    if not stripped or len(stripped) > 85 or "\n" in stripped:
+        return False
+    if re.search(r"[。！？!?；;]$", stripped):
+        return False
+    if _XU_BIAO_BARE_RE.match(stripped):
+        return True
+    if _XU_BIAO_PREFIXED_RE.match(stripped):
+        return True
+    if _TABLE_CAPTION_CONT_RE.match(stripped):
+        return True
+    if _TABLE_EN_CONT_RE.match(stripped):
+        return True
+    return False
+
+
+def is_standalone_page_number_text(text: str) -> bool:
+    """Return True when text is solely a standalone page number (e.g. '256', '- 12 -', '·283·', '第12页')."""
+    if not text:
+        return False
+    stripped = text.strip().lstrip("#").strip()
+    if not stripped or "\n" in stripped:
+        return False
+    return bool(_STANDALONE_PAGE_NUM_RE.match(stripped))
+
+
+def is_placeholder_header_cell(text: str) -> bool:
+    """Return True for synthetic placeholder column names like '欄1', '栏2', '列3', 'Col 1', 'Unnamed: 0'."""
+    if not text:
+        return False
+    return bool(_PLACEHOLDER_HEADER_CELL_RE.match(text.strip()))
+
+
+def is_placeholder_header_row(row: Sequence[str]) -> bool:
+    """Return True when a row consists solely of placeholder column names (and optional empty cells)."""
+    if not row:
+        return False
+    placeholder_hits = 0
+    for cell in row:
+        s = str(cell or "").strip()
+        if not s:
+            continue
+        if is_placeholder_header_cell(s):
+            placeholder_hits += 1
+        else:
+            return False
+    return placeholder_hits >= 1
+
+
+def build_table_span_grid(
+    cleaned_rows: Sequence[Sequence[str]],
+    table_obj: Any = None,
+) -> Tuple[List[List[Optional[TableCellSpan]]], bool]:
+    """
+    Build a 2D TableCellSpan grid preserving explicit PyMuPDF geometric rowspan/colspan
+    as well as implicit leading-column hierarchical category rowspans (e.g. '临床标准'
+    spanning multiple sub-rows in Table 16-3).
+    Returns (span_grid, has_merges).
+    """
+    nrows = len(cleaned_rows)
+    if nrows == 0:
+        return [], False
+    ncols = max((len(r) for r in cleaned_rows), default=0)
+    if ncols == 0:
+        return [], False
+
+    # Initialize plain 1x1 cell grid
+    grid: List[List[Optional[TableCellSpan]]] = [
+        [
+            TableCellSpan(
+                text=str(cleaned_rows[r][c] if c < len(cleaned_rows[r]) else ""),
+                rowspan=1,
+                colspan=1,
+                is_header=(r == 0),
+            )
+            for c in range(ncols)
+        ]
+        for r in range(nrows)
+    ]
+    has_merges = False
+
+    # 1. Explicit geometric rowspan/colspan from PyMuPDF table_obj.rows
+    t_rows = getattr(table_obj, "rows", None) if table_obj is not None else None
+    if t_rows and len(t_rows) >= nrows:
+        raw_boxes: List[List[Optional[Tuple[float, float, float, float]]]] = []
+        valid_geom = True
+        for r in range(nrows):
+            cells = getattr(t_rows[r], "cells", None)
+            if not cells or len(cells) != ncols:
+                valid_geom = False
+                break
+            row_b: List[Optional[Tuple[float, float, float, float]]] = []
+            for c in range(ncols):
+                b = cells[c]
+                if b is not None and len(b) >= 4:
+                    row_b.append((float(b[0]), float(b[1]), float(b[2]), float(b[3])))
+                else:
+                    row_b.append(None)
+            raw_boxes.append(row_b)
+
+        if valid_geom:
+            # Estimate nominal column left/right edges from single-column cells
+            col_x0s: List[Optional[float]] = [None] * ncols
+            col_x1s: List[Optional[float]] = [None] * ncols
+            for c in range(ncols):
+                xs = [
+                    raw_boxes[r][c]
+                    for r in range(nrows)
+                    if raw_boxes[r][c] is not None
+                    and (c + 1 >= ncols or raw_boxes[r][c + 1] is not None)
+                ]
+                if xs:
+                    col_x0s[c] = min(b[0] for b in xs if b is not None)
+                    col_x1s[c] = min(b[2] for b in xs if b is not None)
+
+            covered = [[False] * ncols for _ in range(nrows)]
+            for r in range(nrows):
+                for c in range(ncols):
+                    if covered[r][c]:
+                        grid[r][c] = None
+                        continue
+                    box = raw_boxes[r][c]
+                    if box is None:
+                        continue
+                    # Determine horizontal colspan over contiguous None/identical-box right neighbors
+                    cspan = 1
+                    while c + cspan < ncols and not covered[r][c + cspan]:
+                        nb = raw_boxes[r][c + cspan]
+                        same_box = nb is not None and all(abs(nb[k] - box[k]) <= 2.0 for k in range(4))
+                        col_x1 = col_x1s[c + cspan]
+                        none_covered = nb is None and (
+                            col_x1 is None or box[2] >= col_x1 - 3.0
+                        )
+                        if same_box or none_covered:
+                            cspan += 1
+                        else:
+                            break
+                    # Determine vertical rowspan over contiguous None/identical-box below neighbors
+                    rspan = 1
+                    while r + rspan < nrows:
+                        can_extend = True
+                        for dc in range(cspan):
+                            if covered[r + rspan][c + dc]:
+                                can_extend = False
+                                break
+                            nb = raw_boxes[r + rspan][c + dc]
+                            if nb is None:
+                                # Only count None as rowspan if box extends past top edge of row r + rspan
+                                target_r = r + rspan
+                                row_y0s = [
+                                    b[1]
+                                    for j, b in enumerate(raw_boxes[target_r])
+                                    if b is not None and not covered[target_r][j]
+                                ]
+                                if not row_y0s:
+                                    row_y0s = [b[1] for b in raw_boxes[target_r] if b is not None]
+                                if row_y0s:
+                                    # Use max(y0) so tall merged cells repeating an earlier row's y0 cannot lower this row's top edge
+                                    if box[3] < max(row_y0s) + 3.0:
+                                        can_extend = False
+                                        break
+                                else:
+                                    # Fully-spanned row (all boxes None): check whether box reaches the next non-empty row or extends past row r's bottom
+                                    next_y0: Optional[float] = None
+                                    for probe_r in range(target_r + 1, nrows):
+                                        probe_y0s = [b[1] for b in raw_boxes[probe_r] if b is not None]
+                                        if probe_y0s:
+                                            next_y0 = max(probe_y0s)
+                                            break
+                                    if next_y0 is not None:
+                                        if box[3] < next_y0 - 3.0:
+                                            can_extend = False
+                                            break
+                                    else:
+                                        row_r_y1s = [b[3] for b in raw_boxes[r] if b is not None]
+                                        if not row_r_y1s or box[3] < min(row_r_y1s) + 3.0:
+                                            can_extend = False
+                                            break
+                            elif not all(abs(nb[k] - box[k]) <= 2.0 for k in range(4)):
+                                can_extend = False
+                                break
+                        if can_extend:
+                            rspan += 1
+                        else:
+                            break
+                    if cspan > 1 or rspan > 1:
+                        has_merges = True
+                        grid[r][c] = TableCellSpan(
+                            text=str(cleaned_rows[r][c]),
+                            rowspan=rspan,
+                            colspan=cspan,
+                            is_header=(r == 0),
+                        )
+                        for dr in range(rspan):
+                            for dc in range(cspan):
+                                if dr == 0 and dc == 0:
+                                    continue
+                                covered[r + dr][c + dc] = True
+                                grid[r + dr][c + dc] = None
+
+    # 2. Implicit first-column vertical category grouping (e.g. Table 16-3 '临床标准' / '实验室标准')
+    header_rows = min(nrows, max((c.rowspan for c in grid[0] if c is not None), default=1))
+    col0_has_vmerge = False
+    for row_idx in range(header_rows, nrows):
+        cell0 = grid[row_idx][0]
+        if cell0 is None or cell0.rowspan > 1:
+            col0_has_vmerge = True
+            break
+    if not col0_has_vmerge and ncols >= 3 and nrows >= header_rows + 3:
+        first_body_cell = grid[header_rows][0]
+        if first_body_cell is not None and first_body_cell.colspan == 1 and first_body_cell.text.strip():
+            groups: List[Tuple[int, int]] = []
+            blank_followers = 0
+            r = header_rows
+            while r < nrows:
+                c0 = grid[r][0]
+                c1 = grid[r][1]
+                if c0 is not None and c0.colspan == 1 and c0.text.strip():
+                    end_r = r
+                    # Only expand into follower rows where col 0 is empty (colspan=1) AND col 1 is non-empty
+                    if c1 is not None and c1.text.strip():
+                        while end_r + 1 < nrows:
+                            next_c0 = grid[end_r + 1][0]
+                            next_c1 = grid[end_r + 1][1]
+                            if (
+                                next_c0 is not None
+                                and next_c0.colspan == 1
+                                and not next_c0.text.strip()
+                                and next_c1 is not None
+                                and next_c1.text.strip()
+                            ):
+                                end_r += 1
+                            else:
+                                break
+                    span_len = end_r - r + 1
+                    if span_len >= 2:
+                        groups.append((r, span_len))
+                        blank_followers += span_len - 1
+                    r = end_r + 1
+                else:
+                    r += 1
+            body_count = nrows - header_rows
+            if len(groups) >= 2 or (len(groups) >= 1 and blank_followers * 2 >= body_count):
+                has_merges = True
+                for start_r, span_len in groups:
+                    orig = grid[start_r][0]
+                    if orig is None:
+                        continue
+                    grid[start_r][0] = TableCellSpan(
+                        text=orig.text,
+                        rowspan=span_len,
+                        colspan=orig.colspan,
+                        is_header=orig.is_header,
+                    )
+                    for dr in range(1, span_len):
+                        grid[start_r + dr][0] = None
+
+    return grid, has_merges
+
+
+def _escape_html_preserving_scripts(text: str) -> str:
+    """Escape HTML special chars while preserving intentional <sup>...</sup> and <sub>...</sub> tags."""
+    if not text:
+        return ""
+    tokens: List[Tuple[str, str]] = []
+
+    def _stash(m: re.Match) -> str:
+        idx = len(tokens)
+        tag = m.group(1).lower()
+        inner = _html_mod.escape(m.group(2), quote=False)
+        tokens.append((f"\x00SCRIPT{idx}\x00", f"<{tag}>{inner}</{tag}>"))
+        return tokens[-1][0]
+
+    stashed = re.sub(r"<(sup|sub)>([^<]*)</\1>", _stash, text, flags=re.I)
+    escaped = _html_mod.escape(stashed, quote=False)
+    for placeholder, rendered in tokens:
+        escaped = escaped.replace(placeholder, rendered)
+    return escaped
+
+
+def render_span_grid_to_html(span_grid: Sequence[Sequence[Optional[TableCellSpan]]]) -> str:
+    """Render a 2D TableCellSpan grid into semantic HTML <table> preserving rowspan/colspan."""
+    if not span_grid:
+        return ""
+    header_row_count = min(
+        len(span_grid),
+        max((cell.rowspan for cell in span_grid[0] if cell is not None), default=1),
+    )
+    lines = ["<table>", "<thead>"]
+    for r_idx, row in enumerate(span_grid):
+        if r_idx == header_row_count:
+            lines.append("</thead>")
+            lines.append("<tbody>")
+        tag = "th" if r_idx < header_row_count else "td"
+        cell_parts: List[str] = []
+        for cell in row:
+            if cell is None:
+                continue
+            attrs: List[str] = []
+            if cell.rowspan > 1:
+                attrs.append(f'rowspan="{cell.rowspan}"')
+            if cell.colspan > 1:
+                attrs.append(f'colspan="{cell.colspan}"')
+            attr_str = (" " + " ".join(attrs)) if attrs else ""
+            cell_parts.append(f"<{tag}{attr_str}>{_escape_html_preserving_scripts(cell.text)}</{tag}>")
+        lines.append("<tr>" + "".join(cell_parts) + "</tr>")
+    if len(span_grid) <= header_row_count:
+        lines.append("</thead>")
+    else:
+        lines.append("</tbody>")
+    lines.append("</table>")
+    return "\n".join(lines)
 
 
 def _split_gfm_pipe_row(line: str) -> Optional[List[str]]:
@@ -226,16 +850,215 @@ def _parse_gfm_pipe_table(md_text: str) -> Optional[Tuple[List[str], List[str], 
     return headers, sep, body_rows
 
 
+def _gfm_table_to_html(md_text: str) -> Optional[str]:
+    """Convert a GFM pipe table into semantic HTML <table> for mixed HTML/GFM merging."""
+    parsed = _parse_gfm_pipe_table(md_text)
+    if parsed is None:
+        return None
+    headers, _, body_rows = parsed
+    lines = [
+        "<table>",
+        "<thead>",
+        "<tr>"
+        + "".join(
+            f"<th>{_escape_html_preserving_scripts(h.replace(r'\|', '|'))}</th>"
+            for h in headers
+        )
+        + "</tr>",
+        "</thead>",
+    ]
+    if body_rows:
+        lines.append("<tbody>")
+        for row in body_rows:
+            lines.append(
+                "<tr>"
+                + "".join(
+                    f"<td>{_escape_html_preserving_scripts(c.replace(r'\|', '|'))}</td>"
+                    for c in row
+                )
+                + "</tr>"
+            )
+        lines.append("</tbody>")
+    lines.append("</table>")
+    return "\n".join(lines)
+
+
+def _html_tr_logical_sigs(tr_list: Sequence[str]) -> List[Tuple[str, ...]]:
+    """Expand a sequence of HTML <tr> elements into normalized logical-grid cell text tuples."""
+    cell_re = re.compile(r"<(th|td)\b([^>]*)>(.*?)</\1>", flags=re.I | re.S)
+    active: dict[int, Tuple[int, int]] = {}
+    sigs: List[Tuple[str, ...]] = []
+    for tr_html in tr_list:
+        row_vals: List[str] = []
+        col = 0
+        next_active: dict[int, Tuple[int, int]] = {}
+        for m in cell_re.finditer(tr_html):
+            while col in active:
+                rem, w = active[col]
+                row_vals.extend([""] * w)
+                if rem > 1:
+                    next_active[col] = (rem - 1, w)
+                col += w
+            attrs = m.group(2) or ""
+            rm = re.search(r'rowspan\s*=\s*["\']?(\d+)', attrs, flags=re.I)
+            cm = re.search(r'colspan\s*=\s*["\']?(\d+)', attrs, flags=re.I)
+            rspan = max(1, int(rm.group(1))) if rm else 1
+            cspan = max(1, int(cm.group(1))) if cm else 1
+            plain = re.sub(r"</?[a-zA-Z][^>]*>", "", m.group(3) or "")
+            norm = re.sub(r"\s+", "", _html_mod.unescape(plain))
+            row_vals.append(norm)
+            if cspan > 1:
+                row_vals.extend([""] * (cspan - 1))
+            if rspan > 1:
+                next_active[col] = (rspan - 1, cspan)
+            col += cspan
+        while col in active:
+            rem, w = active[col]
+            row_vals.extend([""] * w)
+            if rem > 1:
+                next_active[col] = (rem - 1, w)
+            col += w
+        active = next_active
+        sigs.append(tuple(row_vals))
+    return sigs
+
+
+def _parse_html_table_parts(html_text: str) -> Optional[Tuple[int, List[str], List[str], int]]:
+    """Parse an HTML <table> into (col_count, header_cell_texts, all_tr_html_strings, thead_row_count)."""
+    stripped = (html_text or "").strip()
+    if not stripped.lower().startswith("<table"):
+        return None
+    tr_matches = re.findall(r"<tr\b[^>]*>.*?</tr>", stripped, flags=re.I | re.S)
+    if not tr_matches:
+        return None
+
+    def _row_col_count(tr_html: str) -> int:
+        total = 0
+        for m in re.finditer(r"<(?:th|td)\b([^>]*)>", tr_html, flags=re.I):
+            cm = re.search(r'colspan\s*=\s*["\']?(\d+)', m.group(1), flags=re.I)
+            total += int(cm.group(1)) if cm else 1
+        return total
+
+    def _row_plain_cells(tr_html: str) -> List[str]:
+        cells: List[str] = []
+        for m in re.finditer(r"<(?:th|td)\b[^>]*>(.*?)</(?:th|td)>", tr_html, flags=re.I | re.S):
+            plain = re.sub(r"</?[a-zA-Z][^>]*>", "", m.group(1))
+            cells.append(re.sub(r"\s+", "", _html_mod.unescape(plain)))
+        return cells
+
+    ncols = _row_col_count(tr_matches[0])
+    if ncols <= 0:
+        return None
+    thead_m = re.search(r"<thead\b[^>]*>(.*?)</thead>", stripped, flags=re.I | re.S)
+    if thead_m:
+        thead_cnt = max(1, len(re.findall(r"<tr\b[^>]*>.*?</tr>", thead_m.group(1), flags=re.I | re.S)))
+    else:
+        max_rspan = 1
+        for m in re.finditer(r"<(?:th|td)\b([^>]*)>", tr_matches[0], flags=re.I):
+            rm = re.search(r'rowspan\s*=\s*["\']?(\d+)', m.group(1), flags=re.I)
+            if rm:
+                max_rspan = max(max_rspan, int(rm.group(1)))
+        thead_cnt = min(len(tr_matches), max_rspan)
+    hdr_cells = _row_plain_cells(tr_matches[0])
+    return ncols, hdr_cells, tr_matches, min(thead_cnt, len(tr_matches))
+
+
+def merge_html_tables_if_compatible(
+    prev_html: str,
+    curr_html: str,
+    has_continuation_marker: bool = False,
+) -> Optional[str]:
+    """Merge two HTML <table> blocks when column counts match and headers/marker are compatible."""
+    p_info = _parse_html_table_parts(prev_html)
+    c_info = _parse_html_table_parts(curr_html)
+    if p_info is None or c_info is None:
+        return None
+    p_cols, p_hdr, p_trs, p_thead_cnt = p_info
+    c_cols, c_hdr, c_trs, c_thead_cnt = c_info
+    if p_cols != c_cols or not p_trs or not c_trs:
+        return None
+
+    p_hdr_row0_sig = _html_tr_logical_sigs([p_trs[0]])[0]
+    c_hdr_row0_sig = _html_tr_logical_sigs([c_trs[0]])[0]
+    headers_match = bool(
+        (any(p_hdr) and p_hdr == c_hdr)
+        or (any(p_hdr_row0_sig) and p_hdr_row0_sig == c_hdr_row0_sig)
+    )
+    curr_placeholder = is_placeholder_header_row(c_hdr)
+    if not (has_continuation_marker or headers_match or curr_placeholder):
+        return None
+
+    def _row_max_rowspan(tr_html: str) -> int:
+        mx = 1
+        for m in re.finditer(r"<(?:th|td)\b([^>]*)>", tr_html, flags=re.I):
+            rm = re.search(r'rowspan\s*=\s*["\']?(\d+)', m.group(1), flags=re.I)
+            if rm:
+                mx = max(mx, int(rm.group(1)))
+        return mx
+
+    if headers_match:
+        # Strip full repeated multi-row header when all header rows match;
+        # never slice mid-rowspan or leave orphaned sub-header rows of a matching multi-row thead.
+        p_hdr_sigs = _html_tr_logical_sigs(p_trs[:p_thead_cnt])
+        c_hdr_sigs = _html_tr_logical_sigs(c_trs[:p_thead_cnt]) if len(c_trs) >= p_thead_cnt else []
+        if p_hdr_sigs and p_hdr_sigs == c_hdr_sigs:
+            strip_cnt = p_thead_cnt
+        elif c_thead_cnt > 1 and c_thead_cnt == p_thead_cnt:
+            strip_cnt = c_thead_cnt
+        else:
+            strip_cnt = max(1, _row_max_rowspan(c_trs[0]))
+        append_trs = c_trs[min(strip_cnt, len(c_trs)):]
+    elif curr_placeholder:
+        strip_cnt = max(1, _row_max_rowspan(c_trs[0]))
+        append_trs = c_trs[min(strip_cnt, len(c_trs)):]
+    else:
+        append_trs = c_trs
+
+    # Deduplicate redundant fragment tables whose non-empty body rows are 100% present in prev_html
+    prev_body_trs = p_trs[p_thead_cnt:]
+    prev_body_sigs = {sig for sig in _html_tr_logical_sigs(prev_body_trs) if any(sig)}
+    cand_sigs = [sig for sig in _html_tr_logical_sigs(append_trs) if any(sig)]
+    if cand_sigs and prev_body_sigs and all(sig in prev_body_sigs for sig in cand_sigs):
+        append_trs = []
+
+    # Convert <th> to <td> for data-only continuation rows appended into tbody
+    normalized_append: List[str] = []
+    for tr in append_trs:
+        tr_td = re.sub(r"<(/?)th\b", r"<\1td", tr, flags=re.I)
+        normalized_append.append(tr_td)
+
+    out_lines = ["<table>", "<thead>"]
+    out_lines.extend(p_trs[:p_thead_cnt])
+    out_lines.append("</thead>")
+    body_out = list(prev_body_trs) + normalized_append
+    if body_out:
+        out_lines.append("<tbody>")
+        out_lines.extend(body_out)
+        out_lines.append("</tbody>")
+    out_lines.append("</table>")
+    return "\n".join(out_lines)
+
+
 def merge_gfm_tables_if_compatible(
     prev_md: str,
     curr_md: str,
     has_continuation_marker: bool = False,
 ) -> Optional[str]:
     """
-    Merge two GFM pipe tables if column counts match AND (has_continuation_marker OR header rows match).
-    Strips duplicate header rows automatically when headers match; preserves data-only continuations
-    when has_continuation_marker is True and the continuation starts with a data row.
+    Merge two Markdown/HTML tables if column counts match AND
+    (has_continuation_marker OR header rows match OR continuation uses placeholder headers like '欄1'/'欄2').
+    Supports GFM+GFM, HTML+HTML, and mixed HTML+GFM/GFM+HTML pairs.
+    Strips duplicate/placeholder header rows automatically and deduplicates redundant fragment tables.
     """
+    prev_is_html = (prev_md or "").strip().lower().startswith("<table")
+    curr_is_html = (curr_md or "").strip().lower().startswith("<table")
+    if prev_is_html or curr_is_html:
+        prev_h = prev_md if prev_is_html else _gfm_table_to_html(prev_md)
+        curr_h = curr_md if curr_is_html else _gfm_table_to_html(curr_md)
+        if prev_h is None or curr_h is None:
+            return None
+        return merge_html_tables_if_compatible(prev_h, curr_h, has_continuation_marker=has_continuation_marker)
+
     parsed_prev = _parse_gfm_pipe_table(prev_md)
     parsed_curr = _parse_gfm_pipe_table(curr_md)
     if parsed_prev is None or parsed_curr is None:
@@ -250,11 +1073,22 @@ def merge_gfm_tables_if_compatible(
     norm_curr = [re.sub(r"\s+", "", h) for h in curr_headers]
     has_nonempty_header = any(norm_prev)
     headers_match = has_nonempty_header and (norm_prev == norm_curr)
+    curr_placeholder = is_placeholder_header_row(curr_headers)
 
-    if not (has_continuation_marker or headers_match):
+    if not (has_continuation_marker or headers_match or curr_placeholder):
         return None
 
-    rows_to_append = curr_rows if headers_match else [curr_headers] + curr_rows
+    rows_to_append = curr_rows if (headers_match or curr_placeholder) else [curr_headers] + curr_rows
+
+    # Deduplicate fragment tables whose non-empty data rows are already 100% present in prev_rows
+    def _row_sig(row: Sequence[str]) -> Tuple[str, ...]:
+        return tuple(re.sub(r"\s+", "", c) for c in row)
+
+    prev_sigs = {_row_sig(r) for r in prev_rows if any(c.strip() for c in r)}
+    non_empty_cand = [r for r in rows_to_append if any(c.strip() for c in r)]
+    if non_empty_cand and prev_sigs and all(_row_sig(r) in prev_sigs for r in non_empty_cand):
+        rows_to_append = []
+
     md_lines = [
         "| " + " | ".join(prev_headers) + " |",
         "| " + " | ".join(prev_sep) + " |",
