@@ -71,14 +71,13 @@ Set-Location frontend; npm run build; Set-Location ..
 ```powershell
 $env:HF_HUB_OFFLINE = "1"
 $env:YOLO_CONFIG_DIR = "$env:TEMP\ultralytics"
-python -m pytest --ignore=tests/e2e --ignore=tests/test_formula_detector_adversarial.py --ignore=tests/test_formula_recognizer_stress.py --ignore=tests/test_ocr_crop_clamp_adversarial.py --ignore=tests/test_ocr_layout_and_crop_stress.py -m "not heavy" -k "not (test_solid_color_and_random_noise_canvases or test_recognition_predictor_live_cuda_inference or test_full_m2_pipeline_dense_text_document or test_recognition_predictor_blank_crop_short_circuit_with_index_preservation or test_pod_stage1_pdf_upload_and_stage2_inplace_table_upgrade)"
+python -m pytest --ignore=tests/e2e --ignore=tests/test_formula_recognizer_stress.py -m "not heavy" -k "not test_recognition_predictor_blank_crop_short_circuit_with_index_preservation"
 ```
 
-> **Heavy / GPU / GUI / Live-Model Tests**:
-> - `tests/e2e/` (147 tests), `tests/test_formula_detector_adversarial.py`, `tests/test_formula_recognizer_stress.py`, and the 4 `surya`/CUDA/MFD tests require gitignored local weights (`models/pdf_extract_mfd.onnx`, `models/surya_rec2`, `models/yolo_v8_ft.pt`), `surya-ocr`, and/or a local GPU.
-> - `tests/test_ocr_crop_clamp_adversarial.py` and `tests/test_ocr_layout_and_crop_stress.py` import `pywebview` and spawn desktop EdgeChromium windows.
-> - `test_pod_stage1_pdf_upload_and_stage2_inplace_table_upgrade` requires a live local Ollama `qwen3.5:4b` service.
-> Run these suites manually on local workstations with models, GUI, or Ollama available when touching those subsystems.
+> **Heavy / GPU / GUI / `surya`-Coupled Tests**:
+> - Tests marked `@pytest.mark.heavy` (including `tests/e2e/`, `tests/test_adversarial_formula_detector.py`, `tests/test_formula_detector.py`, `tests/test_formula_detector_adversarial.py`, `tests/test_ocr_crop_clamp_adversarial.py`, `tests/test_ocr_layout_and_crop_stress.py`, and live CUDA/MFD tests) are automatically deselected by `-m "not heavy"`.
+> - `tests/test_formula_recognizer_stress.py` and `test_recognition_predictor_blank_crop_short_circuit_with_index_preservation` import/patch `surya.recognition`, which is omitted from lightweight `requirements-ci.txt` to avoid multi-GB ML installs in CI.
+> Run these suites manually on local workstations with models, `surya-ocr`, and desktop GUI available when touching those subsystems.
 
 ---
 
@@ -89,8 +88,8 @@ python -m pytest --ignore=tests/e2e --ignore=tests/test_formula_detector_adversa
 | `lint` | `ubuntu-latest` | `ruff check` (`E9`, `F63`, `F7`, `F82` via `pyproject.toml`) + JSON config validation | Yes |
 | `typecheck-python` | `ubuntu-latest` | `pyright` strict gate on contracts/API/plugins + advisory full-repo baseline report | Strict gate: Yes; Full baseline: Advisory |
 | `build-and-check` | `ubuntu-latest` | `python -m compileall`, `generate_ts_contracts.py --check`, `npm run build` (`tsc --noEmit --pretty false`) | Yes |
-| `test-unit-regression` | `windows-latest` | Non-heavy `pytest` unit & regression suite + `coverage.xml` artifact (uses `requirements-ci.txt` with `pypandoc-binary`, `onnx`, `google-genai` + CPU-only `torch`) | Yes |
-| `security-scan` | `ubuntu-latest` | `bandit -r src main.py -lll` (High) + advisory `bandit -ll` (Medium+ baseline) & `pip-audit -r requirements-ci.txt` | Bandit `-lll`: Yes; Bandit `-ll` & `pip-audit`: Advisory |
+| `test-unit-regression` | `windows-latest` | Non-heavy `pytest` unit & regression suite + `coverage.xml` artifact (uses `requirements-ci.txt` with `defusedxml`, `pypandoc-binary`, `onnx`, `google-genai` + CPU-only `torch`) | Yes |
+| `security-scan` | `ubuntu-latest` | `bandit -r src main.py -ll` (Medium & High SAST, baseline clean as of `496a3c2`) + advisory `pip-audit -r requirements-ci.txt` | Bandit `-ll`: Yes; `pip-audit`: Advisory |
 | `ci-gate` | `ubuntu-latest` | Aggregates all 5 jobs for a single Branch Protection required check | Yes |
 
 ### Triggers
