@@ -40,7 +40,7 @@ class OllamaResponseError(OllamaClientError):
 
 
 # ── 本機離線白名單校驗 ──
-_LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+_LOCAL_HOSTNAMES = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # nosec B104 - hostname allowlist, not a socket bind
 
 
 def validate_local_host(url: str) -> str:
@@ -48,6 +48,10 @@ def validate_local_host(url: str) -> str:
     確保請求目標僅限本機回環或內網私有位址，杜絕意外出網連線外部公網。
     """
     parsed = urllib.parse.urlparse(url)
+    if parsed.scheme and parsed.scheme not in ("http", "https"):
+        raise OllamaConnectionError(
+            f"安全攔截：不允許的協定 '{parsed.scheme}'，僅限 http/https。"
+        )
     hostname = (parsed.hostname or "").lower()
     if not hostname:
         return "http://localhost:11434"
@@ -143,7 +147,7 @@ def is_ollama_available(host: Optional[str] = None, timeout: float = 0.8) -> boo
     probe_host = target_host.replace("://localhost:", "://127.0.0.1:") if "://localhost:" in target_host else target_host
     try:
         req = urllib.request.Request(f"{probe_host}/api/tags", method="GET")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 - validated local http/https host
             return resp.status == 200
     except Exception:
         return False
@@ -208,7 +212,7 @@ def list_local_models(host: Optional[str] = None, timeout: float = 2.0) -> List[
     probe_host = target_host.replace("://localhost:", "://127.0.0.1:") if "://localhost:" in target_host else target_host
     try:
         req = urllib.request.Request(f"{probe_host}/api/tags", method="GET")
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 - validated local http/https host
             data = json.loads(resp.read().decode("utf-8"))
             return [m.get("name", "") for m in data.get("models", []) if m.get("name")]
     except Exception:
@@ -318,7 +322,7 @@ def ollama_chat(
     )
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:  # nosec B310 - validated local http/https host
             raw_body = resp.read().decode("utf-8")
             res_data = json.loads(raw_body)
     except urllib.error.HTTPError as e:

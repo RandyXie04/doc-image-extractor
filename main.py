@@ -34,7 +34,7 @@ def find_available_port(start_port: int = 8000, max_attempts: int = 20) -> int:
     for port in range(start_port, start_port + max_attempts):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             try:
-                s.bind(('0.0.0.0', port))
+                s.bind(('0.0.0.0', port))  # nosec B104 - intentional LAN port availability probe
                 return port
             except OSError:
                 continue
@@ -50,7 +50,7 @@ def wait_and_open_browser(url: str, delay: float = 1.2):
 
 def main():
     parser = argparse.ArgumentParser(description="PDF Toolkit Web Server")
-    parser.add_argument("--host", default="0.0.0.0", help="監聽主機 IP (預設 0.0.0.0 開放區網訪問)")
+    parser.add_argument("--host", default="0.0.0.0", help="監聽主機 IP (預設 0.0.0.0 開放區網訪問)")  # nosec B104
     parser.add_argument("--port", type=int, default=8000, help="監聽連接埠 (預設 8000)")
     parser.add_argument("--no-browser", action="store_true", help="啟動時不安裝/不自動開啟瀏覽器")
     parser.add_argument("--dev", action="store_true", help="以開發除錯模式啟動 (啟用詳細日誌)")

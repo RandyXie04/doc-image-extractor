@@ -3,6 +3,7 @@ import shutil
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List
+from src.utils.safe_xml import fromstring as safe_xml_fromstring
 from .document_model import UnifiedDocument
 from .template_resolver import TemplateResolver
 
@@ -33,7 +34,7 @@ class OpenXMLBuilder:
         if 'word/document.xml' not in files_dict:
             raise ValueError("template.docx 無效: 找不到 word/document.xml")
             
-        doc_tree = ET.fromstring(files_dict['word/document.xml'])
+        doc_tree = safe_xml_fromstring(files_dict['word/document.xml'])
         body = doc_tree.find(f"{self.W_NS}body")
         
         # 清除 template 原本的內容 (保留 sectPr)
@@ -45,7 +46,7 @@ class OpenXMLBuilder:
         # 3. 準備 footnotes.xml
         footnotes_tree = None
         if 'word/footnotes.xml' in files_dict:
-            footnotes_tree = ET.fromstring(files_dict['word/footnotes.xml'])
+            footnotes_tree = safe_xml_fromstring(files_dict['word/footnotes.xml'])
         else:
             # 建立基本的 footnotes.xml
             footnotes_tree = ET.Element(f"{self.W_NS}footnotes")
@@ -77,7 +78,7 @@ class OpenXMLBuilder:
                 for run in para.runs:
                     if run.original_xml:
                         has_original_xml = True
-                        r_elem = ET.fromstring(run.original_xml)
+                        r_elem = safe_xml_fromstring(run.original_xml)
                         p_elem.append(r_elem)
                     else:
                         r_elem = ET.SubElement(p_elem, f"{self.W_NS}r")

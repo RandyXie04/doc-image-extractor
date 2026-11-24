@@ -62,7 +62,7 @@ def ensure_pytorch_weights(weights_path: Path, download_if_missing: bool = True)
     print(f"[MFD Export] Downloading weights from HuggingFace ({HF_REPO_ID})...")
     from huggingface_hub import hf_hub_download
     weights_path.parent.mkdir(parents=True, exist_ok=True)
-    downloaded_path = hf_hub_download(
+    downloaded_path = hf_hub_download(  # nosec B615 - verified by EXPECTED_SHA256 below
         repo_id=HF_REPO_ID,
         filename=f"{HF_SUBFOLDER}/{HF_FILENAME}",
         local_dir=weights_path.parent,

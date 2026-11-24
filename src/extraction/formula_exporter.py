@@ -17,6 +17,8 @@ import re
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 import xml.etree.ElementTree as ET
 
+from src.utils.safe_xml import fromstring as safe_xml_fromstring
+
 import fitz  # PyMuPDF
 from PIL import Image
 
@@ -167,7 +169,7 @@ def latex_to_mathml(
 
         mathml_str = latex2mathml.converter.convert(clean_latex, display=display)
         # Validate XML parseability
-        ET.fromstring(mathml_str)
+        safe_xml_fromstring(mathml_str)
         return mathml_str
     except Exception as exc:
         logger.warning(

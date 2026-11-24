@@ -8,8 +8,8 @@
 import os
 import json
 import zipfile
-import xml.etree.ElementTree as ET
 from typing import Any, Optional
+from src.utils.safe_xml import fromstring as safe_xml_fromstring
 
 # pyrefly: ignore [missing-import]
 import fitz
@@ -140,7 +140,7 @@ def read_docx_styles(template_path: str) -> list[str]:
     try:
         with zipfile.ZipFile(template_path, "r") as z:
             if "word/styles.xml" in z.namelist():
-                tree = ET.fromstring(z.read("word/styles.xml"))
+                tree = safe_xml_fromstring(z.read("word/styles.xml"))
                 for s in tree.findall(f"{W_NS}style"):
                     if s.get(f"{W_NS}type") == "paragraph":
                         name_el = s.find(f"{W_NS}name")

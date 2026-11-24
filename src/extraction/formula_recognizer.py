@@ -157,8 +157,6 @@ class RecognitionPredictor:
         if not crops:
             return []
 
-        from surya.recognition import batch_recognition
-
         num_crops = len(crops)
 
         # Normalize language configuration
@@ -188,6 +186,8 @@ class RecognitionPredictor:
         # If all crops were blank or degenerate, short-circuit
         if not valid_crops:
             return [res if res is not None else ("", 0.0) for res in results]
+
+        from surya.recognition import batch_recognition
 
         # Execute neural recognition directly on crops
         try:

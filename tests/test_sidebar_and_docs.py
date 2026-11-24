@@ -28,6 +28,9 @@ class TestSidebarAndDocs(unittest.TestCase):
         self.sidebar_js_path = self.project_dir / "src" / "web" / "static" / "sidebar.js"
         self.sidebar_css_path = self.project_dir / "src" / "web" / "static" / "sidebar.css"
 
+    def tearDown(self):
+        self.client.close()
+
     def test_sidebar_static_assets(self):
         """Verify sidebar JS, modular sub-components, and CSS assets are served with 3-zone landmarks."""
         resp_js = self.client.get("/static/sidebar.js", headers=self.auth_headers)

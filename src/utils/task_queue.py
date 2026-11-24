@@ -339,7 +339,7 @@ class PersistentSQLiteTaskQueue(BaseTaskQueue):
         params.append(time.time())
         params.append(task_id)
 
-        sql = f"UPDATE task_records SET {', '.join(updates)} WHERE task_id = ? AND status != 'cancelled'"
+        sql = f"UPDATE task_records SET {', '.join(updates)} WHERE task_id = ? AND status != 'cancelled'"  # nosec B608 - updates contains only static column literals
         with self._get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute(sql, tuple(params))

@@ -46,6 +46,8 @@ from src.extraction.formula_exporter import (
 )
 from src.extraction.formula_recognizer import RecognitionPredictor
 
+pytestmark = pytest.mark.heavy
+
 
 # ============================================================================
 # TIER 1: Feature Coverage Test Suite (70 Test Cases)

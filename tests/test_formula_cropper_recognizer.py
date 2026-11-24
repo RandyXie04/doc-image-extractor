@@ -607,9 +607,10 @@ class TestFormulaRecognizer:
 
         crops = [c0, c1, c2, c3, c4]
 
-        # Patch surya batch_recognition
+        # Patch surya batch_recognition (create if Surya >=0.8 removed legacy symbol)
         import surya.recognition
-        original_batch_rec = surya.recognition.batch_recognition
+        _sentinel = object()
+        original_batch_rec = getattr(surya.recognition, "batch_recognition", _sentinel)
 
         def mock_batch_recognition(images, languages, model, processor, batch_size=None):
             assert len(images) == 3  # Only the 3 valid crops
@@ -626,8 +627,12 @@ class TestFormulaRecognizer:
             assert results[3] == ("", 0.0)
             assert results[4] == ("E = mc^2", 0.99)
         finally:
-            surya.recognition.batch_recognition = original_batch_rec
+            if original_batch_rec is _sentinel:
+                delattr(surya.recognition, "batch_recognition")
+            else:
+                surya.recognition.batch_recognition = original_batch_rec
 
+    @pytest.mark.heavy
     def test_recognition_predictor_live_cuda_inference(self):
         """Runs genuine live SuryaOCR inference on CUDA if available."""
         if not torch.cuda.is_available():
@@ -819,6 +824,7 @@ class TestFormulaExporter:
 class TestEndToEndM2PipelineIntegration:
     """Ties together Stage 2 Cropping, Stage 3 Recognition, and Multi-Format Export."""
 
+    @pytest.mark.heavy
     def test_full_m2_pipeline_dense_text_document(self):
         # 1. Create dense document page
         page_w, page_h = 1000, 1400
