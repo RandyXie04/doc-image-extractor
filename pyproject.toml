@@ -1,0 +1,30 @@
+[project]
+name = "doc-image-extractor"
+version = "2.0.0"
+description = "PDF Book Layout, OCR Pipeline & POD Studio Toolkit"
+requires-python = ">=3.12"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+exclude = [
+    ".git",
+    ".venv",
+    "venv",
+    "__pycache__",
+    "build",
+    "dist",
+    "data",
+    "frontend",
+    "models",
+    "scratch",
+]
+
+[tool.ruff.lint]
+# Blocking CI lint gate: fatal syntax, invalid syntax/assertions, and undefined names
+select = ["E9", "F63", "F7", "F82"]
+
+[tool.ruff.lint.per-file-ignores]
+# Pre-existing annotation-only undefined `Tuple` (deferred via `from __future__ import annotations`).
+# Tracked baseline; remove once `src/pod_studio/pod_validator.py` adds `Tuple` to typing imports.
+"src/pod_studio/pod_validator.py" = ["F821"]

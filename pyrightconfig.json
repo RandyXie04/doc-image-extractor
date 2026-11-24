@@ -1,10 +1,18 @@
 {
-  "pythonPlatform": "Windows",
-  "pythonVersion": "3.13",
+  "pythonPlatform": "All",
+  "pythonVersion": "3.12",
   "extraPaths": [
     ".",
     "src",
-    "src/scripts",
-    "C:/Users/randy/AppData/Local/Programs/Python/Python313/Lib/site-packages"
+    "src/scripts"
+  ],
+  "exclude": [
+    "**/__pycache__",
+    ".venv",
+    "venv",
+    "data",
+    "frontend/node_modules",
+    "models",
+    "scratch"
   ]
 }
