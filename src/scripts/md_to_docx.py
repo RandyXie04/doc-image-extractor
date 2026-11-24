@@ -95,6 +95,70 @@ def _is_placeholder_header_cells(cells: Sequence[str]) -> bool:
         return hits >= 1
 
 
+def _docx_table_header_row_count(trs, qn) -> int:
+    """
+    Determine the number of leading header rows in an OOXML <w:tbl>:
+    1. Contiguous leading rows starting at row 0 that already carry <w:tblHeader/>.
+    2. Vertical-merge continuation rows belonging strictly to <w:vMerge w:val="restart"/>
+       cells started in row 0 (tracked per logical column so staggered body vMerges never leak).
+    """
+    if not trs:
+        return 0
+    header_cnt = 1
+
+    def _has_tbl_header(tr_el) -> bool:
+        trPr = tr_el.find(qn('w:trPr'))
+        return trPr is not None and trPr.find(qn('w:tblHeader')) is not None
+
+    if _has_tbl_header(trs[0]):
+        idx = 1
+        while idx < len(trs) and _has_tbl_header(trs[idx]):
+            idx += 1
+        header_cnt = max(header_cnt, idx)
+
+    def _tc_grid_span(tc_el) -> int:
+        tcPr = tc_el.find(qn('w:tcPr'))
+        gs = tcPr.find(qn('w:gridSpan')) if tcPr is not None else None
+        if gs is not None:
+            raw_val = gs.get(qn('w:val'))
+            if raw_val is not None:
+                try:
+                    return max(1, int(raw_val))
+                except ValueError:
+                    return 1
+        return 1
+
+    active_row0_vcols: set[int] = set()
+    col = 0
+    for tc in trs[0].findall(qn('w:tc')):
+        span = _tc_grid_span(tc)
+        tcPr = tc.find(qn('w:tcPr'))
+        vm = tcPr.find(qn('w:vMerge')) if tcPr is not None else None
+        if vm is not None and vm.get(qn('w:val')) == 'restart':
+            active_row0_vcols.add(col)
+        col += span
+
+    if active_row0_vcols:
+        for probe_idx in range(1, len(trs)):
+            still_active: set[int] = set()
+            col = 0
+            for tc in trs[probe_idx].findall(qn('w:tc')):
+                span = _tc_grid_span(tc)
+                if col in active_row0_vcols:
+                    tcPr = tc.find(qn('w:tcPr'))
+                    vm = tcPr.find(qn('w:vMerge')) if tcPr is not None else None
+                    if vm is not None and vm.get(qn('w:val')) in (None, 'continue'):
+                        still_active.add(col)
+                col += span
+            if still_active:
+                header_cnt = max(header_cnt, probe_idx + 1)
+                active_row0_vcols = still_active
+            else:
+                break
+
+    return min(header_cnt, len(trs))
+
+
 def _coalesce_adjacent_docx_tables(doc, qn) -> int:
     """
     Coalesce adjacent compatible <w:tbl> elements separated only by empty <w:p>,
@@ -120,10 +184,31 @@ def _coalesce_adjacent_docx_tables(doc, qn) -> int:
         return len(trs[0].findall(qn('w:tc'))) if trs else 0
 
     def _row_cells_norm(tr_el) -> list[str]:
-        return [
-            re.sub(r'\s+', '', "".join(t.text or "" for t in tc.iter(qn('w:t'))))
-            for tc in tr_el.findall(qn('w:tc'))
-        ]
+        vals: list[str] = []
+        for tc in tr_el.findall(qn('w:tc')):
+            txt = re.sub(r'\s+', '', "".join(t.text or "" for t in tc.iter(qn('w:t'))))
+            tcPr = tc.find(qn('w:tcPr'))
+            gs = tcPr.find(qn('w:gridSpan')) if tcPr is not None else None
+            span = 1
+            if gs is not None:
+                raw_val = gs.get(qn('w:val'))
+                if raw_val is not None:
+                    try:
+                        span = max(1, int(raw_val))
+                    except ValueError:
+                        span = 1
+            vals.append(txt)
+            if span > 1:
+                vals.extend([""] * (span - 1))
+        return vals
+
+    def _row_has_vmerge_continue(tr_el) -> bool:
+        for tc in tr_el.findall(qn('w:tc')):
+            tcPr = tc.find(qn('w:tcPr'))
+            vm = tcPr.find(qn('w:vMerge')) if tcPr is not None else None
+            if vm is not None and vm.get(qn('w:val')) in (None, 'continue'):
+                return True
+        return False
 
     def _sync_moved_row_widths(prev_tbl_el, curr_tbl_el, moved_trs, cols_cnt: int) -> None:
         # Upgrade uniform equal-width Pandoc grid (e.g. <=72-col tables) if continuation has proportional grid
@@ -229,13 +314,30 @@ def _coalesce_adjacent_docx_tables(doc, qn) -> int:
             curr_is_placeholder = _is_placeholder_header_cells(curr_hdr)
             has_xu_biao = xu_biao_hits > 0
 
+            prev_hdr_cnt = _docx_table_header_row_count(prev_trs, qn)
+            curr_hdr_cnt = _docx_table_header_row_count(curr_trs, qn)
+
             # Compute normalized signatures of existing non-empty rows in prev_tbl for fragment deduplication
             prev_row_sigs = {
                 tuple(_row_cells_norm(tr))
                 for tr in prev_trs
                 if any(_row_cells_norm(tr))
             }
-            candidate_trs = curr_trs[1:] if (headers_match or curr_is_placeholder) else curr_trs
+            if headers_match:
+                if (
+                    prev_hdr_cnt > 1
+                    and len(curr_trs) >= prev_hdr_cnt
+                    and [_row_cells_norm(tr) for tr in prev_trs[:prev_hdr_cnt]]
+                    == [_row_cells_norm(tr) for tr in curr_trs[:prev_hdr_cnt]]
+                ):
+                    strip_cnt = prev_hdr_cnt
+                else:
+                    strip_cnt = max(1, curr_hdr_cnt)
+                candidate_trs = curr_trs[min(strip_cnt, len(curr_trs)):]
+            elif curr_is_placeholder:
+                candidate_trs = curr_trs[min(max(1, curr_hdr_cnt), len(curr_trs)):]
+            else:
+                candidate_trs = curr_trs
             non_empty_cand_sigs = [
                 tuple(_row_cells_norm(tr))
                 for tr in candidate_trs
@@ -258,12 +360,17 @@ def _coalesce_adjacent_docx_tables(doc, qn) -> int:
             else:
                 rows_to_move = [
                     tr for tr in candidate_trs
-                    if any(_row_cells_norm(tr))
+                    if any(_row_cells_norm(tr)) or _row_has_vmerge_continue(tr)
                 ]
 
             if rows_to_move:
                 _sync_moved_row_widths(prev_tbl, el, rows_to_move, prev_cols)
                 for tr in rows_to_move:
+                    trPr = tr.find(qn('w:trPr'))
+                    if trPr is not None:
+                        stale_hdr = trPr.find(qn('w:tblHeader'))
+                        if stale_hdr is not None:
+                            trPr.remove(stale_hdr)
                     prev_tbl.append(tr)
             for b_el in between_elems:
                 body.remove(b_el)
@@ -281,7 +388,7 @@ _HTML_TABLE_BLOCK_RE = re.compile(r"<table\b[^>]*>.*?</table>", re.I | re.S)
 _HTML_TABLE_SLOT_PREFIX = "ZZHTMLTABLESLOT"
 _HTML_TABLE_SLOT_SUFFIX = "ZZ"
 _INLINE_SCRIPT_HTML_RE = re.compile(r"<(sup|sub)>([^<]+)</\1>", re.I)
-_INLINE_SCRIPT_TOKEN_RE = re.compile(r"⟦(SUP|SUB):([^⟧]+)⟧")
+_INLINE_SCRIPT_TOKEN_RE = re.compile(r"ZZ(SUP|SUB)HEX([0-9A-F]+)ZZ|⟦(SUP|SUB):([^⟧]+)⟧")
 
 
 def extract_html_tables_for_pandoc(md_content: str) -> Tuple[str, List[str]]:
@@ -303,13 +410,16 @@ def extract_html_tables_for_pandoc(md_content: str) -> Tuple[str, List[str]]:
 
 def protect_inline_scripts_for_pandoc(md_content: str) -> str:
     """
-    Replace inline <sup>...</sup> and <sub>...</sub> tags with safe sentinel tokens
-    before Pandoc runs with +raw_html -subscript, so Pandoc does not strip them in DOCX.
+    Replace inline <sup>...</sup> and <sub>...</sub> tags with pure-alphanumeric
+    UTF-8 hex sentinel tokens (ZZSUPHEX...ZZ / ZZSUBHEX...ZZ) before Pandoc runs
+    with +raw_html -subscript, preventing Pandoc from stripping tags or parsing
+    Markdown syntax characters (*, _, ^, ~, etc.) inside script payloads.
     """
     def _repl(m: re.Match) -> str:
         kind = m.group(1).upper()
-        inner = m.group(2)
-        return f"⟦{kind}:{inner}⟧"
+        inner_text = _html_mod.unescape(m.group(2))
+        inner_hex = inner_text.encode("utf-8").hex().upper()
+        return f"ZZ{kind}HEX{inner_hex}ZZ"
 
     return _INLINE_SCRIPT_HTML_RE.sub(_repl, md_content)
 
@@ -357,8 +467,8 @@ def _append_html_inline_runs(p_el, cell_html: str, OxmlElement, qn, bold: bool =
             i_depth = max(0, i_depth - 1)
             continue
 
-        # Strip any other leftover tags and unescape HTML entities
-        plain = _html_mod.unescape(re.sub(r"<[^>]+>", "", part))
+        # Strip only genuine leftover HTML tags (preserve math like 'x < 5 and y > 3') and unescape entities
+        plain = _html_mod.unescape(re.sub(r"</?[a-zA-Z][^>]*>", "", part))
         if not plain:
             continue
         r_el = OxmlElement('w:r')
@@ -392,13 +502,18 @@ def _append_html_inline_runs(p_el, cell_html: str, OxmlElement, qn, bold: bool =
 
 def _build_ooxml_table_from_html(html_table: str, OxmlElement, qn):
     """Build a native OOXML <w:tbl> element from an HTML <table> preserving rowspan/colspan/sup/sub."""
-    tr_matches = re.findall(r"<tr\b[^>]*>(.*?)</tr>", html_table, flags=re.I | re.S)
-    if not tr_matches:
+    tr_match_objs = list(re.finditer(r"<tr\b[^>]*>(.*?)</tr>", html_table, flags=re.I | re.S))
+    if not tr_match_objs:
         return None
 
+    thead_m = re.search(r"<thead\b[^>]*>.*?</thead>", html_table, flags=re.I | re.S)
+    thead_span = thead_m.span() if thead_m else None
+
     cell_re = re.compile(r"<(th|td)\b([^>]*)>(.*?)</\1>", flags=re.I | re.S)
-    parsed_rows: List[List[Tuple[str, int, int, str]]] = []
-    for tr_inner in tr_matches:
+    raw_parsed_rows: List[Tuple[bool, List[Tuple[str, int, int, str]]]] = []
+    for tr_m in tr_match_objs:
+        in_thead = bool(thead_span is not None and thead_span[0] <= tr_m.start() < thead_span[1])
+        tr_inner = tr_m.group(1)
         row_cells: List[Tuple[str, int, int, str]] = []
         for m in cell_re.finditer(tr_inner):
             tag = m.group(1).lower()
@@ -409,16 +524,17 @@ def _build_ooxml_table_from_html(html_table: str, OxmlElement, qn):
             rspan = max(1, int(rm.group(1))) if rm else 1
             cspan = max(1, int(cm.group(1))) if cm else 1
             row_cells.append((tag, rspan, cspan, inner_html))
-        if row_cells:
-            parsed_rows.append(row_cells)
-
-    if not parsed_rows:
-        return None
+        raw_parsed_rows.append((in_thead, row_cells))
 
     # Determine true logical column count across all rows accounting for active rowspans
+    # Keep empty <tr></tr> rows when active rowspans cover them; drop stray empty rows otherwise.
+    parsed_rows: List[Tuple[bool, List[Tuple[str, int, int, str]]]] = []
     active_counts: dict[int, Tuple[int, int]] = {}
     ncols = 0
-    for r_cells in parsed_rows:
+    for in_thead, r_cells in raw_parsed_rows:
+        if not r_cells and not active_counts:
+            continue
+        parsed_rows.append((in_thead, r_cells))
         col = 0
         next_active: dict[int, Tuple[int, int]] = {}
         for _, rspan, cspan, _ in r_cells:
@@ -438,8 +554,21 @@ def _build_ooxml_table_from_html(html_table: str, OxmlElement, qn):
         ncols = max(ncols, col)
         active_counts = next_active
 
-    if ncols <= 0:
+    if not parsed_rows or ncols <= 0:
         return None
+
+    # Determine which rows carry <w:tblHeader/> (explicit <thead> rows, or leading all-<th> rows)
+    if thead_span is not None:
+        header_row_flags = [in_thead for in_thead, _ in parsed_rows]
+    else:
+        header_row_flags = []
+        still_hdr = True
+        for _, r_cells in parsed_rows:
+            if still_hdr and r_cells and all(tag == 'th' for tag, _, _, _ in r_cells):
+                header_row_flags.append(True)
+            else:
+                still_hdr = False
+                header_row_flags.append(False)
 
     tbl_el = OxmlElement('w:tbl')
     tblPr = OxmlElement('w:tblPr')
@@ -460,10 +589,14 @@ def _build_ooxml_table_from_html(html_table: str, OxmlElement, qn):
         tblGrid.append(gc)
     tbl_el.append(tblGrid)
 
-    # Emit <w:tr> rows with exact <w:gridSpan> and <w:vMerge>
+    # Emit <w:tr> rows with exact <w:gridSpan>, <w:vMerge>, and <w:tblHeader>
     active_vspans: dict[int, Tuple[int, int]] = {}
-    for r_cells in parsed_rows:
+    for (_, r_cells), is_hdr_row in zip(parsed_rows, header_row_flags):
         tr_el = OxmlElement('w:tr')
+        if is_hdr_row:
+            trPr = OxmlElement('w:trPr')
+            trPr.append(OxmlElement('w:tblHeader'))
+            tr_el.append(trPr)
         col = 0
         next_active: dict[int, Tuple[int, int]] = {}
 
@@ -526,12 +659,48 @@ def _build_ooxml_table_from_html(html_table: str, OxmlElement, qn):
 
 
 def _expand_script_tokens_in_paragraph(p_el, OxmlElement, qn) -> bool:
-    """Expand ⟦SUP:...⟧ / ⟦SUB:...⟧ tokens inside a <w:p> into native OOXML vertAlign runs."""
+    """Expand ZZSUPHEX.../ZZSUBHEX... (and legacy ⟦SUP:...⟧/⟦SUB:...⟧) tokens into native OOXML vertAlign runs."""
     import copy
 
     full_txt = "".join(t.text or "" for t in p_el.iter(qn('w:t')))
-    if "⟦SUP:" not in full_txt and "⟦SUB:" not in full_txt:
+    if (
+        "ZZSUPHEX" not in full_txt
+        and "ZZSUBHEX" not in full_txt
+        and "⟦SUP:" not in full_txt
+        and "⟦SUB:" not in full_txt
+    ):
         return False
+
+    # Coalesce adjacent text-only <w:r> siblings with identical rPr so split tokens are reassembled
+    def _is_plain_text_run(el) -> bool:
+        if el.tag != qn('w:r'):
+            return False
+        return all(child.tag in (qn('w:rPr'), qn('w:t')) for child in el)
+
+    def _rpr_sig(r_el) -> str:
+        rPr = r_el.find(qn('w:rPr'))
+        return str(rPr.xml) if rPr is not None else ""
+
+    p_children = list(p_el)
+    i = 0
+    while i < len(p_children) - 1:
+        cur = p_children[i]
+        nxt = p_children[i + 1]
+        if _is_plain_text_run(cur) and _is_plain_text_run(nxt) and _rpr_sig(cur) == _rpr_sig(nxt):
+            cur_txt = "".join(t.text or "" for t in cur.findall(qn('w:t')))
+            nxt_txt = "".join(t.text or "" for t in nxt.findall(qn('w:t')))
+            combined = cur_txt + nxt_txt
+            for old_t in list(cur.findall(qn('w:t'))):
+                cur.remove(old_t)
+            nt = OxmlElement('w:t')
+            if combined[:1].isspace() or combined[-1:].isspace():
+                nt.set('{http://www.w3.org/XML/1998/namespace}space', 'preserve')
+            nt.text = combined
+            cur.append(nt)
+            p_el.remove(nxt)
+            p_children.pop(i + 1)
+            continue
+        i += 1
 
     modified = False
     for r_el in list(p_el.findall(qn('w:r'))):
@@ -539,7 +708,7 @@ def _expand_script_tokens_in_paragraph(p_el, OxmlElement, qn) -> bool:
         if not t_nodes:
             continue
         r_txt = "".join(t.text or "" for t in t_nodes)
-        if "⟦SUP:" not in r_txt and "⟦SUB:" not in r_txt:
+        if not _INLINE_SCRIPT_TOKEN_RE.search(r_txt):
             continue
 
         orig_rPr = r_el.find(qn('w:rPr'))
@@ -558,8 +727,16 @@ def _expand_script_tokens_in_paragraph(p_el, OxmlElement, qn) -> bool:
                 nr.append(nt)
                 new_runs.append(nr)
 
-            kind = m.group(1)
-            val = m.group(2)
+            if m.group(1) is not None:
+                kind = m.group(1)
+                try:
+                    val = bytes.fromhex(m.group(2)).decode("utf-8")
+                except (ValueError, UnicodeDecodeError):
+                    val = m.group(0)
+            else:
+                kind = m.group(3)
+                val = _html_mod.unescape(m.group(4))
+
             sr = OxmlElement('w:r')
             srPr = copy.deepcopy(orig_rPr) if orig_rPr is not None else OxmlElement('w:rPr')
             existing_va = srPr.find(qn('w:vertAlign'))
@@ -707,13 +884,17 @@ def apply_table_styles_to_docx(docx_path: str) -> None:
 
         def _apply_row_repeat_and_cant_split(table_elem):
             trs = table_elem._tbl.findall(qn('w:tr'))
+            if not trs:
+                return
+            header_end_idx = max(0, _docx_table_header_row_count(trs, qn) - 1)
+
             for r_idx, tr in enumerate(trs):
                 trPr = tr.find(qn('w:trPr'))
                 if trPr is None:
                     trPr = OxmlElement('w:trPr')
                     tr.insert(0, trPr)
                 existing_hdr = trPr.find(qn('w:tblHeader'))
-                if r_idx == 0:
+                if r_idx <= header_end_idx:
                     if trPr.find(qn('w:cantSplit')) is None:
                         cant = OxmlElement('w:cantSplit')
                         if existing_hdr is not None:

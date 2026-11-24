@@ -97,7 +97,7 @@ _XU_BIAO_BARE_RE = re.compile(
     r"^[（(]?\s*(?:续\s*前?\s*表|續\s*前?\s*表)\s*[）)]?[：:.]?\s*$"
 )
 _XU_BIAO_PREFIXED_RE = re.compile(
-    r"^(?:续\s*表|續\s*表)\s*\d*(?:[-—–.．]\d+)*(?:[\s\u3000:：].{0,60})?$"
+    r"^[（(]?\s*(?:续\s*表|續\s*表)\s*\d*(?:[-—–.．]\d+)*(?:[\s\u3000:：].{0,60})?\s*[）)]?$"
 )
 _TABLE_CAPTION_CONT_RE = re.compile(
     r"^表\s*\d+(?:[-—–.．]\d+)*[^\n]{0,65}(?:[（(]\s*(?:续\s*表?|續\s*表?|续\s*\d+|續\s*\d+)\s*[）)]|[\s\u3000]+(?:续\s*表?|續\s*表?))\s*$"
@@ -298,11 +298,15 @@ def extract_cell_text_with_scripts(
             if (is_smaller or is_sup_flag) and not _CIRCLED_FN_ONLY_RE.match(stripped_txt):
                 if y1 < base_y1 - base_size * 0.16 and cy < base_cy - base_size * 0.08:
                     parts.append(f"<sup>{stripped_txt}</sup>")
+                    if txt[-1].isspace():
+                        parts.append(" ")
                     has_script = True
                     prev_x1 = x1
                     continue
                 if y0 > base_y0 + base_size * 0.16 and cy > base_cy + base_size * 0.08:
                     parts.append(f"<sub>{stripped_txt}</sub>")
+                    if txt[-1].isspace():
+                        parts.append(" ")
                     has_script = True
                     prev_x1 = x1
                     continue
@@ -624,8 +628,9 @@ def build_table_span_grid(
                     while c + cspan < ncols and not covered[r][c + cspan]:
                         nb = raw_boxes[r][c + cspan]
                         same_box = nb is not None and all(abs(nb[k] - box[k]) <= 2.0 for k in range(4))
+                        col_x1 = col_x1s[c + cspan]
                         none_covered = nb is None and (
-                            col_x1s[c + cspan] is None or box[2] >= col_x1s[c + cspan] - 3.0
+                            col_x1 is None or box[2] >= col_x1 - 3.0
                         )
                         if same_box or none_covered:
                             cspan += 1
@@ -641,11 +646,37 @@ def build_table_span_grid(
                                 break
                             nb = raw_boxes[r + rspan][c + dc]
                             if nb is None:
-                                # Only count None as rowspan if box actually reaches down into this row
-                                row_ys = [b[3] for b in raw_boxes[r + rspan] if b is not None]
-                                if not row_ys or box[3] < min(row_ys) - 3.0:
-                                    can_extend = False
-                                    break
+                                # Only count None as rowspan if box extends past top edge of row r + rspan
+                                target_r = r + rspan
+                                row_y0s = [
+                                    b[1]
+                                    for j, b in enumerate(raw_boxes[target_r])
+                                    if b is not None and not covered[target_r][j]
+                                ]
+                                if not row_y0s:
+                                    row_y0s = [b[1] for b in raw_boxes[target_r] if b is not None]
+                                if row_y0s:
+                                    # Use max(y0) so tall merged cells repeating an earlier row's y0 cannot lower this row's top edge
+                                    if box[3] < max(row_y0s) + 3.0:
+                                        can_extend = False
+                                        break
+                                else:
+                                    # Fully-spanned row (all boxes None): check whether box reaches the next non-empty row or extends past row r's bottom
+                                    next_y0: Optional[float] = None
+                                    for probe_r in range(target_r + 1, nrows):
+                                        probe_y0s = [b[1] for b in raw_boxes[probe_r] if b is not None]
+                                        if probe_y0s:
+                                            next_y0 = max(probe_y0s)
+                                            break
+                                    if next_y0 is not None:
+                                        if box[3] < next_y0 - 3.0:
+                                            can_extend = False
+                                            break
+                                    else:
+                                        row_r_y1s = [b[3] for b in raw_boxes[r] if b is not None]
+                                        if not row_r_y1s or box[3] < min(row_r_y1s) + 3.0:
+                                            can_extend = False
+                                            break
                             elif not all(abs(nb[k] - box[k]) <= 2.0 for k in range(4)):
                                 can_extend = False
                                 break
@@ -669,27 +700,39 @@ def build_table_span_grid(
                                 grid[r + dr][c + dc] = None
 
     # 2. Implicit first-column vertical category grouping (e.g. Table 16-3 '临床标准' / '实验室标准')
-    if not has_merges and ncols >= 3 and nrows >= 4:
-        first_body_cell = grid[1][0]
-        if first_body_cell is not None and first_body_cell.text.strip():
+    header_rows = min(nrows, max((c.rowspan for c in grid[0] if c is not None), default=1))
+    col0_has_vmerge = False
+    for row_idx in range(header_rows, nrows):
+        cell0 = grid[row_idx][0]
+        if cell0 is None or cell0.rowspan > 1:
+            col0_has_vmerge = True
+            break
+    if not col0_has_vmerge and ncols >= 3 and nrows >= header_rows + 3:
+        first_body_cell = grid[header_rows][0]
+        if first_body_cell is not None and first_body_cell.colspan == 1 and first_body_cell.text.strip():
             groups: List[Tuple[int, int]] = []
             blank_followers = 0
-            r = 1
+            r = header_rows
             while r < nrows:
                 c0 = grid[r][0]
                 c1 = grid[r][1]
-                if c0 is not None and c0.text.strip():
+                if c0 is not None and c0.colspan == 1 and c0.text.strip():
                     end_r = r
-                    # Only expand into follower rows where col 0 is empty AND col 1 is non-empty
+                    # Only expand into follower rows where col 0 is empty (colspan=1) AND col 1 is non-empty
                     if c1 is not None and c1.text.strip():
-                        while (
-                            end_r + 1 < nrows
-                            and grid[end_r + 1][0] is not None
-                            and not grid[end_r + 1][0].text.strip()
-                            and grid[end_r + 1][1] is not None
-                            and grid[end_r + 1][1].text.strip()
-                        ):
-                            end_r += 1
+                        while end_r + 1 < nrows:
+                            next_c0 = grid[end_r + 1][0]
+                            next_c1 = grid[end_r + 1][1]
+                            if (
+                                next_c0 is not None
+                                and next_c0.colspan == 1
+                                and not next_c0.text.strip()
+                                and next_c1 is not None
+                                and next_c1.text.strip()
+                            ):
+                                end_r += 1
+                            else:
+                                break
                     span_len = end_r - r + 1
                     if span_len >= 2:
                         groups.append((r, span_len))
@@ -697,7 +740,7 @@ def build_table_span_grid(
                     r = end_r + 1
                 else:
                     r += 1
-            body_count = nrows - 1
+            body_count = nrows - header_rows
             if len(groups) >= 2 or (len(groups) >= 1 and blank_followers * 2 >= body_count):
                 has_merges = True
                 for start_r, span_len in groups:
@@ -740,13 +783,16 @@ def render_span_grid_to_html(span_grid: Sequence[Sequence[Optional[TableCellSpan
     """Render a 2D TableCellSpan grid into semantic HTML <table> preserving rowspan/colspan."""
     if not span_grid:
         return ""
-    lines = ["<table>"]
+    header_row_count = min(
+        len(span_grid),
+        max((cell.rowspan for cell in span_grid[0] if cell is not None), default=1),
+    )
+    lines = ["<table>", "<thead>"]
     for r_idx, row in enumerate(span_grid):
-        if r_idx == 0:
-            lines.append("<thead>")
-        elif r_idx == 1:
+        if r_idx == header_row_count:
+            lines.append("</thead>")
             lines.append("<tbody>")
-        tag = "th" if r_idx == 0 else "td"
+        tag = "th" if r_idx < header_row_count else "td"
         cell_parts: List[str] = []
         for cell in row:
             if cell is None:
@@ -759,9 +805,9 @@ def render_span_grid_to_html(span_grid: Sequence[Sequence[Optional[TableCellSpan
             attr_str = (" " + " ".join(attrs)) if attrs else ""
             cell_parts.append(f"<{tag}{attr_str}>{_escape_html_preserving_scripts(cell.text)}</{tag}>")
         lines.append("<tr>" + "".join(cell_parts) + "</tr>")
-        if r_idx == 0:
-            lines.append("</thead>")
-    if len(span_grid) > 1:
+    if len(span_grid) <= header_row_count:
+        lines.append("</thead>")
+    else:
         lines.append("</tbody>")
     lines.append("</table>")
     return "\n".join(lines)
@@ -804,8 +850,81 @@ def _parse_gfm_pipe_table(md_text: str) -> Optional[Tuple[List[str], List[str], 
     return headers, sep, body_rows
 
 
-def _parse_html_table_parts(html_text: str) -> Optional[Tuple[int, List[str], List[str]]]:
-    """Parse an HTML <table> into (col_count, header_cell_texts, body_tr_html_strings)."""
+def _gfm_table_to_html(md_text: str) -> Optional[str]:
+    """Convert a GFM pipe table into semantic HTML <table> for mixed HTML/GFM merging."""
+    parsed = _parse_gfm_pipe_table(md_text)
+    if parsed is None:
+        return None
+    headers, _, body_rows = parsed
+    lines = [
+        "<table>",
+        "<thead>",
+        "<tr>"
+        + "".join(
+            f"<th>{_escape_html_preserving_scripts(h.replace(r'\|', '|'))}</th>"
+            for h in headers
+        )
+        + "</tr>",
+        "</thead>",
+    ]
+    if body_rows:
+        lines.append("<tbody>")
+        for row in body_rows:
+            lines.append(
+                "<tr>"
+                + "".join(
+                    f"<td>{_escape_html_preserving_scripts(c.replace(r'\|', '|'))}</td>"
+                    for c in row
+                )
+                + "</tr>"
+            )
+        lines.append("</tbody>")
+    lines.append("</table>")
+    return "\n".join(lines)
+
+
+def _html_tr_logical_sigs(tr_list: Sequence[str]) -> List[Tuple[str, ...]]:
+    """Expand a sequence of HTML <tr> elements into normalized logical-grid cell text tuples."""
+    cell_re = re.compile(r"<(th|td)\b([^>]*)>(.*?)</\1>", flags=re.I | re.S)
+    active: dict[int, Tuple[int, int]] = {}
+    sigs: List[Tuple[str, ...]] = []
+    for tr_html in tr_list:
+        row_vals: List[str] = []
+        col = 0
+        next_active: dict[int, Tuple[int, int]] = {}
+        for m in cell_re.finditer(tr_html):
+            while col in active:
+                rem, w = active[col]
+                row_vals.extend([""] * w)
+                if rem > 1:
+                    next_active[col] = (rem - 1, w)
+                col += w
+            attrs = m.group(2) or ""
+            rm = re.search(r'rowspan\s*=\s*["\']?(\d+)', attrs, flags=re.I)
+            cm = re.search(r'colspan\s*=\s*["\']?(\d+)', attrs, flags=re.I)
+            rspan = max(1, int(rm.group(1))) if rm else 1
+            cspan = max(1, int(cm.group(1))) if cm else 1
+            plain = re.sub(r"</?[a-zA-Z][^>]*>", "", m.group(3) or "")
+            norm = re.sub(r"\s+", "", _html_mod.unescape(plain))
+            row_vals.append(norm)
+            if cspan > 1:
+                row_vals.extend([""] * (cspan - 1))
+            if rspan > 1:
+                next_active[col] = (rspan - 1, cspan)
+            col += cspan
+        while col in active:
+            rem, w = active[col]
+            row_vals.extend([""] * w)
+            if rem > 1:
+                next_active[col] = (rem - 1, w)
+            col += w
+        active = next_active
+        sigs.append(tuple(row_vals))
+    return sigs
+
+
+def _parse_html_table_parts(html_text: str) -> Optional[Tuple[int, List[str], List[str], int]]:
+    """Parse an HTML <table> into (col_count, header_cell_texts, all_tr_html_strings, thead_row_count)."""
     stripped = (html_text or "").strip()
     if not stripped.lower().startswith("<table"):
         return None
@@ -823,15 +942,25 @@ def _parse_html_table_parts(html_text: str) -> Optional[Tuple[int, List[str], Li
     def _row_plain_cells(tr_html: str) -> List[str]:
         cells: List[str] = []
         for m in re.finditer(r"<(?:th|td)\b[^>]*>(.*?)</(?:th|td)>", tr_html, flags=re.I | re.S):
-            plain = re.sub(r"<[^>]+>", "", m.group(1))
+            plain = re.sub(r"</?[a-zA-Z][^>]*>", "", m.group(1))
             cells.append(re.sub(r"\s+", "", _html_mod.unescape(plain)))
         return cells
 
     ncols = _row_col_count(tr_matches[0])
     if ncols <= 0:
         return None
+    thead_m = re.search(r"<thead\b[^>]*>(.*?)</thead>", stripped, flags=re.I | re.S)
+    if thead_m:
+        thead_cnt = max(1, len(re.findall(r"<tr\b[^>]*>.*?</tr>", thead_m.group(1), flags=re.I | re.S)))
+    else:
+        max_rspan = 1
+        for m in re.finditer(r"<(?:th|td)\b([^>]*)>", tr_matches[0], flags=re.I):
+            rm = re.search(r'rowspan\s*=\s*["\']?(\d+)', m.group(1), flags=re.I)
+            if rm:
+                max_rspan = max(max_rspan, int(rm.group(1)))
+        thead_cnt = min(len(tr_matches), max_rspan)
     hdr_cells = _row_plain_cells(tr_matches[0])
-    return ncols, hdr_cells, tr_matches
+    return ncols, hdr_cells, tr_matches, min(thead_cnt, len(tr_matches))
 
 
 def merge_html_tables_if_compatible(
@@ -844,27 +973,69 @@ def merge_html_tables_if_compatible(
     c_info = _parse_html_table_parts(curr_html)
     if p_info is None or c_info is None:
         return None
-    p_cols, p_hdr, p_trs = p_info
-    c_cols, c_hdr, c_trs = c_info
+    p_cols, p_hdr, p_trs, p_thead_cnt = p_info
+    c_cols, c_hdr, c_trs, c_thead_cnt = c_info
     if p_cols != c_cols or not p_trs or not c_trs:
         return None
 
-    headers_match = bool(any(p_hdr) and p_hdr == c_hdr)
+    p_hdr_row0_sig = _html_tr_logical_sigs([p_trs[0]])[0]
+    c_hdr_row0_sig = _html_tr_logical_sigs([c_trs[0]])[0]
+    headers_match = bool(
+        (any(p_hdr) and p_hdr == c_hdr)
+        or (any(p_hdr_row0_sig) and p_hdr_row0_sig == c_hdr_row0_sig)
+    )
     curr_placeholder = is_placeholder_header_row(c_hdr)
     if not (has_continuation_marker or headers_match or curr_placeholder):
         return None
 
-    append_trs = c_trs[1:] if (headers_match or curr_placeholder) else c_trs
+    def _row_max_rowspan(tr_html: str) -> int:
+        mx = 1
+        for m in re.finditer(r"<(?:th|td)\b([^>]*)>", tr_html, flags=re.I):
+            rm = re.search(r'rowspan\s*=\s*["\']?(\d+)', m.group(1), flags=re.I)
+            if rm:
+                mx = max(mx, int(rm.group(1)))
+        return mx
+
+    if headers_match:
+        # Strip full repeated multi-row header when all header rows match;
+        # never slice mid-rowspan or leave orphaned sub-header rows of a matching multi-row thead.
+        p_hdr_sigs = _html_tr_logical_sigs(p_trs[:p_thead_cnt])
+        c_hdr_sigs = _html_tr_logical_sigs(c_trs[:p_thead_cnt]) if len(c_trs) >= p_thead_cnt else []
+        if p_hdr_sigs and p_hdr_sigs == c_hdr_sigs:
+            strip_cnt = p_thead_cnt
+        elif c_thead_cnt > 1 and c_thead_cnt == p_thead_cnt:
+            strip_cnt = c_thead_cnt
+        else:
+            strip_cnt = max(1, _row_max_rowspan(c_trs[0]))
+        append_trs = c_trs[min(strip_cnt, len(c_trs)):]
+    elif curr_placeholder:
+        strip_cnt = max(1, _row_max_rowspan(c_trs[0]))
+        append_trs = c_trs[min(strip_cnt, len(c_trs)):]
+    else:
+        append_trs = c_trs
+
+    # Deduplicate redundant fragment tables whose non-empty body rows are 100% present in prev_html
+    prev_body_trs = p_trs[p_thead_cnt:]
+    prev_body_sigs = {sig for sig in _html_tr_logical_sigs(prev_body_trs) if any(sig)}
+    cand_sigs = [sig for sig in _html_tr_logical_sigs(append_trs) if any(sig)]
+    if cand_sigs and prev_body_sigs and all(sig in prev_body_sigs for sig in cand_sigs):
+        append_trs = []
+
     # Convert <th> to <td> for data-only continuation rows appended into tbody
     normalized_append: List[str] = []
     for tr in append_trs:
         tr_td = re.sub(r"<(/?)th\b", r"<\1td", tr, flags=re.I)
         normalized_append.append(tr_td)
 
-    out_lines = ["<table>", "<thead>", p_trs[0], "</thead>", "<tbody>"]
-    out_lines.extend(p_trs[1:])
-    out_lines.extend(normalized_append)
-    out_lines.extend(["</tbody>", "</table>"])
+    out_lines = ["<table>", "<thead>"]
+    out_lines.extend(p_trs[:p_thead_cnt])
+    out_lines.append("</thead>")
+    body_out = list(prev_body_trs) + normalized_append
+    if body_out:
+        out_lines.append("<tbody>")
+        out_lines.extend(body_out)
+        out_lines.append("</tbody>")
+    out_lines.append("</table>")
     return "\n".join(out_lines)
 
 
@@ -876,10 +1047,17 @@ def merge_gfm_tables_if_compatible(
     """
     Merge two Markdown/HTML tables if column counts match AND
     (has_continuation_marker OR header rows match OR continuation uses placeholder headers like '欄1'/'欄2').
+    Supports GFM+GFM, HTML+HTML, and mixed HTML+GFM/GFM+HTML pairs.
     Strips duplicate/placeholder header rows automatically and deduplicates redundant fragment tables.
     """
-    if (prev_md or "").strip().lower().startswith("<table") and (curr_md or "").strip().lower().startswith("<table"):
-        return merge_html_tables_if_compatible(prev_md, curr_md, has_continuation_marker=has_continuation_marker)
+    prev_is_html = (prev_md or "").strip().lower().startswith("<table")
+    curr_is_html = (curr_md or "").strip().lower().startswith("<table")
+    if prev_is_html or curr_is_html:
+        prev_h = prev_md if prev_is_html else _gfm_table_to_html(prev_md)
+        curr_h = curr_md if curr_is_html else _gfm_table_to_html(curr_md)
+        if prev_h is None or curr_h is None:
+            return None
+        return merge_html_tables_if_compatible(prev_h, curr_h, has_continuation_marker=has_continuation_marker)
 
     parsed_prev = _parse_gfm_pipe_table(prev_md)
     parsed_curr = _parse_gfm_pipe_table(curr_md)
