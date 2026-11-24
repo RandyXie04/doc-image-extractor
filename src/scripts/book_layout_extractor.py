@@ -57,33 +57,48 @@ except ImportError:
 
 try:
     from src.extraction.table_reconstructor import (
+        build_table_span_grid,
         clean_table_cell_text,
+        extract_cell_text_with_scripts,
         is_continuation_table_marker,
+        is_standalone_page_number_text,
         is_valid_pymupdf_table,
         extract_reconstructed_tables_from_page,
         merge_gfm_tables_if_compatible,
         normalize_pymupdf_table_rows,
         rect_union_intersection_area,
+        render_span_grid_to_html,
+        split_trailing_table_notes,
     )
 except ImportError:
     try:
         from extraction.table_reconstructor import (
+            build_table_span_grid,
             clean_table_cell_text,
+            extract_cell_text_with_scripts,
             is_continuation_table_marker,
+            is_standalone_page_number_text,
             is_valid_pymupdf_table,
             extract_reconstructed_tables_from_page,
             merge_gfm_tables_if_compatible,
             normalize_pymupdf_table_rows,
             rect_union_intersection_area,
+            render_span_grid_to_html,
+            split_trailing_table_notes,
         )
     except ImportError:
+        build_table_span_grid = None
         clean_table_cell_text = None
+        extract_cell_text_with_scripts = None
         is_continuation_table_marker = None
+        is_standalone_page_number_text = None
         is_valid_pymupdf_table = None
         extract_reconstructed_tables_from_page = None
         merge_gfm_tables_if_compatible = None
         normalize_pymupdf_table_rows = None
         rect_union_intersection_area = None
+        render_span_grid_to_html = None
+        split_trailing_table_notes = None
 
 try:
     from src.scripts.paragraph_reconstruction import update_delimiter_stack
@@ -422,42 +437,115 @@ def _match_toc_heading(text: str, page_num: int, toc_index: dict, offset_holder:
     return 0
 
 
-def _table_to_markdown(table, page_footnotes: list, page_num: int) -> str:
-    """Convert a PyMuPDF Table object to a GFM Markdown table string.
-    Footnote markers inside cells are replaced with Pandoc ref-tags."""
+def _table_to_markdown_and_notes(
+    table,
+    page_footnotes: list,
+    page_num: int,
+    page: Any = None,
+) -> Tuple[str, List[str]]:
+    """
+    Convert a PyMuPDF Table object to (table_markup, trailing_note_paragraphs).
+    - Preserves genuine cell superscripts/subscripts via page span geometry when available.
+    - Detaches trailing empty rows and table-note rows ('注：...', etc.) out of the table.
+    - Emits semantic HTML <table> with rowspan/colspan when merged cells exist,
+      and standard GFM Pipe Table otherwise.
+    """
     try:
         rows = table.extract()  # list[list[str|None]]
     except Exception:
-        return ""
+        return "", []
     if not rows:
-        return ""
+        return "", []
+
+    # Resolve live PyMuPDF page safely (table.page may be a weakref)
+    resolved_page = page
+    if resolved_page is None:
+        try:
+            resolved_page = getattr(table, "page", None)
+        except ReferenceError:
+            resolved_page = None
+
+    # Enrich cell text with superscript/subscript markup when geometry is available
+    enriched_rows = rows
+    t_rows = getattr(table, "rows", None)
+    if (
+        resolved_page is not None
+        and extract_cell_text_with_scripts is not None
+        and t_rows
+        and len(t_rows) == len(rows)
+    ):
+        enriched_rows = []
+        for r_idx, row in enumerate(rows):
+            tr_cells = getattr(t_rows[r_idx], "cells", None)
+            new_row = []
+            for c_idx, cell_val in enumerate(row):
+                box = tr_cells[c_idx] if (tr_cells and c_idx < len(tr_cells)) else None
+                if box is not None and cell_val is not None:
+                    new_row.append(
+                        extract_cell_text_with_scripts(
+                            resolved_page, box, fallback_text=str(cell_val)
+                        )
+                    )
+                else:
+                    new_row.append(cell_val)
+            enriched_rows.append(new_row)
 
     if normalize_pymupdf_table_rows is not None:
-        cleaned_rows = normalize_pymupdf_table_rows(rows, table_obj=table)
+        cleaned_rows = normalize_pymupdf_table_rows(enriched_rows, table_obj=table)
     else:
         cleaned_rows = [
             [
                 clean_table_cell_text(c) if clean_table_cell_text is not None else (c or "").replace("\n", " ").strip()
                 for c in row
             ]
-            for row in rows
+            for row in enriched_rows
         ]
 
+    note_paragraphs: List[str] = []
+    if split_trailing_table_notes is not None:
+        cleaned_rows, note_paragraphs = split_trailing_table_notes(cleaned_rows, table_obj=table)
+
+    if not cleaned_rows:
+        return "", [
+            _replace_fn_markers_in_text(np_txt, page_footnotes, page_num)
+            for np_txt in note_paragraphs
+            if np_txt.strip()
+        ]
+
+    # Replace footnote markers inside cells and detached note paragraphs
+    fn_rows = [
+        [_replace_fn_markers_in_text(cell_text, page_footnotes, page_num) for cell_text in row]
+        for row in cleaned_rows
+    ]
+    fn_notes = [
+        _replace_fn_markers_in_text(np_txt, page_footnotes, page_num)
+        for np_txt in note_paragraphs
+        if np_txt.strip()
+    ]
+
+    if build_table_span_grid is not None and render_span_grid_to_html is not None:
+        span_grid, has_merges = build_table_span_grid(fn_rows, table_obj=table)
+        if has_merges:
+            return render_span_grid_to_html(span_grid), fn_notes
+
     md_rows = []
-    for r_idx, row in enumerate(cleaned_rows):
-        cells = []
-        for cell_text in row:
-            # Replace footnote markers inside cells
-            cell_text = _replace_fn_markers_in_text(cell_text, page_footnotes, page_num)
-            # Escape pipe characters inside cells
-            cell_text = cell_text.replace("|", "\\|")
-            cells.append(cell_text)
+    for r_idx, row in enumerate(fn_rows):
+        cells = [cell_text.replace("|", "\\|") for cell_text in row]
         md_rows.append("| " + " | ".join(cells) + " |")
         if r_idx == 0:
-            # Insert separator row after header
             md_rows.append("|" + "|".join([" --- " for _ in cells]) + "|")
 
-    return "\n".join(md_rows)
+    return "\n".join(md_rows), fn_notes
+
+
+def _table_to_markdown(table, page_footnotes: list, page_num: int, page: Any = None) -> str:
+    """Convert a PyMuPDF Table object to Markdown/HTML table string plus detached trailing notes."""
+    tbl_md, note_paragraphs = _table_to_markdown_and_notes(
+        table, page_footnotes, page_num, page=page
+    )
+    if tbl_md and note_paragraphs:
+        return tbl_md + "\n\n" + "\n\n".join(note_paragraphs)
+    return tbl_md or "\n\n".join(note_paragraphs)
 
 def clean_span_duplicates(spans):
     """Filter out duplicate spans caused by PDF shadow/fake-bold text rendering."""
@@ -1943,6 +2031,7 @@ def _handle_non_text_flow_item(
     page_paragraphs: List[str],
     layout_records: List[Dict[str, Any]],
     audit_data: Dict[str, Any],
+    page: Any = None,
 ) -> bool:
     itype = item["type"]
     if itype == "text":
@@ -1962,10 +2051,22 @@ def _handle_non_text_flow_item(
         layout_records.append({"type": "figure", "page_num": page_num, "block_idx": block_idx, "raw_md": fig_raw_md, "bbox": item_bbox, "font_name": "figure", "font_size": 10.5})
         return True
     if itype == "table":
-        tbl_md = _table_to_markdown(item["data"], page_footnotes, page_num)
+        tbl_md, note_paragraphs = _table_to_markdown_and_notes(
+            item["data"], page_footnotes, page_num, page=page
+        )
         if tbl_md:
             page_paragraphs.append(tbl_md)
         layout_records.append({"type": "table", "page_num": page_num, "bbox": item_bbox, "raw_md": tbl_md or ""})
+        for note_txt in note_paragraphs:
+            page_paragraphs.append(note_txt)
+            layout_records.append({
+                "type": "paragraph",
+                "page_num": page_num,
+                "bbox": item_bbox,
+                "raw_text": note_txt,
+                "font_name": body_font,
+                "font_size": max(body_size - 1.5, 8.0),
+            })
         return True
     if itype == "reconstructed_table":
         rtbl = item["data"]
@@ -2405,13 +2506,15 @@ def _extract_para_md_plain_text(md_text: str) -> str:
 def _is_margin_running_footer_record(rec: Dict[str, Any], page_h: float) -> bool:
     if rec.get("type") not in ("paragraph", "heading"):
         return False
+    txt = _extract_layout_record_plain_text(rec)
+    if not txt or "\n" in txt or len(txt) > 30:
+        return False
+    if is_standalone_page_number_text is not None and is_standalone_page_number_text(txt):
+        return True
     bbox = rec.get("bbox")
     if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
         return False
     if float(bbox[1]) < page_h * 0.87:
-        return False
-    txt = _extract_layout_record_plain_text(rec)
-    if not txt or "\n" in txt or len(txt) > 30:
         return False
     return bool(_MARGIN_FOOTER_PAGE_RE.match(txt))
 
@@ -2424,13 +2527,15 @@ def _is_margin_running_header_record(
 ) -> bool:
     if rec.get("type") not in ("paragraph", "heading"):
         return False
+    txt = _extract_layout_record_plain_text(rec)
+    if not txt or "\n" in txt or len(txt) > 45:
+        return False
+    if is_standalone_page_number_text is not None and is_standalone_page_number_text(txt):
+        return True
     bbox = rec.get("bbox")
     if not isinstance(bbox, (list, tuple)) or len(bbox) < 4:
         return False
     if float(bbox[3]) > page_h * 0.13:
-        return False
-    txt = _extract_layout_record_plain_text(rec)
-    if not txt or "\n" in txt or len(txt) > 45:
         return False
     if re.match(r"^\s*表\s*\d+", txt) or re.search(r"[。！？!?…；;]$", txt):
         return False
@@ -2523,7 +2628,7 @@ def _merge_cross_page_layout_tables(page_snapshots: List[Dict[str, Any]]) -> Non
                 if _is_margin_running_header_record(rec, curr_page_h, curr_body_size, has_xu_biao_next):
                     margin_hdr_rec_indices.append(r_i)
                     allowed_leading_plain_texts.append(txt_probe)
-                    if len(margin_hdr_rec_indices) > 1:
+                    if len(margin_hdr_rec_indices) > 2:
                         intervening_valid = False
                         break
                     continue
@@ -2685,6 +2790,7 @@ def _process_single_pdf_page_layout(
         if _handle_non_text_flow_item(
             item, state, page_num, page_w, page_h, body_font, body_size, enable_footnotes,
             page_footnotes, style_mapping, all_image_blocks, page_paragraphs, page_records, audit_data,
+            page=page,
         ):
             continue
         _process_text_flow_item(
