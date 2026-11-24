@@ -41,7 +41,7 @@ Before pushing a branch or opening a Pull Request, run **all four CI pillars** l
 4. **Unit & Regression Tests (Non-Heavy)**:
    - Run targeted tests for the changed module first, then run the full non-heavy CI regression suite:
      ```bash
-     python -m pytest --ignore=tests/e2e --ignore=tests/test_formula_detector_adversarial.py -m "not heavy" -k "not (test_solid_color_and_random_noise_canvases or test_recognition_predictor_live_cuda_inference or test_full_m2_pipeline_dense_text_document or test_peak_vram_under_2500mb_at_batch_size_32 or test_pod_stage1_pdf_upload_and_stage2_inplace_table_upgrade)"
+     python -m pytest --ignore=tests/e2e --ignore=tests/test_formula_detector_adversarial.py --ignore=tests/test_formula_recognizer_stress.py --ignore=tests/test_ocr_crop_clamp_adversarial.py --ignore=tests/test_ocr_layout_and_crop_stress.py -m "not heavy" -k "not (test_solid_color_and_random_noise_canvases or test_recognition_predictor_live_cuda_inference or test_full_m2_pipeline_dense_text_document or test_recognition_predictor_blank_crop_short_circuit_with_index_preservation or test_pod_stage1_pdf_upload_and_stage2_inplace_table_upgrade)"
      ```
    - For Windows environments, set `YOLO_CONFIG_DIR` to a writable temp folder if running YOLO-touching tests.
 
