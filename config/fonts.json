@@ -669,8 +669,8 @@
     "mapped_by": "user"
   },
   "FZKTK--GBK1-0 (11.0pt)": {
-    "role": "忽略",
-    "docx_style": null,
+    "role": "楷體",
+    "docx_style": "屬名",
     "mapped_by": "user"
   },
   "FZHTK--GBK1-0 (10.5pt)": {
@@ -684,8 +684,8 @@
     "mapped_by": "user"
   },
   "FZSHK--GBK1-0 (10.5pt)": {
-    "role": "忽略",
-    "docx_style": null,
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZFSK--GBK1-0 (10.5pt)": {
@@ -753,16 +753,6 @@
     "docx_style": "footnote text",
     "mapped_by": "user"
   },
-  "FZY3JW--GB1-0 (34.5pt)": {
-    "role": "忽略",
-    "docx_style": null,
-    "mapped_by": "user"
-  },
-  "FZCHSJW--GB1-0 (24.0pt)": {
-    "role": "忽略",
-    "docx_style": null,
-    "mapped_by": "user"
-  },
   "FZDBSJW--GB1-0 (22.0pt)": {
     "role": "H1",
     "docx_style": "heading 1",
@@ -783,24 +773,14 @@
     "docx_style": "heading 2",
     "mapped_by": "user"
   },
-  "FZXSSJW--GB1-0 (14.0pt)": {
-    "role": "忽略",
-    "docx_style": null,
-    "mapped_by": "user"
-  },
   "FZLTZHJW--GB1-0 (13.0pt)": {
-    "role": "H2",
-    "docx_style": "heading 3",
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZY3JW--GB1-0 (12.0pt)": {
-    "role": "H2",
-    "docx_style": "heading 3",
-    "mapped_by": "user"
-  },
-  "FZDBSJW--GB1-0 (11.0pt)": {
-    "role": "忽略",
-    "docx_style": null,
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "SimHei (10.5pt)": {
@@ -808,43 +788,18 @@
     "docx_style": "Normal",
     "mapped_by": "user"
   },
-  "FZSSJW--GB1-0 (10.5pt)": {
-    "role": "忽略",
-    "docx_style": null,
-    "mapped_by": "user"
-  },
-  "STSongti-SC-Bold (10.5pt)": {
-    "role": "忽略",
-    "docx_style": null,
-    "mapped_by": "user"
-  },
-  "FZXBSJW--GB1-0 (10.5pt)": {
-    "role": "忽略",
-    "docx_style": null,
-    "mapped_by": "user"
-  },
-  "TimesNewRomanPSMT (10.5pt)": {
-    "role": "忽略",
-    "docx_style": null,
-    "mapped_by": "user"
-  },
   "FZSSJW--GB1-0 (10.0pt)": {
     "role": "正文",
     "docx_style": "Normal",
     "mapped_by": "user"
   },
-  "FZCYSJW--GB1-0 (10.0pt)": {
-    "role": "忽略",
-    "docx_style": null,
-    "mapped_by": "user"
-  },
   "FZXSSJW--GB1-0 (10.0pt)": {
-    "role": "忽略",
-    "docx_style": null,
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZLTZHUNHK--GBK1-0 (10.0pt)": {
-    "role": "H2",
+    "role": "H3",
     "docx_style": "heading 3",
     "mapped_by": "user"
   },
@@ -853,19 +808,9 @@
     "docx_style": "Normal",
     "mapped_by": "user"
   },
-  "TimesNewRomanPS-ItalicMT (10.0pt)": {
-    "role": "忽略",
-    "docx_style": null,
-    "mapped_by": "user"
-  },
   "SimSun (10.0pt)": {
-    "role": "忽略",
+    "role": "正文",
     "docx_style": "footer",
-    "mapped_by": "user"
-  },
-  "FZSSJW--GB1-0 (9.0pt)": {
-    "role": "忽略",
-    "docx_style": null,
     "mapped_by": "user"
   },
   "FZKTJW--GB1-0 (9.0pt)": {
@@ -880,7 +825,7 @@
   },
   "FZLTZHJW--GB1-0 (9.0pt)": {
     "role": null,
-    "docx_style": "footer",
+    "docx_style": "表說",
     "mapped_by": "user"
   },
   "FZLTCHK--GBK1-0 (9.0pt)": {
@@ -899,8 +844,8 @@
     "mapped_by": "user"
   },
   "SJrousong-C-Regular (33.5pt)": {
-    "role": "忽略",
-    "docx_style": null,
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZCHSJW--GB1-0 (25.0pt)": {
@@ -915,7 +860,7 @@
   },
   "FZCSJW--GB1-0 (15.0pt)": {
     "role": "H1",
-    "docx_style": "heading 2",
+    "docx_style": "病例（請參考pdf）",
     "mapped_by": "user"
   },
   "FZCYSK--GBK1-0 (15.0pt)": {
@@ -924,18 +869,18 @@
     "mapped_by": "user"
   },
   "SimHei (14.5pt)": {
-    "role": "忽略",
-    "docx_style": null,
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZHTJW--GB1-0 (13.0pt)": {
-    "role": "忽略",
-    "docx_style": null,
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZHTJW--GB1-0 (12.0pt)": {
-    "role": "忽略",
-    "docx_style": null,
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZDBSJW--GB1-0 (12.0pt)": {
@@ -944,13 +889,13 @@
     "mapped_by": "user"
   },
   "FZCSJW--GB1-0 (12.0pt)": {
-    "role": "H2",
-    "docx_style": "heading 2",
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "FZLTZHUNHJW--GB1-0 (12.0pt)": {
-    "role": "H2",
-    "docx_style": "heading 3",
+    "role": null,
+    "docx_style": "一、",
     "mapped_by": "user"
   },
   "FZXSSK--GBK1-0 (11.0pt)": {
@@ -964,17 +909,17 @@
     "mapped_by": "user"
   },
   "FZXSSK--GBK1-0 (10.5pt)": {
-    "role": "忽略",
-    "docx_style": null,
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   },
   "SegoeUIEmoji (10.5pt)": {
-    "role": "忽略",
+    "role": null,
     "docx_style": "footer",
     "mapped_by": "user"
   },
   "FZCYSK--GBK1-0 (10.5pt)": {
-    "role": "忽略",
+    "role": null,
     "docx_style": "footer",
     "mapped_by": "user"
   },
@@ -984,8 +929,8 @@
     "mapped_by": "user"
   },
   "FZSHJW--GB1-0 (10.0pt)": {
-    "role": "H2",
-    "docx_style": "heading 3",
+    "role": null,
+    "docx_style": "（一）",
     "mapped_by": "user"
   },
   "GenWanMinTW-Regular-TTF (10.0pt)": {
@@ -994,8 +939,8 @@
     "mapped_by": "user"
   },
   "FZLTZCHK--GBK1-0 (9.0pt)": {
-    "role": "忽略",
-    "docx_style": null,
+    "role": null,
+    "docx_style": "footer",
     "mapped_by": "user"
   },
   "FZY3JW--GB1-0 (9.0pt)": {
@@ -1015,11 +960,8 @@
   },
   "FZSSJW--GB1-0 (7.5pt)": {
     "role": "圖說",
-    "docx_style": null,
-    "mapped_by": "ai_layout",
-    "confidence": 0.9,
-    "reason": "文字內容為列表或圖表標註，且字體大小較小，符合圖說或標註的特徵。",
-    "sample": "A、B、C、D．右眼；E、F、G、H．左眼"
+    "docx_style": "圖說附注（參考pdf）",
+    "mapped_by": "user"
   },
   "FZZHUNYSK--GBK1-0 (16.0pt)": {
     "role": "H1",
@@ -1225,6 +1167,68 @@
   "SimSun (6.0pt)": {
     "role": "正文",
     "docx_style": "上標",
+    "mapped_by": "user"
+  },
+  "FZBIAOYSK--GBK1-0 (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZLTZHUNHK--GBK1-0 (9.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZY3JW--GB1-0 (34.5pt)": {
+    "role": "H1",
+    "docx_style": "heading 1",
+    "mapped_by": "ai_layout",
+    "confidence": 0.95,
+    "reason": "字體大小最大且置中，符合標題特徵。",
+    "sample": "皮肤科诊治要点与病例精讲"
+  },
+  "FZXSSJW--GB1-0 (14.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "ai_layout",
+    "confidence": 0.8,
+    "reason": "字體大小較小且置中，可能為出版商資訊，歸類為正文或附註。",
+    "sample": "内蒙古科学技术出版社"
+  },
+  "STSongti-SC-Bold (10.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSSJW--GB1-0 (10.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZCHSJW--GB1-0 (24.0pt)": {
+    "role": "H2",
+    "docx_style": "heading 2",
+    "mapped_by": "ai_layout",
+    "confidence": 0.9,
+    "reason": "字體大小較大，且內容為標題性詞彙。",
+    "sample": "主编"
+  },
+  "FZCYSJW--GB1-0 (10.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "ai_layout",
+    "confidence": 0.9,
+    "reason": "字體大小和樣式看起來像一般正文內容。",
+    "sample": "王  霞"
+  },
+  "TimesNewRomanPSMT (10.5pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
+    "mapped_by": "user"
+  },
+  "FZSSJW--GB1-0 (9.0pt)": {
+    "role": "正文",
+    "docx_style": "Normal",
     "mapped_by": "user"
   }
 }
